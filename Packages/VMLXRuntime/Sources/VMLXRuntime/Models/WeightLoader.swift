@@ -99,39 +99,14 @@ public func vmlxLoadWeights(
             )
         }
 
-        // Per-layer bits/group_size from actual weight shapes.
-        // JANG mixed-precision: different layers use different bits AND group_size.
-        // Router/gate tensors prefer gs=64 (precision-critical).
-        // Ported from VMLX Python engine's _fix_quantized_bits() logic.
+        // Quantize all layers with config-level bits/group_size.
+        // The actual per-layer bits will be fixed by vmlxFixQuantizedBits() after
+        // model.update() loads the packed weights.
         quantize(model: model) { path, module in
-            guard let scales = weights["\(path).scales"],
-                  let weight = weights["\(path).weight"] else {
-                return nil
+            if weights["\(path).scales"] != nil {
+                return (defaultGroupSize, defaultBits, mode)
             }
-
-            let wCols = weight.dim(weight.ndim - 1)
-            let sCols = scales.dim(scales.ndim - 1)
-
-            let pathLower = path.lowercased()
-            let isRouter = pathLower.contains(".gate.") || pathLower.hasSuffix(".gate")
-                || pathLower.contains("shared_expert_gate")
-            let gsCandidates: [Int]
-            if isRouter {
-                gsCandidates = [64, defaultGroupSize, 128, 32, 256]
-            } else {
-                gsCandidates = [defaultGroupSize, 64, 128, 32, 256]
-            }
-
-            for tryGS in gsCandidates {
-                let inDim = sCols * tryGS
-                guard inDim > 0, (wCols * 32) % inDim == 0 else { continue }
-                let tryBits = (wCols * 32) / inDim
-                if [2, 3, 4, 5, 6, 8].contains(tryBits) {
-                    return (tryGS, tryBits, mode)
-                }
-            }
-
-            return (defaultGroupSize, defaultBits, mode)
+            return nil
         }
     }
 
@@ -143,4 +118,80 @@ public func vmlxLoadWeights(
     // Load weights (no strict verification for JANG mixed-precision compatibility)
     let parameters = ModuleParameters.unflattened(weights)
     try model.update(parameters: parameters, verify: [])
+
+    // Fix per-layer bits/group_size for JANG mixed-precision models.
+    // After model.update() loads packed weights, each QuantizedLinear/QuantizedEmbedding
+    // may have wrong bits (e.g. bits=2 from config but weight is actually 8-bit).
+    // We compute the correct bits from weight/scales shapes and mutate the module.
+    // This requires our mlx-swift fork (jjang-ai/mlx-swift) which makes bits/groupSize
+    // mutable (`var` instead of `let`).
+    // Ported from VMLX Python engine's _fix_quantized_bits().
+    let fixGroupSize = quantization?.groupSize ?? 64
+    vmlxFixQuantizedBits(model: model, defaultGroupSize: fixGroupSize)
+}
+
+/// Fix per-layer bits and groupSize on all QuantizedLinear/QuantizedEmbedding modules.
+/// Computes correct values from actual weight/scales shapes and mutates the module.
+/// Requires jjang-ai/mlx-swift fork (mutable bits/groupSize).
+/// Ported from VMLX Python engine's _fix_quantized_bits().
+public func vmlxFixQuantizedBits(model: Module, defaultGroupSize: Int) {
+    for (name, module) in model.namedModules() {
+        // Handle QuantizedLinear (including QuantizedSwitchLinear via inheritance)
+        if let ql = module as? QuantizedLinear {
+            guard ql.weight.ndim >= 2 else { return }
+            let wCols = ql.weight.dim(ql.weight.ndim - 1)
+            let sCols = ql.scales.dim(ql.scales.ndim - 1)
+
+            let nameLower = name.lowercased()
+            let isRouter = (nameLower.contains(".gate") && !nameLower.contains("_proj"))
+                || nameLower.contains("shared_expert_gate")
+            let gsCandidates: [Int] = isRouter
+                ? [64, defaultGroupSize, 128, 32, 256]
+                : [defaultGroupSize, 64, 128, 32, 256]
+
+            for tryGS in gsCandidates {
+                let inDim = sCols * tryGS
+                guard inDim > 0, (wCols * 32) % inDim == 0 else { continue }
+                let tryBits = (wCols * 32) / inDim
+                guard [2, 3, 4, 5, 6, 8].contains(tryBits) else { continue }
+                if tryBits != ql.bits { ql.bits = tryBits }
+                if tryGS != ql.groupSize { ql.groupSize = tryGS }
+                break
+            }
+        }
+
+        // Handle QuantizedEmbedding
+        if let qe = module as? QuantizedEmbedding {
+            guard qe.weight.ndim >= 2 else { return }
+            let wCols = qe.weight.dim(qe.weight.ndim - 1)
+            let sCols = qe.scales.dim(qe.scales.ndim - 1)
+
+            for tryGS in [defaultGroupSize, 64, 128, 32, 256] {
+                let inDim = sCols * tryGS
+                guard inDim > 0, (wCols * 32) % inDim == 0 else { continue }
+                let tryBits = (wCols * 32) / inDim
+                guard [2, 3, 4, 5, 6, 8].contains(tryBits) else { continue }
+                if tryBits != qe.bits { qe.bits = tryBits }
+                if tryGS != qe.groupSize { qe.groupSize = tryGS }
+                break
+            }
+        }
+    }
+}
+
+/// Walk all modules in a model tree, calling visitor with (path, module).
+private func _walkModules(_ module: Module, path: String = "", visitor: (String, Module) -> Void) {
+    visitor(path, module)
+    let mirror = Mirror(reflecting: module)
+    for child in mirror.children {
+        if let childModule = child.value as? Module {
+            let childPath = path.isEmpty ? (child.label ?? "") : "\(path).\(child.label ?? "")"
+            _walkModules(childModule, path: childPath, visitor: visitor)
+        } else if let children = child.value as? [Module] {
+            for (i, childModule) in children.enumerated() {
+                let childPath = path.isEmpty ? "\(i)" : "\(path).\(i)"
+                _walkModules(childModule, path: childPath, visitor: visitor)
+            }
+        }
+    }
 }

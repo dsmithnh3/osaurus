@@ -8,7 +8,7 @@ let package = Package(
         .library(name: "VMLXRuntime", targets: ["VMLXRuntime"]),
     ],
     dependencies: [
-        .package(url: "https://github.com/ml-explore/mlx-swift.git", from: "0.29.1"),
+        .package(url: "https://github.com/jjang-ai/mlx-swift.git", branch: "main"),
         .package(url: "https://github.com/huggingface/swift-transformers.git", from: "1.2.0"),
     ],
     targets: [
