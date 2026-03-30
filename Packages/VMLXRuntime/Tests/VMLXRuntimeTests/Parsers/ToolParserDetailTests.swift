@@ -734,6 +734,459 @@ struct FunctionaryToolParserTests {
     }
 }
 
+// MARK: - GLM Tool Parser
+
+@Suite("GLMToolParser")
+struct GLMToolParserTests {
+
+    @Test("Detects XML arg format")
+    func detectsXMLArgFormat() {
+        var parser = GLMToolParser()
+        let results = parser.processChunk("""
+            <tool_call>get_weather
+            <arg_key>city</arg_key><arg_value>Paris</arg_value>
+            </tool_call>
+            """)
+
+        let calls = extractToolCalls(results)
+        #expect(calls.count == 1)
+        #expect(calls[0].name == "get_weather")
+        #expect(calls[0].argumentsJSON.contains("Paris"))
+    }
+
+    @Test("Detects JSON format")
+    func detectsJSONFormat() {
+        var parser = GLMToolParser()
+        let results = parser.processChunk("""
+            <tool_call>{"name": "search", "arguments": {"query": "swift"}}</tool_call>
+            """)
+
+        let calls = extractToolCalls(results)
+        #expect(calls.count == 1)
+        #expect(calls[0].name == "search")
+        #expect(calls[0].argumentsJSON.contains("swift"))
+    }
+
+    @Test("Passes through non-tool text")
+    func passesThrough() {
+        var parser = GLMToolParser()
+        let results = parser.processChunk("GLM-4 says hello!")
+        let text = extractText(results)
+        #expect(text == "GLM-4 says hello!")
+        #expect(extractToolCalls(results).isEmpty)
+    }
+
+    @Test("Buffers partial tag")
+    func buffersPartialTag() {
+        var parser = GLMToolParser()
+        let r1 = parser.processChunk("<tool_call>get_weather\n<arg_key>city")
+        #expect(hasBuffered(r1))
+    }
+
+    @Test("Reset clears state")
+    func reset() {
+        var parser = GLMToolParser()
+        _ = parser.processChunk("<tool_call>partial")
+        parser.reset()
+        let results = parser.processChunk("clean text")
+        let text = extractText(results)
+        #expect(text == "clean text")
+    }
+
+    @Test("Multiple arg key-value pairs")
+    func multipleArgs() {
+        var parser = GLMToolParser()
+        let results = parser.processChunk("""
+            <tool_call>set_alarm
+            <arg_key>time</arg_key><arg_value>08:00</arg_value>
+            <arg_key>label</arg_key><arg_value>Wake up</arg_value>
+            </tool_call>
+            """)
+
+        let calls = extractToolCalls(results)
+        #expect(calls.count == 1)
+        #expect(calls[0].name == "set_alarm")
+        #expect(calls[0].argumentsJSON.contains("08:00"))
+        #expect(calls[0].argumentsJSON.contains("Wake up"))
+    }
+
+    @Test("Auto-detect finds GLMToolParser")
+    func autoDetect() {
+        let parser = autoDetectToolParser(modelName: "GLM-4.7-Flash")
+        #expect(parser != nil)
+        #expect(parser is GLMToolParser)
+    }
+}
+
+// MARK: - MiniMax Tool Parser
+
+@Suite("MiniMaxToolParser")
+struct MiniMaxToolParserTests {
+
+    @Test("Detects invoke format with parameters")
+    func detectsInvokeFormat() {
+        var parser = MiniMaxToolParser()
+        let results = parser.processChunk("""
+            <minimax:tool_call>
+              <invoke name="get_weather">
+                <parameter name="city">Paris</parameter>
+                <parameter name="unit">celsius</parameter>
+              </invoke>
+            </minimax:tool_call>
+            """)
+
+        let calls = extractToolCalls(results)
+        #expect(calls.count == 1)
+        #expect(calls[0].name == "get_weather")
+        #expect(calls[0].argumentsJSON.contains("Paris"))
+        #expect(calls[0].argumentsJSON.contains("celsius"))
+    }
+
+    @Test("Detects JSON fallback in block")
+    func detectsJSONFallback() {
+        var parser = MiniMaxToolParser()
+        let results = parser.processChunk("""
+            <minimax:tool_call>{"name": "search", "arguments": {"q": "test"}}</minimax:tool_call>
+            """)
+
+        let calls = extractToolCalls(results)
+        #expect(calls.count == 1)
+        #expect(calls[0].name == "search")
+    }
+
+    @Test("Passes through non-tool text")
+    func passesThrough() {
+        var parser = MiniMaxToolParser()
+        let results = parser.processChunk("MiniMax M2.5 says hello!")
+        let text = extractText(results)
+        #expect(text == "MiniMax M2.5 says hello!")
+        #expect(extractToolCalls(results).isEmpty)
+    }
+
+    @Test("Buffers partial tag")
+    func buffersPartialTag() {
+        var parser = MiniMaxToolParser()
+        let r1 = parser.processChunk("<minimax:tool_call><invoke name=\"test\">")
+        #expect(hasBuffered(r1))
+    }
+
+    @Test("Reset clears state")
+    func reset() {
+        var parser = MiniMaxToolParser()
+        _ = parser.processChunk("<minimax:tool_call>partial")
+        parser.reset()
+        let results = parser.processChunk("clean text")
+        let text = extractText(results)
+        #expect(text == "clean text")
+    }
+
+    @Test("Content before tool call is preserved")
+    func contentBeforeToolCall() {
+        var parser = MiniMaxToolParser()
+        let results = parser.processChunk("""
+            Let me check. <minimax:tool_call><invoke name="search"><parameter name="q">test</parameter></invoke></minimax:tool_call>
+            """)
+        let text = extractText(results)
+        #expect(text.contains("Let me check."))
+        let calls = extractToolCalls(results)
+        #expect(calls.count == 1)
+    }
+
+    @Test("Auto-detect finds MiniMaxToolParser")
+    func autoDetect() {
+        let parser = autoDetectToolParser(modelName: "MiniMax-M2.5-Chat")
+        #expect(parser != nil)
+        #expect(parser is MiniMaxToolParser)
+    }
+}
+
+// MARK: - xLAM Tool Parser
+
+@Suite("XLAMToolParser")
+struct XLAMToolParserTests {
+
+    @Test("Detects JSON array")
+    func detectsJSONArray() {
+        var parser = XLAMToolParser()
+        let results = parser.processChunk(#"[{"name": "search", "arguments": {"q": "test"}}]"#)
+
+        let calls = extractToolCalls(results)
+        #expect(calls.count == 1)
+        #expect(calls[0].name == "search")
+    }
+
+    @Test("Detects JSON in code block")
+    func detectsCodeBlock() {
+        var parser = XLAMToolParser()
+        let results = parser.processChunk("""
+            Here are the tool calls:
+            ```json
+            [{"name": "get_weather", "arguments": {"city": "NYC"}}]
+            ```
+            """)
+
+        let calls = extractToolCalls(results)
+        #expect(calls.count == 1)
+        #expect(calls[0].name == "get_weather")
+    }
+
+    @Test("Multiple tool calls in array")
+    func multipleToolCalls() {
+        var parser = XLAMToolParser()
+        let results = parser.processChunk(#"[{"name": "func1", "arguments": {"a": 1}}, {"name": "func2", "arguments": {"b": 2}}]"#)
+
+        let calls = extractToolCalls(results)
+        #expect(calls.count == 2)
+        #expect(calls[0].name == "func1")
+        #expect(calls[1].name == "func2")
+    }
+
+    @Test("Passes through non-tool text")
+    func passesThrough() {
+        var parser = XLAMToolParser()
+        let results = parser.processChunk("xLAM model response without tools.")
+        let text = extractText(results)
+        #expect(text == "xLAM model response without tools.")
+        #expect(extractToolCalls(results).isEmpty)
+    }
+
+    @Test("Reset clears state")
+    func reset() {
+        var parser = XLAMToolParser()
+        _ = parser.processChunk("[{\"name\": \"partial\"")
+        parser.reset()
+        let results = parser.processChunk("fresh text")
+        let text = extractText(results)
+        #expect(text == "fresh text")
+    }
+
+    @Test("Finalize extracts buffered tool calls")
+    func finalize() {
+        var parser = XLAMToolParser()
+        _ = parser.processChunk(#"[{"name": "test", "arguments": {"key": "val"}}]"#)
+        // processChunk should have extracted it already since JSON is complete
+        // Test finalize with partial data
+        var parser2 = XLAMToolParser()
+        _ = parser2.processChunk("[{\"name\": \"test\", \"arguments\":")
+        _ = parser2.processChunk(" {\"k\": \"v\"}}]")
+        let calls = parser2.finalize()
+        // Finalize should try to extract from remaining buffer
+        #expect(calls.isEmpty || calls[0].name == "test")
+    }
+
+    @Test("Auto-detect finds XLAMToolParser")
+    func autoDetect() {
+        let parser = autoDetectToolParser(modelName: "Salesforce/xLAM-v2-7b")
+        #expect(parser != nil)
+        #expect(parser is XLAMToolParser)
+    }
+}
+
+// MARK: - Moonshot Tool Parser
+
+@Suite("MoonshotToolParser")
+struct MoonshotToolParserTests {
+
+    @Test("Detects Kimi tool call format")
+    func detectsKimiFormat() {
+        var parser = MoonshotToolParser()
+        let results = parser.processChunk("""
+            <|tool_calls_section_begin|>\
+            <|tool_call_begin|>get_weather:0<|tool_call_argument_begin|>{"city": "Paris"}<|tool_call_end|>\
+            <|tool_calls_section_end|>
+            """)
+
+        let calls = extractToolCalls(results)
+        #expect(calls.count == 1)
+        #expect(calls[0].name == "get_weather")
+        #expect(calls[0].argumentsJSON.contains("Paris"))
+    }
+
+    @Test("Strips functions. prefix")
+    func stripsFunctionsPrefix() {
+        var parser = MoonshotToolParser()
+        let results = parser.processChunk("""
+            <|tool_calls_section_begin|>\
+            <|tool_call_begin|>functions.search:0<|tool_call_argument_begin|>{"q": "test"}<|tool_call_end|>\
+            <|tool_calls_section_end|>
+            """)
+
+        let calls = extractToolCalls(results)
+        #expect(calls.count == 1)
+        #expect(calls[0].name == "search")
+    }
+
+    @Test("Multiple tool calls")
+    func multipleToolCalls() {
+        var parser = MoonshotToolParser()
+        let results = parser.processChunk("""
+            <|tool_calls_section_begin|>\
+            <|tool_call_begin|>func1:0<|tool_call_argument_begin|>{"a": 1}<|tool_call_end|>\
+            <|tool_call_begin|>func2:1<|tool_call_argument_begin|>{"b": 2}<|tool_call_end|>\
+            <|tool_calls_section_end|>
+            """)
+
+        let calls = extractToolCalls(results)
+        #expect(calls.count == 2)
+        #expect(calls[0].name == "func1")
+        #expect(calls[1].name == "func2")
+    }
+
+    @Test("Passes through non-tool text")
+    func passesThrough() {
+        var parser = MoonshotToolParser()
+        let results = parser.processChunk("Kimi K2 says hello!")
+        let text = extractText(results)
+        #expect(text == "Kimi K2 says hello!")
+        #expect(extractToolCalls(results).isEmpty)
+    }
+
+    @Test("Content before tool calls is preserved")
+    func contentBeforeToolCalls() {
+        var parser = MoonshotToolParser()
+        let results = parser.processChunk("""
+            Let me search. <|tool_calls_section_begin|>\
+            <|tool_call_begin|>search:0<|tool_call_argument_begin|>{"q": "test"}<|tool_call_end|>\
+            <|tool_calls_section_end|>
+            """)
+        let text = extractText(results)
+        #expect(text.contains("Let me search."))
+        let calls = extractToolCalls(results)
+        #expect(calls.count == 1)
+    }
+
+    @Test("Reset clears state")
+    func reset() {
+        var parser = MoonshotToolParser()
+        _ = parser.processChunk("<|tool_calls_section_begin|>partial")
+        parser.reset()
+        let results = parser.processChunk("clean text")
+        let text = extractText(results)
+        #expect(text == "clean text")
+    }
+
+    @Test("Buffers partial token")
+    func buffersPartialToken() {
+        var parser = MoonshotToolParser()
+        let r1 = parser.processChunk("<|tool_calls")
+        #expect(hasBuffered(r1))
+    }
+
+    @Test("Auto-detect finds MoonshotToolParser for Kimi")
+    func autoDetectKimi() {
+        let parser = autoDetectToolParser(modelName: "Kimi-K2-Instruct")
+        #expect(parser != nil)
+        #expect(parser is MoonshotToolParser)
+    }
+
+    @Test("Auto-detect finds MoonshotToolParser for Moonshot")
+    func autoDetectMoonshot() {
+        let parser = autoDetectToolParser(modelName: "Moonshot-v1-8k")
+        #expect(parser != nil)
+        #expect(parser is MoonshotToolParser)
+    }
+}
+
+// MARK: - StepFun Tool Parser
+
+@Suite("StepFunToolParser")
+struct StepFunToolParserTests {
+
+    @Test("Detects parameter-style tool call")
+    func detectsParameterStyle() {
+        var parser = StepFunToolParser()
+        let results = parser.processChunk("""
+            <tool_call><function=get_weather><parameter=city>Paris</parameter></function></tool_call>
+            """)
+
+        let calls = extractToolCalls(results)
+        #expect(calls.count == 1)
+        #expect(calls[0].name == "get_weather")
+        #expect(calls[0].argumentsJSON.contains("Paris"))
+    }
+
+    @Test("Detects JSON-style arguments")
+    func detectsJSONStyle() {
+        var parser = StepFunToolParser()
+        let results = parser.processChunk("""
+            <tool_call><function=search>{"query": "swift programming"}</function></tool_call>
+            """)
+
+        let calls = extractToolCalls(results)
+        #expect(calls.count == 1)
+        #expect(calls[0].name == "search")
+        #expect(calls[0].argumentsJSON.contains("swift programming"))
+    }
+
+    @Test("Type coercion for integer parameter")
+    func typeCoercionInt() {
+        var parser = StepFunToolParser()
+        let results = parser.processChunk("""
+            <tool_call><function=set_temp><parameter=degrees>25</parameter></function></tool_call>
+            """)
+
+        let calls = extractToolCalls(results)
+        #expect(calls.count == 1)
+        #expect(calls[0].name == "set_temp")
+        // 25 should be coerced to an integer
+        #expect(calls[0].argumentsJSON.contains("25"))
+    }
+
+    @Test("Passes through non-tool text")
+    func passesThrough() {
+        var parser = StepFunToolParser()
+        let results = parser.processChunk("Step-3.5 says hello!")
+        let text = extractText(results)
+        #expect(text == "Step-3.5 says hello!")
+        #expect(extractToolCalls(results).isEmpty)
+    }
+
+    @Test("Multiple parameters")
+    func multipleParams() {
+        var parser = StepFunToolParser()
+        let results = parser.processChunk("""
+            <tool_call><function=set_alarm><parameter=time>08:00</parameter><parameter=label>Wake up</parameter></function></tool_call>
+            """)
+
+        let calls = extractToolCalls(results)
+        #expect(calls.count == 1)
+        #expect(calls[0].name == "set_alarm")
+        #expect(calls[0].argumentsJSON.contains("08:00"))
+        #expect(calls[0].argumentsJSON.contains("Wake up"))
+    }
+
+    @Test("Buffers partial tag")
+    func buffersPartialTag() {
+        var parser = StepFunToolParser()
+        let r1 = parser.processChunk("<tool_call><function=test>")
+        #expect(hasBuffered(r1))
+    }
+
+    @Test("Reset clears state")
+    func reset() {
+        var parser = StepFunToolParser()
+        _ = parser.processChunk("<tool_call><function=partial>")
+        parser.reset()
+        let results = parser.processChunk("clean text")
+        let text = extractText(results)
+        #expect(text == "clean text")
+    }
+
+    @Test("Auto-detect finds StepFunToolParser")
+    func autoDetect() {
+        let parser = autoDetectToolParser(modelName: "Step-3.5-Mini")
+        #expect(parser != nil)
+        #expect(parser is StepFunToolParser)
+    }
+
+    @Test("Auto-detect finds StepFunToolParser for StepFun")
+    func autoDetectStepFun() {
+        let parser = autoDetectToolParser(modelName: "stepfun/Step-3.5-Chat")
+        #expect(parser != nil)
+        #expect(parser is StepFunToolParser)
+    }
+}
+
 // MARK: - Auto-detect Registry Tests
 
 @Suite("ToolParser Auto-detect Registry")

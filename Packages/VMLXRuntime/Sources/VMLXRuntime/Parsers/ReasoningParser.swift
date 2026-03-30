@@ -37,5 +37,15 @@ public func autoDetectReasoningParser(modelName: String) -> (any ReasoningParser
         return ThinkTagReasoningParser()
     }
 
+    // GPT-OSS / Harmony protocol (GLM-4.7 Flash, etc.)
+    if name.contains("gptoss") || name.contains("harmony") {
+        return GPTOSSReasoningParser()
+    }
+
+    // Mistral 4 uses [THINK]/[/THINK] tokens
+    if name.contains("mistral") && (name.contains("4") || name.contains("large")) {
+        return MistralReasoningParser()
+    }
+
     return nil
 }
