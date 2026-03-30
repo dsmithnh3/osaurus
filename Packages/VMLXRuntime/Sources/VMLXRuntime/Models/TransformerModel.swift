@@ -421,6 +421,36 @@ public final class TransformerModelForwardPass: @unchecked Sendable {
     public func resetCaches() {
         kvCaches = model.createKVCaches()
     }
+
+    /// Load cached KV state from a `HybridCache` into this model's internal KV caches.
+    /// Only attention layers are loaded; SSM layers are skipped (handled separately).
+    /// Call this after a cache hit to restore previously computed KV state.
+    public func loadCache(_ cache: HybridCache) {
+        for (index, entry) in cache.layers.enumerated() {
+            guard index < kvCaches.count else { break }
+            if case .attention(let layer) = entry {
+                let kvc = KVCache()
+                // Populate directly — update() concatenates, but we want to set initial state.
+                kvc.keys = layer.keys
+                kvc.values = layer.values
+                kvCaches[index] = kvc
+            }
+        }
+    }
+
+    /// Export the current KV cache state as a `HybridCache` for storage in the CacheCoordinator.
+    /// Each layer's KV cache is converted to a `LayerCacheEntry.attention`.
+    /// Returns a pure-attention HybridCache (no SSM layers for standard transformers).
+    public func exportCache() -> HybridCache {
+        let entries = kvCaches.map { kvc -> LayerCacheEntry in
+            .attention(KVCacheLayer(
+                keys: kvc.keys ?? MLXArray(),
+                values: kvc.values ?? MLXArray(),
+                offset: kvc.sequenceLength
+            ))
+        }
+        return HybridCache(layers: entries)
+    }
 }
 
 extension TransformerModelForwardPass: ModelForwardPass {

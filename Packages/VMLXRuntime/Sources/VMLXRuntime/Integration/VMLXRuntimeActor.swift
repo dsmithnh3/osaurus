@@ -360,19 +360,22 @@ public actor VMLXRuntimeActor {
                         isMultimodal: request.isMultimodal
                     )
 
-                    // Apply cache result
+                    // Apply cache result and populate model KV caches from CacheCoordinator
                     switch cacheResult {
                     case .hit(let cache, let remaining, _):
+                        fwdPass.loadCache(cache)
                         inferenceRequest.promptCache = cache
                         inferenceRequest.remainingTokenIds = remaining
                         inferenceRequest.cachedTokens = promptTokenIds.count - remaining.count
 
                     case .partialHit(let attentionCache, let remaining, _):
                         // Hybrid model: have KV but not SSM
+                        fwdPass.loadCache(attentionCache)
                         inferenceRequest.promptCache = attentionCache
                         inferenceRequest.remainingTokenIds = remaining
 
                     case .miss:
+                        fwdPass.resetCaches()
                         inferenceRequest.remainingTokenIds = promptTokenIds
                     }
 
@@ -388,7 +391,9 @@ public actor VMLXRuntimeActor {
                     // ---------------------------------------------------------------
 
                     let uncachedTokens = inferenceRequest.remainingTokenIds ?? promptTokenIds
-                    var cacheArrays: [MLXArray] = []  // Placeholder for protocol conformance
+                    // ModelForwardPass protocol requires [MLXArray] but TransformerModelForwardPass
+                    // manages structured KVCache objects internally and ignores this parameter.
+                    var cacheArrays: [MLXArray] = []
                     var generatedIds: [Int] = []
                     let maxTokens = samplingParams.maxTokens
 
@@ -489,10 +494,12 @@ public actor VMLXRuntimeActor {
                         }
                     }
 
-                    // Phase 4: Store cache after generation
-                    // The KV cache is maintained internally by TransformerModelForwardPass,
-                    // so we store a reference for future prefix cache reuse.
-                    // (Cache coordinator integration happens through the scheduler.)
+                    // Phase 4: Export model KV cache and store in CacheCoordinator
+                    // for future prefix cache reuse across requests.
+                    let allTokens = promptTokenIds + generatedIds
+                    let finalCache = fwdPass.exportCache()
+                    finalCache.materialized()
+                    await self._storeCache(tokens: allTokens, cache: finalCache)
 
                     // Finalize and emit remaining events
                     let events = accumulator.finalize()
@@ -567,6 +574,11 @@ public actor VMLXRuntimeActor {
     public var container: ModelContainer? { modelContainer }
 
     // MARK: - Private
+
+    /// Store cache state in the scheduler's CacheCoordinator.
+    private func _storeCache(tokens: [Int], cache: HybridCache) {
+        scheduler.cache.store(tokens: tokens, cache: cache)
+    }
 
     private func _trackGeneration(requestId: String, task: Task<Void, Never>) {
         activeGenerations[requestId] = task

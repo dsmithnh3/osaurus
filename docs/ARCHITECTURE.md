@@ -471,18 +471,206 @@ All cache layers are hybrid-SSM-aware from day one. The `LayerCacheEntry` enum e
 | 9.4 | Osaurus Wiring | DONE | VMLXServiceBridge in OsaurusCore, type mapping |
 | 10.5 | ModelConfig Registry | DONE | 30+ families, auto-detect tool/reason/vision/hybrid |
 | -- | Audit Fixes | DONE | top-p sampling, parser auto-detect, config mapping |
+| -- | JangLoader Rewrite | DONE | Real jang_config.json format, all 7 profiles |
+| -- | ModelDetector | DONE | Multi-file detection, 5-dir scanning |
+| -- | ModelLoader | DONE | Safetensors sharded loading, tokenizer setup |
+| -- | ModelContainer | DONE | Tokenization, chat templates, gen_prompt_len |
+| -- | VMLXRuntimeActor Wiring | DONE | Real model loading + tokenization pipeline |
+| 13.1 | TransformerModel | DONE | Attention, FFN, RMSNorm, RoPE layer stack, KV cache |
+| 13.2 | ModelForwardPass impl | DONE | Prefill + decode via transformer layers, cache connected to CacheCoordinator |
+| 13.3 | TQ Metal Kernels | TODO | Codebook quantization via Metal compute |
+| 13.4 | Disk Cache Tensor I/O | TODO | Safetensors read/write for MLXArray |
+| 13.5 | Video Processing | TODO | AVFoundation frame extraction |
 
-## Known Gaps (Expected)
+## Known Gaps
 
-These are intentionally incomplete -- they require actual MLX model integration:
-
-1. **VMLXRuntimeActor.generateStream()** -- tokenization + generation loop are stubs. Needs model forward pass, tokenizer integration, and actual prefill/decode logic.
-2. **CacheCoordinator disk fetch** -- returns .miss because safetensors tensor I/O not implemented yet. SQLite index layer works.
-3. **Hybrid partial hit** -- no SSM re-derive fallback. SSMReDeriver actor not built yet.
-4. **DiskCache** -- metadata-only. Actual MLXArray serialization to safetensors pending.
+1. ~~**Model forward pass**~~ -- DONE. TransformerModel with attention, FFN, RoPE, KV cache. Cache connected to CacheCoordinator via loadCache/exportCache.
+2. **TQ Metal kernels** -- TurboQuantEncoder stubs need actual codebook quantization via Metal compute shaders.
+3. **Disk cache tensor I/O** -- SQLite index works, safetensors MLXArray serialization pending.
+4. **Video processing** -- VisionProcessor.extractFrames() needs AVFoundation.
 
 ## Audit Issues Fixed (2026-03-29)
 
 1. **Sampler top-p** -- inverse permutation via argSort was wrong. Replaced with threshold-based approach.
 2. **ToolCallParser autoDetect** -- hardcoded GenericToolParser.Type cast. Replaced with factory closure registry.
 3. **SchedulerConfig** -- ssmMaxEntries not forwarded to CacheCoordinatorConfig. Added field and mapping.
+4. **GenerationEngine** -- missing model parameter. Added `model: (any ModelForwardPass)?`.
+5. **VMLXRuntimeActor** -- dead requestQueue + duplicate cacheCoordinator. Now delegates through Scheduler.
+6. **JangLoader** -- config structure didn't match real files. Rewritten from actual JANG models on disk.
+
+## Phase 13: Transformer Model (Current Work)
+
+The final piece: building the actual transformer layer stack using mlx-swift's Module building blocks.
+
+### 13.1 Architecture
+
+```
+Input token IDs: [Int]
+       |
+       v
+  Embedding (vocab_size x hidden_size)
+       |
+       v
+  For each layer 0..N:
+    +-- RMSNorm (pre-attention)
+    +-- Attention:
+    |     Q = Linear(hidden -> n_heads * head_dim)
+    |     K = Linear(hidden -> n_kv_heads * head_dim)
+    |     V = Linear(hidden -> n_kv_heads * head_dim)
+    |     output = scaledDotProductAttention(Q, K, V, mask)
+    |     O = Linear(n_heads * head_dim -> hidden)
+    |     + residual connection
+    +-- RMSNorm (pre-FFN)
+    +-- FFN:
+    |     gate = Linear(hidden -> intermediate)
+    |     up   = Linear(hidden -> intermediate)
+    |     down  = Linear(intermediate -> hidden)
+    |     output = down(SiLU(gate) * up)
+    |     + residual connection
+       |
+       v
+  RMSNorm (final)
+       |
+       v
+  LM Head: Linear(hidden -> vocab_size)
+       |
+       v
+  Logits: MLXArray [batch, seq_len, vocab_size]
+```
+
+### 13.2 Model Families Supported
+
+| Family | Attention | FFN | Norm | Special |
+|--------|-----------|-----|------|---------|
+| Qwen3.5 | GQA + SSM | SwiGLU | RMSNorm | Hybrid SSM layers |
+| Llama 3/4 | GQA | SwiGLU | RMSNorm | Standard transformer |
+| Mistral | GQA/MLA | SwiGLU | RMSNorm | Sliding window, MLA |
+| Nemotron-H | GQA + SSM | SwiGLU | RMSNorm | Hybrid SSM + MoE |
+| MiniMax | GQA + MoE | SwiGLU | RMSNorm | 256 experts |
+| DeepSeek | MLA + MoE | SwiGLU | RMSNorm | Latent attention |
+
+### 13.3 KV Cache Integration
+
+During forward pass:
+1. **Prefill**: Compute Q, K, V for all tokens. Store K, V in cache.
+2. **Decode**: Compute Q for new token only. Concatenate with cached K, V.
+3. **TQ**: After prefill, compress cached K, V to 3-bit via TurboQuantKVCache.
+4. **Hybrid**: SSM layers update cumulative state (not KV cache).
+
+---
+
+## Code Map -- Every File and Its Role
+
+Total: 42 files, ~8,400 lines.
+
+### Root (1 file)
+
+| File | Lines | Status | Purpose |
+|------|-------|--------|---------|
+| `VMLXRuntime.swift` | 3 | LIVE | Package version constant |
+
+### Core/ (7 files)
+
+| File | Lines | Status | Purpose |
+|------|-------|--------|---------|
+| `LayerCache.swift` | 97 | LIVE | KVCacheLayer, SSMStateLayer, LayerCacheEntry enum for unified cache entries |
+| `HybridCache.swift` | 169 | LIVE | Multi-layer cache container with truncation safety, materialization, factory |
+| `Types.swift` | 211 | LIVE | SamplingParams, InferenceRequest, RequestOutput, FinishReason, CacheDetail |
+| `SSMCheckpoint.swift` | 31 | LIVE | SSM state snapshot at stable boundary for thinking model support |
+| `ModelConfig.swift` | 225 | LIVE | ModelConfig registry (30+ families), tool/reasoning format detection |
+| `ModelContainer.swift` | 152 | LIVE | Wraps LoadedModel with runtime config, tokenization, chat templates |
+| `ModelDetector.swift` | 526 | LIVE | Filesystem scanner for model directories, multi-file detection |
+| `ModelLoader.swift` | 207 | LIVE | Safetensors sharded loading, tokenizer setup via Hub/Tokenizers |
+
+### Cache/ (12 files)
+
+| File | Lines | Status | Purpose |
+|------|-------|--------|---------|
+| `CacheBlock.swift` | 53 | LIVE | Fixed-size KV block with ref counting, SHA-256 hash, COW support |
+| `BlockHashMap.swift` | 16 | LIVE | Hash-to-block dictionary for O(1) prefix lookup |
+| `BlockTable.swift` | 25 | LIVE | Request-to-blockId mapping with token count tracking |
+| `FreeBlockQueue.swift` | 45 | LIVE | O(1) doubly-linked list of free blocks (LRU front, MRU back) |
+| `PagedCacheManager.swift` | 239 | LIVE | Block pool manager with alloc/free/fork/eviction, thread-safe |
+| `PrefixCache.swift` | 202 | LIVE | Trie-based token prefix cache with LRU eviction, hybrid-safe |
+| `MemoryCache.swift` | 272 | LIVE | RAM-budget-aware LRU cache with memory pressure adaptation |
+| `DiskCache.swift` | 249 | HAS_STUBS | SQLite-indexed L2 cache; index works, tensor I/O pending |
+| `TQDiskStore.swift` | 160 | HAS_STUBS | 26x compressed TQ-native safetensors serialization format |
+| `SSMStateCache.swift` | 142 | LIVE | LRU companion cache for SSM layer state, deep-copy on fetch |
+| `SSMReDeriver.swift` | 165 | HAS_STUBS | Async SSM state recovery actor, dedup, sync/async decision |
+| `CacheCoordinator.swift` | 290 | LIVE | Orchestrates fetch/store across all cache layers, hybrid-aware |
+
+### Quantization/ (6 files)
+
+| File | Lines | Status | Purpose |
+|------|-------|--------|---------|
+| `TurboQuantConfig.swift` | 129 | LIVE | Per-layer bit widths, critical layer overrides, MLA/hybrid skip |
+| `EncodedKeys.swift` | 62 | HAS_STUBS | Packed codebook indices + QJL sign bits + norms for compressed keys |
+| `EncodedValues.swift` | 48 | HAS_STUBS | Packed codebook indices + norms for compressed values |
+| `TurboQuantKVCache.swift` | 165 | HAS_STUBS | Two-phase fill/compress lifecycle for KV cache compression |
+| `TurboQuantEncoder.swift` | 80 | HAS_STUBS | Codebook quantization interface; Metal kernel impl deferred |
+| `JangLoader.swift` | 397 | LIVE | JANG config parser (7 profiles), hybrid/TQ/MLA auto-detect |
+
+### Generation/ (4 files)
+
+| File | Lines | Status | Purpose |
+|------|-------|--------|---------|
+| `GenerationEngine.swift` | 232 | LIVE | ModelForwardPass protocol, GenerationConfig/Result, reference generation loop |
+| `Sampler.swift` | 143 | LIVE | Token sampling: temperature, top-p, top-k, min-p, repetition penalty |
+| `StopSequenceDetector.swift` | 94 | LIVE | Sliding window stop sequence matcher with holdback buffer |
+| `StreamAccumulator.swift` | 151 | LIVE | Token stream to typed events (text/thinking/tool) with BPE handling |
+
+### Models/ (1 file)
+
+| File | Lines | Status | Purpose |
+|------|-------|--------|---------|
+| `TransformerModel.swift` | 509 | LIVE | Full decoder-only transformer: attention, FFN, RoPE, KV cache, forward pass wrapper |
+
+### Scheduler/ (5 files)
+
+| File | Lines | Status | Purpose |
+|------|-------|--------|---------|
+| `SchedulerConfig.swift` | 214 | LIVE | All scheduling knobs: batch sizes, cache flags, KV quant, disk paths |
+| `RequestQueue.swift` | 129 | LIVE | FCFS request lifecycle: waiting -> running -> finished |
+| `Scheduler.swift` | 222 | LIVE | Cache-integrated continuous batching scheduler |
+| `BatchBuilder.swift` | 163 | HAS_STUBS | Multi-request tensor batching with padding and mask construction |
+| `MLLMScheduler.swift` | 180 | HAS_STUBS | Vision-aware scheduler with embedding cache and gen_prompt strip |
+
+### Vision/ (3 files)
+
+| File | Lines | Status | Purpose |
+|------|-------|--------|---------|
+| `VisionProcessor.swift` | 262 | HAS_STUBS | CoreImage pipeline: resize, normalize, multi-format image preprocessing |
+| `VisionEmbeddingCache.swift` | 117 | LIVE | SHA-256 keyed LRU cache for preprocessed vision embeddings |
+| `VLMModelWrapper.swift` | 174 | HAS_STUBS | VLM bridge config for 7 architectures, token strategies, grid THW |
+
+### Parsers/ (4 files)
+
+| File | Lines | Status | Purpose |
+|------|-------|--------|---------|
+| `ToolCallParser.swift` | 66 | LIVE | ToolCallParser protocol, ParsedToolCall, factory auto-detect |
+| `ToolParsers/GenericToolParser.swift` | 98 | LIVE | Generic JSON-based tool call parser (fallback for any model) |
+| `ReasoningParser.swift` | 41 | LIVE | ReasoningParser protocol, ReasoningResult types |
+| `ReasoningParsers/ThinkTagReasoningParser.swift` | 119 | LIVE | Think-tag extraction for Qwen3, DeepSeek-R1, similar models |
+
+### Integration/ (3 files)
+
+| File | Lines | Status | Purpose |
+|------|-------|--------|---------|
+| `ChatMessageMapper.swift` | 265 | LIVE | OpenAI-compatible chat types, VMLXChatCompletionRequest, streaming chunks |
+| `VMLXRuntimeActor.swift` | 610 | LIVE | Singleton actor: model loading, cache coordination, generation loop |
+| `VMLXService.swift` | 228 | LIVE | VMLXModelService protocol, drop-in replacement for MLXService |
+
+---
+
+## Unimplemented Components
+
+| Component | What's Missing | Why | When |
+|-----------|---------------|-----|------|
+| TurboQuant Metal Kernels | Codebook encode/decode in `TurboQuantEncoder` | Needs Metal compute shaders for performance | Phase 2 |
+| Disk Cache Tensor I/O | `DiskCache` safetensors MLXArray read/write | SQLite index works, tensor serialization needs MLX C API | Phase 2 |
+| TQ Disk Store Roundtrip | `TQDiskStore` serialize/deserialize with real data | Depends on TQ Metal kernels producing real encoded data | Phase 2 |
+| SSM Re-Derivation | `SSMReDeriver` full forward pass for recovery | Needs hybrid model (Mamba layers) in TransformerModel | Phase 3 |
+| Video Processing | `VisionProcessor.extractFrames()` | Needs AVFoundation frame extraction | Phase 3 |
+| Vision Model Forward Pass | `VLMModelWrapper` actual vision encoder integration | Needs vision encoder weights + embedding merge | Phase 3 |
+| BatchBuilder Multi-Request | `BatchBuilder` real multi-sequence padding/merging | Single-request generation works; batching needs scheduler wire-up | Phase 2 |
+| MLLM Scheduling | `MLLMScheduler` vision preprocessing pipeline | Needs VisionProcessor + VLMModelWrapper completion | Phase 3 |

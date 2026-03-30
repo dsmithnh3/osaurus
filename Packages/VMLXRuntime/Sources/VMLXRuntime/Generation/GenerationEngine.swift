@@ -3,6 +3,10 @@ import MLX
 
 /// Protocol for the actual model forward pass.
 /// Implemented by the model loader when a real model is available.
+///
+/// The `cache: inout [MLXArray]` parameter exists for models that manage cache
+/// as raw arrays. `TransformerModelForwardPass` manages structured `KVCache`
+/// objects internally and ignores this parameter — pass an empty array.
 public protocol ModelForwardPass: Sendable {
     /// Run prefill: process multiple tokens, populate cache.
     /// Returns logits for the last token.
@@ -104,6 +108,12 @@ public struct GenerationEngine: Sendable {
 
     /// Run generation with a model, cache, and configuration.
     /// Returns a stream of events (tokens, thinking, tool calls).
+    ///
+    /// - Note: This static method is not currently called. The actual generation loop
+    ///   lives in `VMLXRuntimeActor.generateStream()`, which manages the model's
+    ///   internal KV cache directly via `TransformerModelForwardPass`. This method
+    ///   is retained as a reference implementation for the intended cache + TQ + SSM
+    ///   orchestration flow that will be unified in a future refactor.
     ///
     /// - Parameter model: The model to use for forward passes. When `nil`, the engine
     ///   runs in stub mode (no actual generation) — useful for testing cache/scheduling logic.
