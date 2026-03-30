@@ -175,6 +175,10 @@ public actor VMLXRuntimeActor {
         if activeModelName == nil {
             activeModelName = container.name
         }
+
+        // Note: first 1-2 decode tokens after prefill are slower (~2s then ~0.4s)
+        // due to MLX Metal pipeline backlog from prefill. This is normal MLX behavior
+        // and happens in mlx-lm-server too. Subsequent tokens run at full speed (~25 tok/s).
     }
 
     /// Load a model with an optional alias for multi-model routing.
