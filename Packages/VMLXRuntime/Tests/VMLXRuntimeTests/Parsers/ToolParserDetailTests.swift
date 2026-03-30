@@ -474,6 +474,266 @@ struct DeepSeekToolParserTests {
     }
 }
 
+// MARK: - Hermes Tool Parser
+
+@Suite("HermesToolParser")
+struct HermesToolParserTests {
+
+    @Test("Detects XML-style tool call")
+    func detectsXMLToolCall() {
+        var parser = HermesToolParser()
+        let results = parser.processChunk("""
+            <tool_call>{"name": "get_weather", "arguments": {"city": "Paris"}}</tool_call>
+            """)
+
+        let calls = extractToolCalls(results)
+        #expect(calls.count == 1)
+        #expect(calls[0].name == "get_weather")
+        #expect(calls[0].argumentsJSON.contains("Paris"))
+    }
+
+    @Test("Strips reasoning tags")
+    func stripsReasoningTags() {
+        var parser = HermesToolParser()
+        let results = parser.processChunk("""
+            <tool_call_reasoning>I should check the weather</tool_call_reasoning>\
+            <tool_call>{"name": "get_weather", "arguments": {"city": "NYC"}}</tool_call>
+            """)
+
+        let calls = extractToolCalls(results)
+        #expect(calls.count == 1)
+        #expect(calls[0].name == "get_weather")
+    }
+
+    @Test("Falls back to raw JSON without tags")
+    func fallsBackToRawJSON() {
+        var parser = HermesToolParser()
+        let results = parser.processChunk("""
+            {"name": "search", "arguments": {"query": "swift"}}
+            """)
+
+        let calls = extractToolCalls(results)
+        #expect(calls.count == 1)
+        #expect(calls[0].name == "search")
+    }
+
+    @Test("Passes through non-tool text")
+    func passesThrough() {
+        var parser = HermesToolParser()
+        let results = parser.processChunk("I can help you with that.")
+        let text = extractText(results)
+        #expect(text == "I can help you with that.")
+        #expect(extractToolCalls(results).isEmpty)
+    }
+
+    @Test("Buffers partial tag")
+    func buffersPartialTag() {
+        var parser = HermesToolParser()
+        let r1 = parser.processChunk("<tool_call>{\"name\": \"test\"")
+        #expect(hasBuffered(r1))
+
+        let r2 = parser.processChunk(", \"arguments\": {}}</tool_call>")
+        let calls = extractToolCalls(r2)
+        #expect(calls.count == 1)
+        #expect(calls[0].name == "test")
+    }
+
+    @Test("Reset clears state")
+    func reset() {
+        var parser = HermesToolParser()
+        _ = parser.processChunk("<tool_call>{\"name\": \"partial\"")
+        parser.reset()
+        let results = parser.processChunk("clean text")
+        let text = extractText(results)
+        #expect(text == "clean text")
+    }
+
+    @Test("Auto-detect finds HermesToolParser")
+    func autoDetect() {
+        let parser = autoDetectToolParser(modelName: "Hermes-3-Llama-3.1-8B")
+        #expect(parser != nil)
+        #expect(parser is HermesToolParser)
+    }
+
+    @Test("Auto-detect finds HermesToolParser for Nous models")
+    func autoDetectNous() {
+        let parser = autoDetectToolParser(modelName: "NousResearch/Hermes-2-Pro")
+        #expect(parser != nil)
+        #expect(parser is HermesToolParser)
+    }
+}
+
+// MARK: - Nemotron Tool Parser
+
+@Suite("NemotronToolParser")
+struct NemotronToolParserTests {
+
+    @Test("Detects parameter-style tool call")
+    func detectsParameterStyle() {
+        var parser = NemotronToolParser()
+        let results = parser.processChunk("""
+            <tool_call><function=get_weather><parameter=city>Paris</parameter></function></tool_call>
+            """)
+
+        let calls = extractToolCalls(results)
+        #expect(calls.count == 1)
+        #expect(calls[0].name == "get_weather")
+        #expect(calls[0].argumentsJSON.contains("Paris"))
+    }
+
+    @Test("Detects JSON-style arguments")
+    func detectsJSONStyle() {
+        var parser = NemotronToolParser()
+        let results = parser.processChunk("""
+            <tool_call><function=search>{"query": "swift programming"}</function></tool_call>
+            """)
+
+        let calls = extractToolCalls(results)
+        #expect(calls.count == 1)
+        #expect(calls[0].name == "search")
+        #expect(calls[0].argumentsJSON.contains("swift programming"))
+    }
+
+    @Test("Multiple parameters")
+    func multipleParams() {
+        var parser = NemotronToolParser()
+        let results = parser.processChunk("""
+            <tool_call><function=set_alarm><parameter=time>08:00</parameter><parameter=label>Wake up</parameter></function></tool_call>
+            """)
+
+        let calls = extractToolCalls(results)
+        #expect(calls.count == 1)
+        #expect(calls[0].name == "set_alarm")
+        #expect(calls[0].argumentsJSON.contains("08:00"))
+        #expect(calls[0].argumentsJSON.contains("Wake up"))
+    }
+
+    @Test("Passes through non-tool text")
+    func passesThrough() {
+        var parser = NemotronToolParser()
+        let results = parser.processChunk("NVIDIA Nemotron says hello.")
+        let text = extractText(results)
+        #expect(text == "NVIDIA Nemotron says hello.")
+        #expect(extractToolCalls(results).isEmpty)
+    }
+
+    @Test("Buffers partial tag")
+    func buffersPartialTag() {
+        var parser = NemotronToolParser()
+        let r1 = parser.processChunk("<tool_call><function=test>")
+        #expect(hasBuffered(r1))
+    }
+
+    @Test("Reset clears state")
+    func reset() {
+        var parser = NemotronToolParser()
+        _ = parser.processChunk("<tool_call><function=partial>")
+        parser.reset()
+        let results = parser.processChunk("clean text")
+        let text = extractText(results)
+        #expect(text == "clean text")
+    }
+
+    @Test("Auto-detect finds NemotronToolParser")
+    func autoDetect() {
+        let parser = autoDetectToolParser(modelName: "nvidia/Nemotron-3-Nano-30B-A3B")
+        #expect(parser != nil)
+        #expect(parser is NemotronToolParser)
+    }
+}
+
+// MARK: - Functionary Tool Parser
+
+@Suite("FunctionaryToolParser")
+struct FunctionaryToolParserTests {
+
+    @Test("Detects function tag format")
+    func detectsFunctionTag() {
+        var parser = FunctionaryToolParser()
+        let results = parser.processChunk("""
+            <function=get_weather>{"city": "Paris"}</function>
+            """)
+
+        let calls = extractToolCalls(results)
+        #expect(calls.count == 1)
+        #expect(calls[0].name == "get_weather")
+        #expect(calls[0].argumentsJSON.contains("Paris"))
+    }
+
+    @Test("Detects recipient format (Functionary v3)")
+    func detectsRecipientFormat() {
+        var parser = FunctionaryToolParser()
+        let results = parser.processChunk("""
+            <|from|>assistant
+            <|recipient|>get_weather
+            <|content|>{"city": "Paris"}
+            """)
+
+        let calls = extractToolCalls(results)
+        #expect(calls.count == 1)
+        #expect(calls[0].name == "get_weather")
+        #expect(calls[0].argumentsJSON.contains("Paris"))
+    }
+
+    @Test("Skips non-function recipients")
+    func skipsUserRecipient() {
+        var parser = FunctionaryToolParser()
+        let results = parser.processChunk("""
+            <|from|>assistant
+            <|recipient|>all
+            <|content|>Hello!
+            """)
+
+        let calls = extractToolCalls(results)
+        #expect(calls.isEmpty)
+    }
+
+    @Test("Detects JSON array format")
+    func detectsJSONArray() {
+        var parser = FunctionaryToolParser()
+        let input = #"[{"name": "func1", "arguments": {"a": 1}}, {"name": "func2", "arguments": {"b": 2}}]"#
+        let results = parser.processChunk(input)
+
+        let calls = extractToolCalls(results)
+        #expect(calls.count == 2)
+        #expect(calls[0].name == "func1")
+        #expect(calls[1].name == "func2")
+    }
+
+    @Test("Passes through non-tool text")
+    func passesThrough() {
+        var parser = FunctionaryToolParser()
+        let results = parser.processChunk("Functionary model says hello.")
+        let text = extractText(results)
+        #expect(text == "Functionary model says hello.")
+        #expect(extractToolCalls(results).isEmpty)
+    }
+
+    @Test("Reset clears state")
+    func reset() {
+        var parser = FunctionaryToolParser()
+        _ = parser.processChunk("<function=partial>{\"incomplete")
+        parser.reset()
+        let results = parser.processChunk("fresh text")
+        let text = extractText(results)
+        #expect(text == "fresh text")
+    }
+
+    @Test("Auto-detect finds FunctionaryToolParser")
+    func autoDetect() {
+        let parser = autoDetectToolParser(modelName: "meetkai/functionary-medium-v3.2")
+        #expect(parser != nil)
+        #expect(parser is FunctionaryToolParser)
+    }
+
+    @Test("Auto-detect finds FunctionaryToolParser for meetkai models")
+    func autoDetectMeetkai() {
+        let parser = autoDetectToolParser(modelName: "meetkai/functionary-small-v3.1")
+        #expect(parser != nil)
+        #expect(parser is FunctionaryToolParser)
+    }
+}
+
 // MARK: - Auto-detect Registry Tests
 
 @Suite("ToolParser Auto-detect Registry")

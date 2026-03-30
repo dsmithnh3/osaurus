@@ -2,12 +2,14 @@ import Foundation
 import os
 import CryptoKit
 import SQLite3
+import MLX
 
 /// L2 SSD cache with SQLite index and file-based storage.
 /// Pre-serializes on calling thread (Metal safety), writes in background.
 ///
-/// The index layer (SQLite tracking) is fully implemented. Actual MLXArray
-/// tensor I/O via safetensors will be added when TQ support lands.
+/// Tensor I/O uses safetensors via mlx-swift's `save(arrays:metadata:url:)` and
+/// `loadArraysAndMetadata(url:)`. Pre-serialization happens on the calling thread
+/// to avoid Metal cross-thread issues; the file write is dispatched to a background Task.
 public final class DiskCache: @unchecked Sendable {
 
     public let cacheDir: URL
@@ -133,6 +135,156 @@ public final class DiskCache: @unchecked Sendable {
     /// Total size of all cached files (from index metadata).
     public var totalSizeBytes: Int {
         lock.withLock { _totalSizeBytes() }
+    }
+
+    // MARK: - Tensor I/O (Safetensors)
+
+    /// Serialize a HybridCache to a safetensors file on disk.
+    ///
+    /// **Metal safety**: The caller MUST invoke this on the thread that owns the
+    /// MLXArrays (typically the inference thread). We pre-evaluate all tensors here
+    /// so the background file write only touches CPU data.
+    ///
+    /// Key convention:
+    /// - `layer_{i}_keys`, `layer_{i}_values` for attention layers
+    /// - `layer_{i}_state_{j}` for SSM layers
+    ///
+    /// Metadata:
+    /// - `__num_layers__` — total layer count
+    /// - `__layer_{i}_type__` — "attention" or "ssm"
+    /// - `__layer_{i}_offset__` — token offset (attention) or "0" (ssm)
+    /// - `__layer_{i}_state_count__` — number of state tensors (ssm only)
+    public func storeCache(tokens: [Int], cache: HybridCache) {
+        let hash = Self.hashTokens(tokens)
+        let fileURL = cacheDir.appendingPathComponent("\(hash).safetensors")
+
+        // Pre-serialize: evaluate all arrays on the calling thread (Metal safety)
+        var arrays: [String: MLXArray] = [:]
+        var metadata: [String: String] = [:]
+        metadata["__num_layers__"] = String(cache.layerCount)
+
+        for (i, layer) in cache.layers.enumerated() {
+            switch layer {
+            case .attention(let kv):
+                metadata["__layer_\(i)_type__"] = "attention"
+                metadata["__layer_\(i)_offset__"] = String(kv.offset)
+                // Force evaluation before background write
+                MLX.eval(kv.keys, kv.values)
+                arrays["layer_\(i)_keys"] = kv.keys
+                arrays["layer_\(i)_values"] = kv.values
+
+            case .ssm(let ssm):
+                metadata["__layer_\(i)_type__"] = "ssm"
+                metadata["__layer_\(i)_offset__"] = "0"
+                metadata["__layer_\(i)_state_count__"] = String(ssm.state.count)
+                for (j, s) in ssm.state.enumerated() {
+                    MLX.eval(s)
+                    arrays["layer_\(i)_state_\(j)"] = s
+                }
+            }
+        }
+
+        // Compute file size estimate from evaluated arrays
+        let estimatedSize = arrays.values.reduce(0) { $0 + $1.nbytes }
+
+        // Record in SQLite index immediately (metadata-only, fast)
+        _ = store(tokens: tokens, numTokens: tokens.count, fileSize: estimatedSize)
+
+        // Write safetensors file in background (no Metal calls here)
+        Task.detached { [arrays, metadata, fileURL] in
+            do {
+                try MLX.save(arrays: arrays, metadata: metadata, url: fileURL)
+            } catch {
+                // File write failed; the SQLite entry remains but the file is missing.
+                // On next fetch, the missing-file check will treat it as a miss.
+            }
+        }
+    }
+
+    /// Load a HybridCache from a safetensors file on disk.
+    ///
+    /// Returns `nil` if the file is missing, corrupt, or the metadata is invalid.
+    /// On success, updates the SQLite access timestamp (LRU tracking).
+    public func fetchCache(tokens: [Int]) -> HybridCache? {
+        let hash = Self.hashTokens(tokens)
+        let fileURL = cacheDir.appendingPathComponent("\(hash).safetensors")
+
+        // Quick check: does the SQLite index know about this?
+        guard lock.withLock({ _lookupEntry(hash: hash) }) != nil else {
+            lock.withLock { _misses += 1 }
+            return nil
+        }
+
+        // Check the file actually exists
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            // Index entry without file — background write may have failed
+            lock.withLock { _misses += 1 }
+            return nil
+        }
+
+        // Load tensors and metadata
+        let loaded: ([String: MLXArray], [String: String])
+        do {
+            loaded = try loadArraysAndMetadata(url: fileURL)
+        } catch {
+            lock.withLock { _misses += 1 }
+            return nil
+        }
+
+        let (arrays, metadata) = loaded
+
+        guard let numLayersStr = metadata["__num_layers__"],
+              let numLayers = Int(numLayersStr), numLayers > 0 else {
+            lock.withLock { _misses += 1 }
+            return nil
+        }
+
+        // Reconstruct layers
+        var layers: [LayerCacheEntry] = []
+        layers.reserveCapacity(numLayers)
+
+        for i in 0..<numLayers {
+            guard let layerType = metadata["__layer_\(i)_type__"] else {
+                lock.withLock { _misses += 1 }
+                return nil
+            }
+
+            switch layerType {
+            case "attention":
+                guard let keys = arrays["layer_\(i)_keys"],
+                      let values = arrays["layer_\(i)_values"] else {
+                    lock.withLock { _misses += 1 }
+                    return nil
+                }
+                let offset = Int(metadata["__layer_\(i)_offset__"] ?? "0") ?? 0
+                layers.append(.attention(KVCacheLayer(keys: keys, values: values, offset: offset)))
+
+            case "ssm":
+                let stateCount = Int(metadata["__layer_\(i)_state_count__"] ?? "0") ?? 0
+                var stateArrays: [MLXArray] = []
+                stateArrays.reserveCapacity(stateCount)
+                for j in 0..<stateCount {
+                    guard let s = arrays["layer_\(i)_state_\(j)"] else {
+                        lock.withLock { _misses += 1 }
+                        return nil
+                    }
+                    stateArrays.append(s)
+                }
+                layers.append(.ssm(SSMStateLayer(state: stateArrays)))
+
+            default:
+                lock.withLock { _misses += 1 }
+                return nil
+            }
+        }
+
+        // Update access time in SQLite
+        lock.withLock {
+            _updateAccess(hash: hash)
+            _hits += 1
+        }
+
+        return HybridCache(layers: layers)
     }
 
     // MARK: - Token Hashing

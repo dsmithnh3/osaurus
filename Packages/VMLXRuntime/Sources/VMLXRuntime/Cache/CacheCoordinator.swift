@@ -157,13 +157,16 @@ public final class CacheCoordinator: @unchecked Sendable {
             }
         }
 
-        // Layer 3: Disk cache (L2 SSD) — metadata lookup only for now
+        // Layer 3: Disk cache (L2 SSD) — load tensors from safetensors
         if let diskCache = diskCache {
-            let result = diskCache.fetch(tokens: tokens)
-            if result != nil {
-                // TODO: Load actual tensor data from safetensors file
-                // For now, record the hit but can't return cache data
-                return .miss  // Will be .hit once tensor I/O is implemented
+            if let cache = diskCache.fetchCache(tokens: tokens) {
+                if isHybrid {
+                    return _resolveHybridFetch(
+                        cache: cache, remaining: [],
+                        tokens: tokens, tokenHash: hash, detail: .disk
+                    )
+                }
+                return .hit(cache: cache, remainingTokens: [], detail: .disk)
             }
         }
 
@@ -187,13 +190,9 @@ public final class CacheCoordinator: @unchecked Sendable {
             prefixCache.store(tokens: tokens, cache: cache)
         }
 
-        // Disk cache (L2 — metadata only for now)
+        // Disk cache (L2 — serialize tensors to safetensors)
         if let diskCache = diskCache {
-            _ = diskCache.store(
-                tokens: tokens,
-                numTokens: tokens.count,
-                fileSize: cache.estimatedBytes
-            )
+            diskCache.storeCache(tokens: tokens, cache: cache)
         }
 
         // SSM companion (for hybrid models)
