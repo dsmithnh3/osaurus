@@ -54,6 +54,7 @@ public func autoDetectToolParser(modelName: String) -> (any ToolCallParser)? {
         (["llama"], { LlamaToolParser() }),
         (["mistral", "mixtral", "codestral", "pixtral"], { MistralToolParser() }),
         (["deepseek"], { DeepSeekToolParser() }),
+        (["granite"], { GraniteToolParser() }),
         (["glm"], { GLMToolParser() }),
         (["minimax"], { MiniMaxToolParser() }),
         (["xlam"], { XLAMToolParser() }),
