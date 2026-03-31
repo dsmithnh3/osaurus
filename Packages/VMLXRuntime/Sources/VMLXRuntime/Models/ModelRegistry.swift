@@ -61,14 +61,11 @@ public struct VMLXModelRegistry {
     /// These are handled by mlx-swift-lm (MLXService) which has correct model classes.
     /// VMLXRuntime will add native support for these in future phases.
     public static let mlxServiceOnlyTypes: Set<String> = [
-        "mistral_small",    // Mistral Small 4: FP8 + MLA attention
     ]
 
     /// Model types that use FP8 quantization or other unsupported weight formats.
     /// These cannot be loaded by VMLXRuntime and get a clear error message.
     private static let unsupportedTypes: Set<String> = [
-        "mistral3",         // Mistral Small 4 — FP8 quantization + fused gate_up_proj
-        "mistral4",         // Mistral 4 text — FP8
         "nemotron_h",       // Nemotron-H — Mamba2 SSM (different from GatedDeltaNet, needs dedicated model class)
     ]
 
@@ -94,8 +91,6 @@ public struct VMLXModelRegistry {
         if unsupportedTypes.contains(modelType) {
             let reason: String
             switch modelType {
-            case "mistral3", "mistral4":
-                reason = "MLA attention (kv_a_proj/kv_b_proj) + MoE architecture requires a dedicated model implementation"
             case "nemotron_h":
                 reason = "Mamba2 SSM architecture requires a dedicated model implementation (different from GatedDeltaNet)"
             default:
@@ -103,7 +98,7 @@ public struct VMLXModelRegistry {
             }
             throw ModelLoaderError.unsupportedArchitecture(
                 "\(modelType): \(reason). "
-                + "Supported: Qwen3.5 (hybrid SSM), standard transformers (Llama/Qwen2/Qwen3/Gemma/etc.), MoE (MiniMax)."
+                + "Supported: Qwen3.5 (hybrid SSM), standard transformers (Llama/Qwen2/Qwen3/Gemma/etc.), MoE (MiniMax), Mistral4 (MLA+MoE)."
             )
         }
 
@@ -125,6 +120,12 @@ public struct VMLXModelRegistry {
         case "gpt_oss":
             let config = try JSONDecoder().decode(GPTOSSConfiguration.self, from: configData)
             model = GPTOSSTransformerModel(config)
+
+        // Mistral Small 4: MLA attention + MoE with FP8 weights
+        // Top-level model_type is "mistral3", text config model_type is "mistral4"
+        case "mistral3", "mistral4":
+            let config = try JSONDecoder().decode(Mistral4Configuration.self, from: configData)
+            model = Mistral4TransformerModel(config.textConfig)
 
         default:
             // Standard transformer models (Llama, Qwen2, Qwen3, Mistral, Gemma, etc.)
