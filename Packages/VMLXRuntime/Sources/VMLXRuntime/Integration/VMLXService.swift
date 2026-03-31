@@ -69,8 +69,8 @@ public actor VMLXService: VMLXToolCapableService {
         if lower.isEmpty || lower == "local" || lower == "default" || lower == "vmlx" {
             return true
         }
-        // Match all model families supported by VMLXRuntime's StandardTransformerModel
-        // and Qwen35Model. Unsupported types (gpt_oss, etc.) will fail at load time
+        // Match all model families supported by VMLXRuntime's StandardTransformerModel,
+        // Qwen35Model, and GPTOSSModel. Unsupported types will fail at load time
         // and the ChatEngine fallback router retries with MLXService.
         let families = [
             "jang", "mlx",      // Quantization frameworks
@@ -81,6 +81,7 @@ public actor VMLXService: VMLXToolCapableService {
             "granite",          // IBM
             "deepseek",         // DeepSeek
             "minimax",          // MiniMax
+            "gpt-oss", "gpt_oss",  // GPT-OSS (OpenAI)
             "glm",              // Zhipu AI
             "nemotron",         // NVIDIA
             "internlm", "internvl",  // Shanghai AI Lab

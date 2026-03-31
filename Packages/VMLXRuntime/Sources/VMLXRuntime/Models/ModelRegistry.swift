@@ -27,6 +27,7 @@ public protocol VMLXNativeModel: AnyObject {
 // Make our model types conform
 extension Qwen35TopLevelModel: VMLXNativeModel, VMLXSanitizable {}
 extension Qwen35TextModel: VMLXNativeModel, VMLXSanitizable {}
+// GPTOSSTransformerModel conforms via extension in GPTOSSModel.swift
 
 /// Registry of supported model architectures.
 /// Maps `model_type` from config.json to model construction + weight loading.
@@ -60,7 +61,6 @@ public struct VMLXModelRegistry {
     /// These are handled by mlx-swift-lm (MLXService) which has correct model classes.
     /// VMLXRuntime will add native support for these in future phases.
     public static let mlxServiceOnlyTypes: Set<String> = [
-        "gpt_oss",          // GPT-OSS: softmax MoE routing, sliding window, custom SwiGLU clipping
         "mistral_small",    // Mistral Small 4: FP8 + MLA attention
     ]
 
@@ -120,6 +120,11 @@ public struct VMLXModelRegistry {
         case "qwen3_5_moe", "qwen3_5_moe_text":
             let config = try JSONDecoder().decode(Qwen35Configuration.self, from: configData)
             model = Qwen35TopLevelModel(config)
+
+        // GPT-OSS: MoE with softmax routing, sliding window, custom SwiGLU, attention sinks
+        case "gpt_oss":
+            let config = try JSONDecoder().decode(GPTOSSConfiguration.self, from: configData)
+            model = GPTOSSTransformerModel(config)
 
         default:
             // Standard transformer models (Llama, Qwen2, Qwen3, Mistral, Gemma, etc.)
