@@ -165,17 +165,16 @@ enum StreamingMiddlewareResolver {
         let thinkingDisabled = modelOptions["disableThinking"]?.boolValue == true
         let id = modelId.lowercased()
 
-        // PrependThinkTagMiddleware: for models that output </think> but NOT <think>.
-        // These models have thinkInTemplate=true — the chat template injects <think>
-        // in the generation prompt, so the model's output starts INSIDE thinking.
-        // The MLXService path doesn't inject <think>, so the middleware does it.
-        // (VMLX path handles this via VMLXRuntimeActor's thinkInTemplate flag.)
-        let needsPrependThink =
-            !thinkingDisabled
-            && ((id.contains("glm") && id.contains("flash"))
-                || id.contains("gpt-oss") || id.contains("gpt_oss") || id.contains("gptoss"))
+        // PrependThinkTagMiddleware: activated for ALL models when thinking is enabled.
+        // Buffers first 20 deltas. If </think> is detected, prepends <think> so the
+        // StreamingDeltaProcessor enters thinking mode. If no </think> found, passes
+        // through unmodified. This handles ANY model with thinkInTemplate behavior
+        // without needing per-model name matching.
+        if !thinkingDisabled {
+            return PrependThinkTagMiddleware()
+        }
 
-        return needsPrependThink ? PrependThinkTagMiddleware() : nil
+        return nil
     }
 
     /// Matches parameter-count tokens like "4b" while ignoring
