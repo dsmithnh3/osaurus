@@ -504,7 +504,6 @@ public class NemotronHModel: Module {
     public func callAsFunction(_ inputs: MLXArray, cache: [VMLXKVCache]? = nil) -> MLXArray {
         var h = embeddings(inputs)
 
-        // Build attention mask from first attention layer's cache
         let firstAttnIdx = config.hybridOverridePattern.firstIndex(of: "*")
             .map { config.hybridOverridePattern.distance(from: config.hybridOverridePattern.startIndex, to: $0) }
         let attnCache = firstAttnIdx.flatMap { cache?[$0] as? VMLXKVCacheSimple }
@@ -512,6 +511,10 @@ public class NemotronHModel: Module {
 
         for (i, layer) in layers.enumerated() {
             h = layer(h, mask: mask, cache: cache?[i])
+            // Materialize per-layer to catch errors early and free intermediates
+            if i < 3 || i % 10 == 0 {
+                MLX.eval(h)
+            }
         }
 
         h = normF(h)
