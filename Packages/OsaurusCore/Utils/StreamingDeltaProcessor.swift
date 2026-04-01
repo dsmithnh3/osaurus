@@ -228,9 +228,10 @@ final class StreamingDeltaProcessor {
     // MARK: - Thinking Tag Parsing
 
     /// Partial tag prefixes for `<think>` and `</think>`, longest first.
-    /// Only match 4+ char prefixes to avoid false positives on "<" or "<t" in content.
+    /// Close partials include shorter prefixes (</th, </) because </think> can be
+    /// split across tokens. Open partials stay at 4+ chars to avoid false positives.
     private static let openPartials = ["<think", "<thin", "<thi"]
-    private static let closePartials = ["</think", "</thin", "</thi"]
+    private static let closePartials = ["</think", "</thin", "</thi", "</th", "</t", "</"]
 
     private func parseAndRoute(_ text: inout String) {
         // GPT-OSS <|channel|> tags are handled by ChannelTagMiddleware

@@ -764,6 +764,7 @@ public actor VMLXRuntimeActor {
                     let applyRepPenalty = repPenalty != 1.0
                     var generatedTokenIds: [Int] = []
                     var lastDecodedText: String = ""  // For GPT-OSS channel protocol tracking
+                    var recentTextBuffer: String = ""  // Rolling buffer for multi-token tag detection
 
                     // Decode parameters for the hot loop
                     let isGreedy = samplingParams.isGreedy
@@ -861,11 +862,28 @@ public actor VMLXRuntimeActor {
                             lastDecodedText = text
                         }
 
-                        // Track thinking state transitions
+                        // Rolling buffer for multi-token tag detection.
+                        // Tags like </think> may be split across tokens: </ + think + >
+                        recentTextBuffer += text
+                        if recentTextBuffer.count > 30 {
+                            recentTextBuffer = String(recentTextBuffer.suffix(30))
+                        }
+
+                        // Track thinking state transitions using rolling buffer
                         if insideThinking {
                             thinkingTokenCount += 1
-                            if text.contains("</think>") {
+                            if recentTextBuffer.contains("</think>") {
                                 insideThinking = false
+                                recentTextBuffer = ""
+                                // Replace the text with just </think> so the UI parser can split
+                                // the thinking content from the response content properly
+                                if let thinkRange = text.range(of: "</think>") {
+                                    // This token contains </think> directly
+                                    _ = thinkRange  // handled below by emitText
+                                } else {
+                                    // </think> was across tokens — inject it now
+                                    text = "</think>"
+                                }
                                 if !enableThinking {
                                     y = nextY ?? y
                                     continue
@@ -881,9 +899,10 @@ public actor VMLXRuntimeActor {
                                 y = nextY ?? y
                                 continue
                             }
-                        } else if !insideThinking && text.contains("<think>") {
+                        } else if !insideThinking && recentTextBuffer.contains("<think>") {
                             insideThinking = true
                             thinkingTokenCount = 0
+                            recentTextBuffer = ""
                             if !enableThinking {
                                 y = nextY ?? y
                                 continue
