@@ -53,6 +53,8 @@ struct ConfigurationView: View {
     @State private var tempEnableDiskCache: Bool = false
     @State private var tempCacheMemoryPercent: String = ""
     @State private var tempShowInferenceStats: Bool = false
+    @State private var tempToolParser: String = "auto"
+    @State private var tempReasoningParser: String = "auto"
 
     // Toast settings state
     @State private var tempToastPosition: ToastPosition = .topRight
@@ -523,6 +525,56 @@ struct ConfigurationView: View {
                                         }
                                     }
 
+                                    // Parser Configuration
+                                    SettingsSubsection(label: "Parsers") {
+                                        VStack(alignment: .leading, spacing: 12) {
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text("Tool Call Parser")
+                                                    .font(.system(size: 11, weight: .medium))
+                                                    .foregroundColor(theme.secondaryText)
+                                                Picker("", selection: $tempToolParser) {
+                                                    Text("Auto (from model_type)").tag("auto")
+                                                    Text("None").tag("none")
+                                                    Text("Qwen").tag("qwen")
+                                                    Text("Llama").tag("llama")
+                                                    Text("Mistral").tag("mistral")
+                                                    Text("DeepSeek").tag("deepseek")
+                                                    Text("Hermes").tag("hermes")
+                                                    Text("Functionary").tag("functionary")
+                                                    Text("Granite").tag("granite")
+                                                    Text("GLM").tag("glm")
+                                                    Text("MiniMax").tag("minimax")
+                                                    Text("Nemotron").tag("nemotron")
+                                                    Text("xLAM").tag("xlam")
+                                                    Text("Generic JSON").tag("generic")
+                                                }
+                                                .labelsHidden()
+                                                Text("How the model formats tool/function calls. Auto uses config.json model_type.")
+                                                    .font(.system(size: 11))
+                                                    .foregroundColor(theme.tertiaryText)
+                                            }
+
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text("Reasoning Parser")
+                                                    .font(.system(size: 11, weight: .medium))
+                                                    .foregroundColor(theme.secondaryText)
+                                                Picker("", selection: $tempReasoningParser) {
+                                                    Text("Auto (from model_type)").tag("auto")
+                                                    Text("None").tag("none")
+                                                    Text("<think> tags (Qwen3, DeepSeek R1)").tag("think_tags")
+                                                    Text("[THINK] tags (Mistral)").tag("mistral")
+                                                    Text("GPT-OSS / Harmony").tag("gptoss")
+                                                }
+                                                .labelsHidden()
+                                                Text("How the model outputs reasoning/thinking content. Auto uses config.json model_type.")
+                                                    .font(.system(size: 11))
+                                                    .foregroundColor(theme.tertiaryText)
+                                            }
+                                        }
+                                    }
+
+                                    SettingsDivider()
+
                                     // Inference Stats Display
                                     SettingsSubsection(label: "Diagnostics") {
                                         VStack(alignment: .leading, spacing: 12) {
@@ -752,6 +804,8 @@ struct ConfigurationView: View {
         tempEnableTurboQuant = configuration.enableTurboQuant ?? false
         tempEnableDiskCache = configuration.enableDiskCache ?? false
         tempShowInferenceStats = configuration.showInferenceStats ?? false
+        tempToolParser = configuration.toolParserOverride ?? "auto"
+        tempReasoningParser = configuration.reasoningParserOverride ?? "auto"
         tempCacheMemoryPercent = {
             let pct = configuration.cacheMemoryPercent ?? 0.30
             return pct == 0.30 ? "" : String(format: "%.0f", pct * 100)
@@ -864,6 +918,8 @@ struct ConfigurationView: View {
         configuration.enableTurboQuant = tempEnableTurboQuant
         configuration.enableDiskCache = tempEnableDiskCache
         configuration.showInferenceStats = tempShowInferenceStats
+        configuration.toolParserOverride = tempToolParser == "auto" ? nil : tempToolParser
+        configuration.reasoningParserOverride = tempReasoningParser == "auto" ? nil : tempReasoningParser
         let trimmedMemPct = tempCacheMemoryPercent.trimmingCharacters(in: .whitespacesAndNewlines)
         if let pctVal = Float(trimmedMemPct) {
             configuration.cacheMemoryPercent = pctVal / 100.0

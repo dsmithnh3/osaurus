@@ -77,6 +77,16 @@ public struct ServerConfiguration: Codable, Equatable, Sendable {
     /// Show inference stats (TTFT, tok/s) below assistant messages in chat
     public var showInferenceStats: Bool?
 
+    /// Override tool call parser (nil = auto-detect from model_type)
+    /// Values: "auto", "qwen", "llama", "mistral", "deepseek", "hermes",
+    /// "functionary", "granite", "glm", "minimax", "nemotron", "xlam",
+    /// "moonshot", "stepfun", "generic", "none"
+    public var toolParserOverride: String?
+
+    /// Override reasoning parser (nil = auto-detect from model_type)
+    /// Values: "auto", "think_tags", "mistral", "gptoss", "none"
+    public var reasoningParserOverride: String?
+
     private enum CodingKeys: String, CodingKey {
         case port
         case exposeToNetwork
@@ -97,6 +107,8 @@ public struct ServerConfiguration: Codable, Equatable, Sendable {
         case enableDiskCache
         case cacheMemoryPercent
         case showInferenceStats
+        case toolParserOverride
+        case reasoningParserOverride
     }
 
     public init(from decoder: Decoder) throws {
@@ -133,6 +145,8 @@ public struct ServerConfiguration: Codable, Equatable, Sendable {
         self.enableDiskCache = try container.decodeIfPresent(Bool.self, forKey: .enableDiskCache)
         self.cacheMemoryPercent = try container.decodeIfPresent(Float.self, forKey: .cacheMemoryPercent)
         self.showInferenceStats = try container.decodeIfPresent(Bool.self, forKey: .showInferenceStats)
+        self.toolParserOverride = try container.decodeIfPresent(String.self, forKey: .toolParserOverride)
+        self.reasoningParserOverride = try container.decodeIfPresent(String.self, forKey: .reasoningParserOverride)
     }
 
     public init(
@@ -154,7 +168,9 @@ public struct ServerConfiguration: Codable, Equatable, Sendable {
         enableTurboQuant: Bool? = nil,
         enableDiskCache: Bool? = nil,
         cacheMemoryPercent: Float? = nil,
-        showInferenceStats: Bool? = nil
+        showInferenceStats: Bool? = nil,
+        toolParserOverride: String? = nil,
+        reasoningParserOverride: String? = nil
     ) {
         self.port = port
         self.exposeToNetwork = exposeToNetwork
@@ -175,6 +191,8 @@ public struct ServerConfiguration: Codable, Equatable, Sendable {
         self.enableDiskCache = enableDiskCache
         self.cacheMemoryPercent = cacheMemoryPercent
         self.showInferenceStats = showInferenceStats
+        self.toolParserOverride = toolParserOverride
+        self.reasoningParserOverride = reasoningParserOverride
     }
 
     /// Default configuration
