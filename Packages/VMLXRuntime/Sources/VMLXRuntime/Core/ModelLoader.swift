@@ -150,8 +150,27 @@ public struct ModelLoader: Sendable {
             throw ModelLoaderError.tokenizerNotFound(path.path)
         }
 
-        // Use swift-transformers' AutoTokenizer to load from local directory
-        return try await AutoTokenizer.from(modelFolder: path)
+        // Try AutoTokenizer.from(modelFolder:) first.
+        // Falls back to loading tokenizer.json + tokenizer_config.json directly
+        // for models where LanguageModelConfigurationFromHub fails (e.g., Mistral
+        // with "TokenizersBackend" class or missing expected Hub metadata files).
+        do {
+            return try await AutoTokenizer.from(modelFolder: path)
+        } catch {
+            let tokData = try Data(contentsOf: tokenizerURL)
+            let tokConfigURL = path.appendingPathComponent("tokenizer_config.json")
+            let tokConfigData = FileManager.default.fileExists(atPath: tokConfigURL.path)
+                ? try Data(contentsOf: tokConfigURL) : "{}".data(using: .utf8)!
+            guard let configDict = try JSONSerialization.jsonObject(with: tokConfigData) as? [NSString: Any],
+                  let dataDict = try JSONSerialization.jsonObject(with: tokData) as? [NSString: Any]
+            else {
+                throw ModelLoaderError.tokenizerNotFound("Failed to parse tokenizer JSON at \(path.path)")
+            }
+            return try AutoTokenizer.from(
+                tokenizerConfig: Config(configDict),
+                tokenizerData: Config(dataDict)
+            )
+        }
     }
 }
 

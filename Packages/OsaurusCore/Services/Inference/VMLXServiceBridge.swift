@@ -144,7 +144,12 @@ actor VMLXServiceBridge: ToolCapableService {
                              userInfo: [NSLocalizedDescriptionKey: "Model requires MLXService (unsupported architecture for VMLXRuntime)"])
             }
 
-            try await service.loadModel(from: resolved)
+            do {
+                try await service.loadModel(from: resolved)
+            } catch {
+                _vmlxLog("[Bridge] loadModel FAILED for \(modelName) at \(resolved.path): \(error)")
+                throw error
+            }
         } else {
             try await service.loadModel(name: modelName)
         }
