@@ -45,7 +45,19 @@ final class PrependThinkTagMiddleware: StreamingMiddleware {
             // Check if </think> appeared — confirms model is reasoning
             if buffer.contains("</think>") {
                 state = .confirmed
-                let result = "<think>" + buffer
+                // Only prepend <think> if buffer doesn't already have it
+                // (VMLX path injects <think> via thinkInTemplate; don't double it)
+                let alreadyHasThink = buffer.contains("<think>")
+                let result = alreadyHasThink ? buffer : "<think>" + buffer
+                buffer = ""
+                return result
+            }
+
+            // If buffer already has <think>, pass through immediately
+            // (VMLX already injected it, no need to wait for </think>)
+            if buffer.contains("<think>") {
+                state = .confirmed
+                let result = buffer
                 buffer = ""
                 return result
             }
