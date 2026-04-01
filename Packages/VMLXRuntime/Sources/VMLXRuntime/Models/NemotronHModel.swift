@@ -337,17 +337,23 @@ final class NemotronHMoE: Module {
     init(_ config: NemotronHConfiguration) {
         self.numExpertsPerTok = config.numExpertsPerTok
         self.routedScalingFactor = config.routedScalingFactor
-        // Latent proj exists when moeIntermediateSize != intermediateSize
-        self.hasLatentProj = config.moeIntermediateSize != config.intermediateSize
+        // Latent projections exist on 120B Super (512 experts) but not 30B Cascade (128 experts).
+        // Detected by expert count — 512+ experts use latent bottleneck.
+        self.hasLatentProj = config.nRoutedExperts >= 256
 
-        _gate.wrappedValue = Linear(config.hiddenSize, config.nRoutedExperts, bias: false)
+        let latentDim = config.hiddenSize / 4
+        let gateDim = hasLatentProj ? latentDim : config.hiddenSize
+        let expertInputDim = hasLatentProj ? latentDim : config.hiddenSize
+        let expertOutputDim = hasLatentProj ? latentDim : config.hiddenSize
+
+        _gate.wrappedValue = Linear(gateDim, config.nRoutedExperts, bias: false)
         _eCorrBias.wrappedValue = MLXArray.zeros([config.nRoutedExperts])
-        _switchMlp.wrappedValue = NemotronHSwitchMLP(config)
+        _switchMlp.wrappedValue = NemotronHSwitchMLP(config, inputDim: expertInputDim, outputDim: expertOutputDim)
         _sharedExperts.wrappedValue = NemotronHSharedExpert(config)
 
         if hasLatentProj {
-            _fc1LatentProj.wrappedValue = Linear(config.hiddenSize, config.moeIntermediateSize, bias: false)
-            _fc2LatentProj.wrappedValue = Linear(config.moeIntermediateSize, config.hiddenSize, bias: false)
+            _fc1LatentProj.wrappedValue = Linear(config.hiddenSize, latentDim, bias: false)
+            _fc2LatentProj.wrappedValue = Linear(latentDim, config.hiddenSize, bias: false)
         }
 
         super.init()
@@ -397,15 +403,17 @@ final class NemotronHSwitchMLP: Module {
     @ModuleInfo(key: "fc1") var fc1: VMLXSwitchLinear   // up_proj
     @ModuleInfo(key: "fc2") var fc2: VMLXSwitchLinear   // down_proj
 
-    init(_ config: NemotronHConfiguration) {
+    init(_ config: NemotronHConfiguration, inputDim: Int? = nil, outputDim: Int? = nil) {
+        let inDim = inputDim ?? config.hiddenSize
+        let outDim = outputDim ?? config.hiddenSize
         _fc1.wrappedValue = VMLXSwitchLinear(
-            inputDims: config.hiddenSize,
+            inputDims: inDim,
             outputDims: config.moeIntermediateSize,
             numExperts: config.nRoutedExperts, bias: false
         )
         _fc2.wrappedValue = VMLXSwitchLinear(
             inputDims: config.moeIntermediateSize,
-            outputDims: config.hiddenSize,
+            outputDims: outDim,
             numExperts: config.nRoutedExperts, bias: false
         )
         super.init()
