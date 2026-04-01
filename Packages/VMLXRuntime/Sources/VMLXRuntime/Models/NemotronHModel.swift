@@ -324,12 +324,16 @@ final class NemotronHMoE: Module {
     let numExpertsPerTok: Int
     let routedScalingFactor: Float
 
-    // Gate: Linear auto-quantized by vmlxLoadWeights. Weight path = mixer.gate.weight/scales/biases.
-    // QuantizedLinear.callAsFunction dequantizes on the fly — routing stays precise.
+    // Gate is a Linear — its weight path is "gate.weight" which matches safetensors key.
+    // vmlxLoadWeights auto-quantizes it to QuantizedLinear when .scales exist.
     @ModuleInfo(key: "gate") var gate: Linear
-    @ModuleInfo(key: "gate.e_score_correction_bias") var eCorrBias: MLXArray
     @ModuleInfo(key: "switch_mlp") var switchMlp: NemotronHSwitchMLP
     @ModuleInfo(key: "shared_experts") var sharedExperts: NemotronHSharedExpert
+
+    // e_score_correction_bias lives at gate.e_score_correction_bias in weights.
+    // sanitize() remaps it to e_score_correction_bias (on the MoE module) since
+    // gate is a Linear and can't hold child parameters.
+    @ModuleInfo(key: "e_score_correction_bias") var eCorrBias: MLXArray
 
     init(_ config: NemotronHConfiguration) {
         self.numExpertsPerTok = config.numExpertsPerTok
@@ -546,13 +550,18 @@ extension NemotronHModel: VMLXSanitizable {
         for (key, value) in weights {
             var newKey = key
             // Rename switch_mlp.up_proj → switch_mlp.fc1, down_proj → fc2
-            // (matches Python VMLX reference loader.py _nemotron_renames)
             if newKey.contains("switch_mlp.up_proj") {
                 newKey = newKey.replacingOccurrences(of: "switch_mlp.up_proj", with: "switch_mlp.fc1")
             } else if newKey.contains("switch_mlp.down_proj") {
                 newKey = newKey.replacingOccurrences(of: "switch_mlp.down_proj", with: "switch_mlp.fc2")
             }
-            // Skip vision weights if present
+            // Move gate.e_score_correction_bias → e_score_correction_bias
+            // (gate is a Linear, can't hold child params)
+            if newKey.contains(".mixer.gate.e_score_correction_bias") {
+                newKey = newKey.replacingOccurrences(of: ".mixer.gate.e_score_correction_bias",
+                                                     with: ".mixer.e_score_correction_bias")
+            }
+            // Skip vision weights
             if newKey.hasPrefix("vision_") || newKey.contains(".vision.") { continue }
             newWeights[newKey] = value
         }
