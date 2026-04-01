@@ -93,8 +93,46 @@ enum ModelProfileRegistry {
     }
 
     static func options(for modelId: String) -> [ModelOptionDefinition] {
-        profile(for: modelId)?.options ?? []
+        var opts = profile(for: modelId)?.options ?? []
+        // Append parser options for all local models so users can override
+        // the auto-detected tool/reasoning parser per model.
+        let isLocal = !modelId.contains("/") || modelId.lowercased().contains("jang")
+            || modelId.lowercased().contains("mlx")
+            || !modelId.hasPrefix("openai/") && !modelId.hasPrefix("anthropic/")
+        if isLocal {
+            opts.append(contentsOf: parserOptions)
+        }
+        return opts
     }
+
+    /// Parser override options available for all local models.
+    private static let parserOptions: [ModelOptionDefinition] = [
+        ModelOptionDefinition(
+            id: "toolParser",
+            label: "Tool Parser",
+            icon: "wrench",
+            kind: .segmented([
+                ModelOptionSegment(id: "auto", label: "Auto"),
+                ModelOptionSegment(id: "none", label: "None"),
+                ModelOptionSegment(id: "qwen", label: "Qwen"),
+                ModelOptionSegment(id: "llama", label: "Llama"),
+                ModelOptionSegment(id: "mistral", label: "Mistral"),
+                ModelOptionSegment(id: "hermes", label: "Hermes"),
+                ModelOptionSegment(id: "generic", label: "Generic"),
+            ])
+        ),
+        ModelOptionDefinition(
+            id: "reasoningParser",
+            label: "Reasoning",
+            icon: "brain",
+            kind: .segmented([
+                ModelOptionSegment(id: "auto", label: "Auto"),
+                ModelOptionSegment(id: "none", label: "None"),
+                ModelOptionSegment(id: "think", label: "<think>"),
+                ModelOptionSegment(id: "mistral", label: "[THINK]"),
+            ])
+        ),
+    ]
 }
 
 // MARK: - OpenAI Reasoning Profile
