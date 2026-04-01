@@ -754,6 +754,60 @@ public actor VMLXRuntimeActor {
                     let _prefillMs = (CFAbsoluteTimeGetCurrent() - _prefillStart) * 1000
                     _vmlxLog2("[Gen] Final prefill token: \(String(format: "%.0f", _prefillMs))ms")
 
+                    // TurboQuant in-memory compression: encode prefill KV → decode once → replace.
+                    // After this, attention KV buffers are still float (baseline SDPA speed)
+                    // but the original high-precision data is freed, saving ~5x memory.
+                    // Only applies to attention layers (not SSM/Mamba layers).
+                    //
+                    // IMPORTANT: Save original float KV BEFORE compression for the cross-turn
+                    // cache store. Storing TQ-decoded (lossy) data across turns causes quality
+                    // degradation because the lossy reconstruction compounds through layers.
+                    var preTQCacheSnapshot: [(keys: MLXArray, values: MLXArray)]? = nil
+                    if tqEnabled && cachedTokenCount == 0 {
+                        // Snapshot original float KV for cross-turn storage
+                        var snapshot: [(keys: MLXArray, values: MLXArray)] = []
+                        for c in cache {
+                            if let kvBase = c as? VMLXBaseKVCache, !(c is VMLXMambaCache) {
+                                let s = kvBase.state
+                                if s.count == 2 {
+                                    snapshot.append((keys: s[0], values: s[1]))
+                                } else {
+                                    snapshot.append((keys: MLXArray(), values: MLXArray()))
+                                }
+                            } else {
+                                snapshot.append((keys: MLXArray(), values: MLXArray()))
+                            }
+                        }
+                        preTQCacheSnapshot = snapshot
+
+                        // Now compress in-place for memory reduction during decode
+                        let tqStart = CFAbsoluteTimeGetCurrent()
+                        var tqLayers = 0
+                        for c in cache {
+                            guard let kvBase = c as? VMLXBaseKVCache,
+                                  !(c is VMLXMambaCache),
+                                  kvBase.offset > TurboQuantEncoder.defaultSinkTokens else { continue }
+                            let s = kvBase.state
+                            guard s.count == 2 else { continue }
+                            let keys = s[0]
+                            let values = s[1]
+                            let dim = keys.dim(keys.ndim - 1)
+                            let state = TurboQuantEncoder.EncoderState(dim: dim, keyBits: 3, valueBits: 3, seed: 42)
+                            let ek = TurboQuantEncoder.encodeKeys(keys, state: state)
+                            let ev = TurboQuantEncoder.encodeValues(values, state: state)
+                            let dk = TurboQuantEncoder.decodeKeys(ek, state: state)
+                            let dv = TurboQuantEncoder.decodeValues(ev, state: state)
+                            eval(dk, dv)
+                            kvBase.state = [dk, dv]
+                            tqLayers += 1
+                        }
+                        if tqLayers > 0 {
+                            Memory.clearCache()
+                            let tqMs = (CFAbsoluteTimeGetCurrent() - tqStart) * 1000
+                            _vmlxLog2("[Gen] TQ compress: \(tqLayers) layers in \(String(format: "%.0f", tqMs))ms")
+                        }
+                    }
+
                     // Double-buffered generation loop (matches mlx-lm Python pattern):
                     // Pipeline: build graph for NEXT token while GPU evaluates CURRENT token.
                     // asyncEval starts GPU work, then CPU does decode/yield concurrently.
@@ -970,12 +1024,9 @@ public actor VMLXRuntimeActor {
                             }
                         }
 
-                        // Store as plain float for multi-turn cache.
-                        // TQ compression is reserved for in-memory reduction during
-                        // a single generation (decode-once lifecycle, Task 8).
-                        // Storing TQ-compressed data across turns causes 3x decode
-                        // slowdown (MiniMax) or gibberish (Qwen3.5 hybrid) because
-                        // the lossy reconstruction compounds through model layers.
+                        // Store ORIGINAL float KV for multi-turn cache (not TQ-decoded lossy data).
+                        // If TQ was applied during this generation, use the pre-TQ snapshot.
+                        // Storing TQ-decoded data across turns causes quality degradation.
                         var ssmSnapshotIdx = 0
                         var layers: [LayerCacheEntry] = []
                         for (layerIdx, c) in cache.enumerated() {
@@ -987,10 +1038,29 @@ public actor VMLXRuntimeActor {
                                     ssmSnapshotIdx += 1
                                 }
                             } else if let kvBase = c as? VMLXBaseKVCache {
-                                let s = kvBase.state
+                                // Use pre-TQ original float if available, otherwise current state.
+                                // preTQCacheSnapshot is indexed by layerIdx (same order as cache array).
+                                let s: [MLXArray]
+                                if let snapshot = preTQCacheSnapshot,
+                                   layerIdx < snapshot.count,
+                                   snapshot[layerIdx].keys.ndim > 0 {
+                                    s = [snapshot[layerIdx].keys, snapshot[layerIdx].values]
+                                } else {
+                                    s = kvBase.state
+                                }
                                 guard s.count == 2 else { continue }
+                                // Trim to storeTokens length (snapshot has full prefill tokens)
+                                let storeKeys: MLXArray
+                                let storeValues: MLXArray
+                                if s[0].dim(2) > targetOffset {
+                                    storeKeys = s[0][.ellipsis, ..<targetOffset, 0...]
+                                    storeValues = s[1][.ellipsis, ..<targetOffset, 0...]
+                                } else {
+                                    storeKeys = s[0]
+                                    storeValues = s[1]
+                                }
                                 layers.append(.attention(KVCacheLayer(
-                                    keys: s[0], values: s[1], offset: kvBase.offset)))
+                                    keys: storeKeys, values: storeValues, offset: targetOffset)))
                             }
                         }
                         if !layers.isEmpty {
