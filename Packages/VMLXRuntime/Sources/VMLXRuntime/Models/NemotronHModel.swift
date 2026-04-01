@@ -205,12 +205,19 @@ final class NemotronHMamba2Mixer: Module {
             cache[1] = nextState
         }
 
-        // Gate with z and normalize
+        // Gate: swiglu(gate, x) = silu(gate) * x
         let zReshaped = z.reshaped(batchSize, S, mambaNumHeads, mambaHeadDim)
-        let gated = yAll * silu(zReshaped)
+        let gated = silu(zReshaped) * yAll
 
-        let normed = norm(gated.reshaped(batchSize, S, -1))
-        return outProj(normed)
+        // MambaRMSNormGated: group-wise RMSNorm then multiply by learned weight.
+        // Unflatten last dim into groups of head_dim, normalize each group independently.
+        let flat = gated.reshaped(batchSize, S, -1)
+        let grouped = flat.reshaped(batchSize * S, -1, mambaHeadDim)
+        let normed = MLXFast.rmsNorm(grouped, weight: MLXArray.mlxNone, eps: config.normEps)
+        let normFlat = normed.reshaped(batchSize, S, -1)
+        let normWeighted = norm.weight * normFlat
+
+        return outProj(normWeighted)
     }
 }
 
@@ -235,11 +242,13 @@ final class NemotronHAttention: Module {
         self.headDim = config.headDim
         self.scale = pow(Float(headDim), -0.5)
 
-        _qProj.wrappedValue = Linear(config.hiddenSize, numHeads * headDim, bias: false)
-        _kProj.wrappedValue = Linear(config.hiddenSize, numKVHeads * headDim, bias: false)
-        _vProj.wrappedValue = Linear(config.hiddenSize, numKVHeads * headDim, bias: false)
-        _oProj.wrappedValue = Linear(numHeads * headDim, config.hiddenSize, bias: false)
+        let hasBias = config.hybridOverridePattern.isEmpty  // attention_bias from config
+        _qProj.wrappedValue = Linear(config.hiddenSize, numHeads * headDim, bias: hasBias)
+        _kProj.wrappedValue = Linear(config.hiddenSize, numKVHeads * headDim, bias: hasBias)
+        _vProj.wrappedValue = Linear(config.hiddenSize, numKVHeads * headDim, bias: hasBias)
+        _oProj.wrappedValue = Linear(numHeads * headDim, config.hiddenSize, bias: hasBias)
 
+        // NemotronH attention has NO RoPE — positions come from SSM blocks
         self.rope = RoPE(
             dimensions: headDim,
             traditional: false,
@@ -259,9 +268,8 @@ final class NemotronHAttention: Module {
         var k = kProj(x).reshaped(B, S, numKVHeads, headDim).transposed(0, 2, 1, 3)
         var v = vProj(x).reshaped(B, S, numKVHeads, headDim).transposed(0, 2, 1, 3)
 
-        let offset = cache?.offset ?? 0
-        q = rope(q, offset: offset)
-        k = rope(k, offset: offset)
+        // NO RoPE for NemotronH attention (positions from SSM)
+        // RoPE kept as field for potential future use but not applied
 
         if let cache = cache as? VMLXKVCacheSimple {
             (k, v) = cache.update(keys: k, values: v)
@@ -328,16 +336,16 @@ final class NemotronHMoE: Module {
             latentInput = flat
         }
 
-        // Gate routing in float32 for precision
-        var scores = gate(latentInput.asType(.float32))
+        // Gate routing: sigmoid activation (NemotronH uses sigmoid, NOT softmax)
+        var scores = sigmoid(gate(latentInput.asType(.float32)))
         scores = scores + eCorrBias
 
         let k = numExpertsPerTok
         let allIndices = argPartition(scores, kth: scores.dim(-1) - k, axis: -1)
         let topIndices = allIndices[0..., (-k)...]
-        // Gather top-k scores using the selected indices
         let topScores = takeAlong(scores, topIndices, axis: -1)
-        let weights = softmax(topScores, axis: -1, precise: true)
+        // Normalize top-k scores
+        let weights = topScores / topScores.sum(axis: -1, keepDims: true)
 
         // Routed experts
         let expertOut = switchMlp(latentInput, indices: topIndices)

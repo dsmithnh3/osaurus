@@ -153,8 +153,13 @@ public struct VMLXModelRegistry {
         // promotion that kills performance (e.g., MiniMax M2.5 with 512 experts: 23→75+ tok/s).
         // Matches Python mlx-lm behavior.
         let numExperts = _getNumExperts(configData: configData)
-        if numExperts >= 256 {
-            NSLog("[ModelRegistry] Large MoE (\(numExperts) experts): converting to bfloat16")
+        let kvLoraRank = _getKVLoraRank(configData: configData)
+        if numExperts >= 256 || kvLoraRank > 0 {
+            // bfloat16 required for:
+            // - Large MoE (≥256 experts): prevents float16 overflow in gate routing
+            // - MLA models (kv_lora_rank > 0, e.g. Mistral4): prevents mixed-dtype float32
+            //   promotion from gate weights, achieving 3.5x speedup (23→82 tok/s)
+            NSLog("[ModelRegistry] Converting to bfloat16 (experts=\(numExperts), kvLoraRank=\(kvLoraRank))")
             _convertToBFloat16(model: model)
         }
 
@@ -175,6 +180,16 @@ public struct VMLXModelRegistry {
     // MARK: - Private Helpers
 
     /// Extract num_local_experts from config data.
+    private static func _getKVLoraRank(configData: Data) -> Int {
+        guard let json = try? JSONSerialization.jsonObject(with: configData) as? [String: Any] else {
+            return 0
+        }
+        if let n = json["kv_lora_rank"] as? Int { return n }
+        if let tc = json["text_config"] as? [String: Any],
+           let n = tc["kv_lora_rank"] as? Int { return n }
+        return 0
+    }
+
     private static func _getNumExperts(configData: Data) -> Int {
         guard let json = try? JSONSerialization.jsonObject(with: configData) as? [String: Any] else {
             return 0
