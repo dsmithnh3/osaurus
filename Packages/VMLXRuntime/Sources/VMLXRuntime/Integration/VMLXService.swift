@@ -64,11 +64,20 @@ public actor VMLXService: VMLXToolCapableService {
     }
 
     public nonisolated func handles(requestedModel: String?) -> Bool {
-        // Accept ALL local models. VMLXRuntime attempts to load any model;
-        // if the architecture is unsupported, ModelLoader throws and the
-        // ChatEngine fallback router retries with MLXService.
-        // No model name matching — model_type from config.json determines support.
-        true
+        guard let model = requestedModel else { return true }
+        let lower = model.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        if lower.isEmpty || lower == "local" || lower == "default" || lower == "vmlx" {
+            return true
+        }
+        // Reject obvious remote API models (provider/ prefix)
+        let remoteProviders = ["openai/", "anthropic/", "google/", "venice-ai/",
+                               "groq/", "together/", "fireworks/", "perplexity/",
+                               "deepinfra/", "anyscale/"]
+        if remoteProviders.contains(where: { lower.hasPrefix($0) }) {
+            return false
+        }
+        // Accept everything else — loader determines if architecture is supported
+        return true
     }
 
     public func generateOneShot(
