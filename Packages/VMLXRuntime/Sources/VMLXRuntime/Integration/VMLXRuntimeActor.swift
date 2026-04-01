@@ -310,8 +310,23 @@ public actor VMLXRuntimeActor {
 
     /// Unload current model and free resources.
     public func unloadModel() async {
+        // Cancel all active generations first
         for (_, task) in activeGenerations {
             task.cancel()
+        }
+        // Wait for tasks to actually stop (GPU must finish current op)
+        // Use withTaskGroup to add a timeout so we don't hang forever
+        await withTaskGroup(of: Void.self) { group in
+            for (_, task) in activeGenerations {
+                group.addTask { await task.value }
+            }
+            // Give tasks up to 2 seconds to finish
+            group.addTask {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+            }
+            // Return after first completion (either all tasks done or timeout)
+            await group.next()
+            group.cancelAll()
         }
         activeGenerations.removeAll()
         scheduler.shutdown()
@@ -326,7 +341,7 @@ public actor VMLXRuntimeActor {
         loadedModels.removeAll()
         currentModelName = nil
 
-        // Force Metal memory cleanup before loading a new model
+        // Force Metal memory cleanup AFTER all generation tasks have stopped
         Memory.clearCache()
     }
 
