@@ -216,36 +216,39 @@ final class NemotronHMamba2Mixer: Module {
             cExpanded = cMat
         }
 
-        // SSM scan (sequential for correctness)
+        // SSM scan (sequential per timestep)
         var ssmState: MLXArray
         if let cached = cache?[1] {
-            ssmState = cached
+            ssmState = cached  // [B, heads, headDim, stateSize]
         } else {
             ssmState = MLXArray.zeros([B, mambaNumHeads, mambaHeadDim, ssmStateSize], dtype: x.dtype)
         }
 
         var outputs: [MLXArray] = []
         for t in 0..<S {
-            let xt = xPart[0..., t, 0..., 0...]  // [B, heads, headDim]
-            let bt = bExpanded[0..., t, 0..., 0...]  // [B, heads, stateSize]
-            let ct = cExpanded[0..., t, 0..., 0...]  // [B, heads, stateSize]
-            let dAt = dA[0..., t, 0..., 0...]  // [B, heads, 1]
+            // Slice timestep t: [B, 1, dim] → [B, dim]
+            let xt = xPart[0..., t..<(t+1), 0..., 0...].squeezed(axis: 1)    // [B, heads, headDim]
+            let bt = bExpanded[0..., t..<(t+1), 0..., 0...].squeezed(axis: 1) // [B, heads, stateSize]
+            let ct = cExpanded[0..., t..<(t+1), 0..., 0...].squeezed(axis: 1) // [B, heads, stateSize]
+            let dAt = dA[0..., t..<(t+1), 0..., 0...].squeezed(axis: 1)       // [B, heads, 1]
 
-            // state = dA * state + outer(x, B)
-            ssmState = dAt.expandedDimensions(axis: -1) * ssmState
-                + xt.expandedDimensions(axis: -1) * bt.expandedDimensions(axis: -2)
-            // y = (state @ C^T).squeeze + D * x
-            let y = (ssmState * ct.expandedDimensions(axis: -2)).sum(axis: -1)
-                + D.reshaped(1, mambaNumHeads, 1) * xt
-            outputs.append(y.expandedDimensions(axis: 1))
+            // state[b,h,d,n] = dA[b,h,1] * state[b,h,d,n] + x[b,h,d] * B[b,h,n]
+            // outer product: [B,h,d,1] * [B,h,1,n] → [B,h,d,n]
+            let xOuter = xt.expandedDimensions(axis: -1)  // [B, h, d, 1]
+            let bOuter = bt.expandedDimensions(axis: -2)   // [B, h, 1, n]
+            ssmState = dAt.expandedDimensions(axis: -1) * ssmState + xOuter * bOuter
+
+            // y[b,h,d] = sum_n(state[b,h,d,n] * C[b,h,n]) + D[h] * x[b,h,d]
+            let cOuter = ct.expandedDimensions(axis: -2)   // [B, h, 1, n]
+            let y = (ssmState * cOuter).sum(axis: -1) + D.reshaped(1, mambaNumHeads, 1) * xt
+            outputs.append(y.expandedDimensions(axis: 1))  // [B, 1, heads, headDim]
         }
 
         if let cache {
             cache[1] = ssmState
         }
 
-        // [B, S, heads, headDim]
-        let yAll = concatenated(outputs, axis: 1)
+        let yAll = concatenated(outputs, axis: 1)  // [B, S, heads, headDim]
 
         // Gate with z and normalize
         let zReshaped = z.reshaped(B, S, mambaNumHeads, mambaHeadDim)
