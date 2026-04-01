@@ -450,8 +450,7 @@ public actor VMLXRuntimeActor {
             throw VMLXRuntimeError.tokenizationFailed
         }
 
-        // Think tag detection buffer length (must be >= "</think>".count = 8)
-        let thinkTagMaxLen = 8
+        // Think tags are handled at the UI level (StreamingDeltaProcessor + middleware)
 
         // Compute gen_prompt_len: number of assistant header tokens appended by chat template.
         // Strip these from cache key so multi-turn conversations hit the same prefix.
@@ -674,16 +673,6 @@ public actor VMLXRuntimeActor {
                     }
 
                     var generatedTokenCount = 0
-                    var thinkingTokenCount = 0
-                    // Track thinking state regardless of enableThinking.
-                    // When thinking is disabled, we still need to detect and suppress
-                    // thinking content between <think> and </think> tags.
-                    let thinkInTemplate = container.familyConfig.thinkInTemplate
-                    // Only start inside thinking when thinking is ENABLED and the template
-                    // injects <think>. When thinking is disabled, the template doesn't inject
-                    // <think>, so the model outputs regular text — don't suppress it.
-                    var insideThinking = enableThinking && thinkInTemplate
-                    let thinkingBudget = maxTokens / 2
 
                     // Prefill with two-phase SSM snapshot for hybrid models.
                     // Split at storeTokens boundary so SSM state matches stored KV.
@@ -748,12 +737,10 @@ public actor VMLXRuntimeActor {
                     // asyncEval starts GPU work, then CPU does decode/yield concurrently.
                     // For MiniMax 122B: ~30ms GPU, ~10ms CPU → effective max(30,10) = 30ms vs 40ms sequential.
 
-                    // For thinkInTemplate models, inject <think> into the output stream
-                    // so the UI's StreamingDeltaProcessor enters thinking mode.
-                    // Only when thinking is enabled (otherwise we suppress all thinking).
-                    if enableThinking && insideThinking && thinkInTemplate {
-                        continuation.yield(.tokens("<think>\n"))
-                    }
+                    // Think tag handling is done entirely at the UI level:
+                    // - PrependThinkTagMiddleware prepends <think> if </think> is detected
+                    // - StreamingDeltaProcessor parses <think>/</ think> tags
+                    // VMLXRuntimeActor just passes raw token text through.
 
                     // Kick off first token eval
                     var nextY: MLXArray? = nil
@@ -766,8 +753,6 @@ public actor VMLXRuntimeActor {
                     let repPenalty = samplingParams.repetitionPenalty
                     let applyRepPenalty = repPenalty != 1.0
                     var generatedTokenIds: [Int] = []
-                    var lastDecodedText: String = ""  // For GPT-OSS channel protocol tracking
-                    var recentTextBuffer: String = ""  // Rolling buffer for multi-token tag detection
 
                     // Decode parameters for the hot loop
                     let isGreedy = samplingParams.isGreedy
@@ -832,106 +817,7 @@ public actor VMLXRuntimeActor {
                         }
 
                         // Decode token to text (CPU work overlaps with GPU computing nextY)
-                        var text = container.decode([currentToken])
-
-                        // GPT-OSS Harmony protocol: token-level state machine.
-                        // Track channel tokens to transform analysis→<think>, final→</think>.
-                        // Channel tokens: <|channel|>, <|message|>, <|end|>, <|start|>
-                        // These form patterns: <|channel|> + name + <|message|> + content
-                        let isProtocolToken = text == "<|channel|>" || text == "<|message|>"
-                            || text == "<|end|>" || text == "<|start|>"
-                            || text == "<|endoftext|>"
-                        if isProtocolToken {
-                            lastDecodedText = text
-                            y = nextY ?? y
-                            continue
-                        }
-                        // After <|channel|>, the next word is the channel name
-                        if lastDecodedText == "<|channel|>" {
-                            if text == "analysis" || text.hasPrefix("analysis") {
-                                lastDecodedText = text
-                                text = "<think>\n"
-                            } else if text == "final" || text == "reply" || text == "assistant"
-                                        || text.hasPrefix("final") || text.hasPrefix("reply") {
-                                lastDecodedText = text
-                                text = "</think>"
-                            } else {
-                                lastDecodedText = text
-                            }
-                        } else if lastDecodedText == "<|message|>" {
-                            // Content after <|message|> — just pass through
-                            lastDecodedText = text
-                        } else {
-                            lastDecodedText = text
-                        }
-
-                        // Text-level think tag detection with buffering.
-                        // Matches Python VMLX approach: detect <think>/</ think> as
-                        // text strings, NOT token IDs. Buffer decoded text to handle
-                        // tags split across tokens (e.g., < + think + >).
-                        recentTextBuffer += text
-
-                        // Try to flush safe content from the buffer while keeping
-                        // potential partial tags buffered.
-                        var safeToEmit = ""
-                        while !recentTextBuffer.isEmpty {
-                            if let thinkRange = recentTextBuffer.range(of: "<think>") {
-                                // Found <think> — emit content before it, enter thinking
-                                safeToEmit += recentTextBuffer[..<thinkRange.lowerBound]
-                                recentTextBuffer = String(recentTextBuffer[thinkRange.upperBound...])
-                                if !insideThinking {
-                                    insideThinking = true
-                                    thinkingTokenCount = 0
-                                    if enableThinking {
-                                        safeToEmit += "<think>"
-                                    }
-                                }
-                                continue
-                            }
-                            if let closeRange = recentTextBuffer.range(of: "</think>") {
-                                // Found </think> — emit thinking before it, exit thinking
-                                safeToEmit += recentTextBuffer[..<closeRange.lowerBound]
-                                recentTextBuffer = String(recentTextBuffer[closeRange.upperBound...])
-                                if insideThinking {
-                                    insideThinking = false
-                                    if enableThinking {
-                                        safeToEmit += "</think>"
-                                    }
-                                }
-                                continue
-                            }
-                            // No complete tag found. Check if buffer ends with a partial.
-                            let possiblePartials = ["<", "<t", "<th", "<thi", "<thin", "<think",
-                                                     "</", "</t", "</th", "</thi", "</thin", "</think"]
-                            if let partial = possiblePartials.last(where: { recentTextBuffer.hasSuffix($0) }) {
-                                // Keep partial buffered, emit everything before it
-                                safeToEmit += recentTextBuffer.dropLast(partial.count)
-                                recentTextBuffer = String(recentTextBuffer.suffix(partial.count))
-                            } else {
-                                // No partial — emit everything
-                                safeToEmit += recentTextBuffer
-                                recentTextBuffer = ""
-                            }
-                            break
-                        }
-
-                        // Thinking budget enforcement
-                        if insideThinking {
-                            thinkingTokenCount += 1
-                            if thinkingTokenCount >= thinkingBudget {
-                                insideThinking = false
-                                if enableThinking {
-                                    safeToEmit += "\n</think>\n"
-                                }
-                            }
-                            if !enableThinking {
-                                y = nextY ?? y
-                                continue
-                            }
-                        }
-
-                        // Replace text with the safely processed content
-                        text = safeToEmit
+                        let text = container.decode([currentToken])
 
                         let emitText = text.vmlxStripped
 
