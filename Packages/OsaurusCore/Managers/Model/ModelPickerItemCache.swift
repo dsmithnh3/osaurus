@@ -53,6 +53,15 @@ final class ModelPickerItemCache: ObservableObject {
             options.append(.fromMLXModel(model))
         }
 
+        // Add VMLX-detected models not already in the list (JANG, well-known dirs)
+        let existingIds = Set(options.map { $0.id.lowercased() })
+        let vmlxModels = VMLXServiceBridge.getAvailableModels()
+        for name in vmlxModels {
+            if !existingIds.contains(name.lowercased()) {
+                options.append(.localDetected(name: name))
+            }
+        }
+
         let remoteModels = RemoteProviderManager.shared.cachedAvailableModels()
 
         for providerInfo in remoteModels {
@@ -88,6 +97,15 @@ final class ModelPickerItemCache: ObservableObject {
             }
             for model in localModels {
                 options.append(.fromMLXModel(model))
+            }
+
+            // Add VMLX-detected models (JANG, well-known dirs)
+            let existingIds = Set(options.map { $0.id.lowercased() })
+            let vmlxModels = VMLXServiceBridge.getAvailableModels()
+            for name in vmlxModels {
+                if !existingIds.contains(name.lowercased()) {
+                    options.append(.localDetected(name: name))
+                }
             }
 
             items = options

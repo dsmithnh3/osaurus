@@ -136,6 +136,23 @@ extension ModelPickerItem {
         )
     }
 
+    /// Create a local model item from VMLX-detected model (JANG, well-known dirs)
+    static func localDetected(name: String) -> ModelPickerItem {
+        let paramCount = extractParameterCount(from: name)
+        let quant = extractQuantization(from: name)
+        let isVLM = detectVLM(from: name)
+
+        return ModelPickerItem(
+            id: name,
+            displayName: formatDisplayName(name),
+            source: .local,
+            parameterCount: paramCount,
+            quantization: quant,
+            isVLM: isVLM,
+            description: "Local model (detected)"
+        )
+    }
+
     /// Create a remote provider model picker item
     static func fromRemoteModel(
         modelId: String,
