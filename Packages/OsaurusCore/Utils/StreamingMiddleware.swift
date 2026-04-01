@@ -66,53 +66,83 @@ final class PrependThinkTagMiddleware: StreamingMiddleware {
 
 // MARK: - Channel Tag Middleware (GPT-OSS)
 
-/// Transforms GPT-OSS `<|channel|>analysis<|message|>` / `<|channel|>reply<|message|>`
-/// into standard `<think>` / `</think>` tags that StreamingDeltaProcessor handles.
-/// Accumulates tokens until complete tags can be detected and replaced.
+/// Transforms GPT-OSS channel tags into standard `<think>`/`</think>` tags.
+/// Handles ALL channel types: analysis (thinking), reply/final/assistant (content).
+/// Also strips leaked special tokens like `<|end|>`, `<|start|>`.
 @MainActor
 final class ChannelTagMiddleware: StreamingMiddleware {
     private var buffer = ""
+    private var insideAnalysis = false
 
-    private static let analysisTag = "<|channel|>analysis<|message|>"
-    private static let replyTag = "<|channel|>reply<|message|>"
+    // Tags that START thinking
+    private static let thinkStartTags = [
+        "<|channel|>analysis<|message|>",
+    ]
+
+    // Tags that END thinking and start content
+    private static let thinkEndTags = [
+        "<|channel|>reply<|message|>",
+        "<|channel|>final<|message|>",
+        "<|channel|>assistant<|message|>",
+    ]
+
+    // Special tokens to strip from output
+    private static let stripTokens = [
+        "<|end|>", "<|start|>", "<|endoftext|>",
+    ]
 
     func process(_ delta: String) -> String {
         buffer += delta
 
+        // Strip special tokens
+        for token in Self.stripTokens {
+            if buffer.contains(token) {
+                buffer = buffer.replacingOccurrences(of: token, with: "")
+            }
+        }
+
         var output = ""
         while !buffer.isEmpty {
-            // Try to match complete tags
-            if let range = buffer.range(of: Self.analysisTag) {
-                output += buffer[..<range.lowerBound]
-                output += "<think>"
-                buffer = String(buffer[range.upperBound...])
-                continue
-            }
-            if let range = buffer.range(of: Self.replyTag) {
-                output += buffer[..<range.lowerBound]
-                output += "</think>"
-                buffer = String(buffer[range.upperBound...])
-                continue
-            }
-
-            // Check if the buffer ENDS with a partial that could become either tag.
-            // Test progressively shorter suffixes of the buffer against tag prefixes.
-            var partialLen = 0
-            let maxCheck = min(buffer.count, max(Self.analysisTag.count, Self.replyTag.count) - 1)
-            for len in stride(from: maxCheck, through: 1, by: -1) {
-                let suffix = String(buffer.suffix(len))
-                if Self.analysisTag.hasPrefix(suffix) || Self.replyTag.hasPrefix(suffix) {
-                    partialLen = len
+            // Try to match start-of-thinking tags
+            var matched = false
+            for tag in Self.thinkStartTags {
+                if let range = buffer.range(of: tag) {
+                    output += buffer[..<range.lowerBound]
+                    output += "<think>"
+                    buffer = String(buffer[range.upperBound...])
+                    insideAnalysis = true
+                    matched = true
                     break
                 }
             }
+            if matched { continue }
 
-            if partialLen > 0 {
-                // Emit everything before the partial, keep partial buffered
-                let emitEnd = buffer.index(buffer.endIndex, offsetBy: -partialLen)
-                output += buffer[..<emitEnd]
-                buffer = String(buffer[emitEnd...])
-                break
+            // Try to match end-of-thinking tags
+            for tag in Self.thinkEndTags {
+                if let range = buffer.range(of: tag) {
+                    output += buffer[..<range.lowerBound]
+                    output += "</think>"
+                    buffer = String(buffer[range.upperBound...])
+                    insideAnalysis = false
+                    matched = true
+                    break
+                }
+            }
+            if matched { continue }
+
+            // Check for partial channel tag at end of buffer
+            if buffer.contains("<|") {
+                // Find the last `<|` that could be the start of a channel tag
+                if let lastPipe = buffer.range(of: "<|", options: .backwards) {
+                    let suffix = String(buffer[lastPipe.lowerBound...])
+                    // Check if any tag starts with this suffix
+                    let allTags = Self.thinkStartTags + Self.thinkEndTags + Self.stripTokens
+                    if allTags.contains(where: { $0.hasPrefix(suffix) }) && suffix.count < 40 {
+                        output += buffer[..<lastPipe.lowerBound]
+                        buffer = suffix
+                        break
+                    }
+                }
             }
 
             // No tag or partial — emit everything
