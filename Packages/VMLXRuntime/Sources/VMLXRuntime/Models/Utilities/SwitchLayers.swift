@@ -37,7 +37,6 @@ public func vmlxScatterUnsort(x: MLXArray, invOrder: MLXArray, shape: [Int]? = n
 // MARK: - SwitchGLU
 
 /// Fused SiLU(gate) * up kernel. Matches Python's @mx.compile(shapeless=True) swiglu.
-/// Compiles to a single GPU kernel instead of 2 separate ops (silu + multiply).
 let vmlxCompiledSwiGLU: @Sendable (MLXArray, MLXArray) -> MLXArray = compile(shapeless: true) {
     (gate: MLXArray, x: MLXArray) -> MLXArray in
     silu(gate) * x

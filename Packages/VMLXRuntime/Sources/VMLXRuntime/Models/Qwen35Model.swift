@@ -602,16 +602,51 @@ public class Qwen35TextModelInner: Module {
         let faMask = vmlxCreateAttentionMask(h: hiddenStates, cache: cacheArray?[faIdx])
         let ssmMask = vmlxCreateSSMMask(h: hiddenStates, cache: cacheArray?[ssmIdx] as? VMLXMambaCache)
 
-        for (i, layer) in layers.enumerated() {
-            let mask = layer.isLinear ? ssmMask : nil
-            let attnMask: MLXFast.ScaledDotProductAttentionMaskMode =
-                layer.isLinear ? .none : faMask
-            hiddenStates = layer(
-                hiddenStates, attentionMask: attnMask, ssmMask: mask, cache: cacheArray?[i])
+        // One-shot profiling: on first T=1 decode, measure per-layer GPU time.
+        let isDecodeStep = inputs.dim(1) == 1
+        let shouldProfile = isDecodeStep && !Qwen35TextModelInner._hasProfiled
+        if shouldProfile {
+            Qwen35TextModelInner._hasProfiled = true
+            var ssmTimeMs: Double = 0
+            var attnTimeMs: Double = 0
+            var layerCount = 0
+
+            for (i, layer) in layers.enumerated() {
+                let mask = layer.isLinear ? ssmMask : nil
+                let attnMask: MLXFast.ScaledDotProductAttentionMaskMode =
+                    layer.isLinear ? .none : faMask
+                let t0 = CFAbsoluteTimeGetCurrent()
+                hiddenStates = layer(
+                    hiddenStates, attentionMask: attnMask, ssmMask: mask, cache: cacheArray?[i])
+                MLX.eval(hiddenStates)
+                let dt = (CFAbsoluteTimeGetCurrent() - t0) * 1000
+                if layer.isLinear {
+                    ssmTimeMs += dt
+                } else {
+                    attnTimeMs += dt
+                }
+                layerCount += 1
+            }
+
+            let totalMs = ssmTimeMs + attnTimeMs
+            NSLog("[Profile] T=1 decode: %d layers", layerCount)
+            NSLog("[Profile] SSM total: %.1fms (%.0f%%)", ssmTimeMs, ssmTimeMs/totalMs*100)
+            NSLog("[Profile] Attn total: %.1fms (%.0f%%)", attnTimeMs, attnTimeMs/totalMs*100)
+            NSLog("[Profile] Layer total: %.1fms (~%.0f tok/s theoretical max)", totalMs, 1000/totalMs)
+        } else {
+            for (i, layer) in layers.enumerated() {
+                let mask = layer.isLinear ? ssmMask : nil
+                let attnMask: MLXFast.ScaledDotProductAttentionMaskMode =
+                    layer.isLinear ? .none : faMask
+                hiddenStates = layer(
+                    hiddenStates, attentionMask: attnMask, ssmMask: mask, cache: cacheArray?[i])
+            }
         }
 
         return norm(hiddenStates)
     }
+
+    nonisolated(unsafe) private static var _hasProfiled = false
 }
 
 // MARK: - Text Model (with lm_head)

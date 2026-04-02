@@ -99,7 +99,10 @@ public final class VMLXModelContainer: @unchecked Sendable {
     /// - Non-JANG models: TQ config uses sensible defaults (3-bit keys/values, 4-bit critical layers)
     /// The user must still enable TQ via settings (`enableTurboQuant`) for it to activate at runtime.
     public static func create(model: LoadedModel) -> VMLXModelContainer {
-        vmlxPrewarmCustomKernels()
+        // Metal kernels DISABLED — crash with EXC_BAD_ACCESS even during serialized
+        // single-threaded prewarm. Root cause is a kernel template issue, NOT concurrency.
+        // Prewarm skipped until kernel bug is resolved.
+        // vmlxPrewarmCustomKernels()
 
         // Detect layer pattern (hybrid architecture) from config.json
         let detectedLayerPattern: [LayerType]?

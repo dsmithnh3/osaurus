@@ -396,6 +396,23 @@ struct Usage: Codable, Sendable {
     let prompt_tokens: Int
     let completion_tokens: Int
     let total_tokens: Int
+    /// Cached tokens that were restored from KV cache (not re-prefilled).
+    var cached_tokens: Int? = nil
+}
+
+/// Engine-level performance stats (VMLX native inference only).
+/// Returned in `x_engine` field of the response — not part of the OpenAI spec.
+struct EngineStats: Codable, Sendable {
+    /// Time to first token in seconds.
+    let ttft: Double?
+    /// Prompt processing speed (tokens/second).
+    let prompt_tokens_per_sec: Double?
+    /// Token generation speed (tokens/second).
+    let generation_tokens_per_sec: Double?
+    /// KV cache source (memory, paged, disk, etc.)
+    let cache_detail: String?
+    /// Estimated KV cache size in bytes.
+    let cache_bytes: Int?
 }
 
 /// Chat completion response
@@ -411,6 +428,8 @@ struct ChatCompletionResponse: Codable, Sendable {
     /// API callers can pass this value back as `cache_hint` to reuse the
     /// prefix KV cache on subsequent requests.
     var prefix_hash: String? = nil
+    /// Engine performance stats (VMLX native inference only).
+    var x_engine: EngineStats? = nil
 }
 
 // MARK: - Streaming Response Structures

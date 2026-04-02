@@ -212,9 +212,11 @@ final class StreamingDeltaProcessor {
         // Back off on very long outputs to prevent layout thrash.
         let syncIntervalMs: Double =
             switch totalChars {
-            case 0 ..< 5_000: 0    // Every token
-            case 5_000 ..< 15_000: 16  // ~60fps
-            default: 33               // ~30fps
+            case 0 ..< 2_000: 0      // Every token
+            case 2_000 ..< 5_000: 16  // ~60fps
+            case 5_000 ..< 10_000: 50  // ~20fps
+            case 10_000 ..< 20_000: 100  // ~10fps
+            default: 200               // ~5fps — prevent main thread freeze
             }
 
         let timeSinceSync = now.timeIntervalSince(lastSyncTime) * 1000
@@ -229,20 +231,28 @@ final class StreamingDeltaProcessor {
         let totalChars = contentLength + thinkingLength
 
         // Flush every token for smooth per-token streaming on local inference.
-        // At 80 tok/s = 12ms/token, we flush on every delta arrival.
-        // Only back off for very long outputs where layout becomes expensive.
+        // At 60 tok/s = 16ms/token, we flush on every delta arrival.
+        // Aggressively back off for long outputs where markdown layout
+        // becomes expensive — a single re-render can take 200ms+ for large
+        // code blocks, completely blocking the main thread and freezing the UI.
         switch totalChars {
-        case 0 ..< 5_000:
-            flushIntervalMs = 0; maxBufferSize = 1  // Every token
-        case 5_000 ..< 15_000:
-            flushIntervalMs = 16; maxBufferSize = 32  // ~60fps
+        case 0 ..< 2_000:
+            flushIntervalMs = 0; maxBufferSize = 1    // Every token
+        case 2_000 ..< 5_000:
+            flushIntervalMs = 16; maxBufferSize = 16   // ~60fps
+        case 5_000 ..< 10_000:
+            flushIntervalMs = 50; maxBufferSize = 64   // ~20fps
+        case 10_000 ..< 20_000:
+            flushIntervalMs = 100; maxBufferSize = 128  // ~10fps
         default:
-            flushIntervalMs = 33; maxBufferSize = 64  // ~30fps
+            flushIntervalMs = 200; maxBufferSize = 256  // ~5fps — prevent freeze
         }
 
-        // Back off only if layout is genuinely slow (>50ms)
-        if longestFlushMs > 50 {
-            flushIntervalMs = min(100, max(flushIntervalMs, longestFlushMs * 1.2))
+        // Back off harder if layout is slow — the markdown renderer
+        // scales poorly with large code blocks.
+        if longestFlushMs > 30 {
+            flushIntervalMs = min(500, max(flushIntervalMs, longestFlushMs * 2.0))
+            maxBufferSize = max(maxBufferSize, 128)
         }
     }
 

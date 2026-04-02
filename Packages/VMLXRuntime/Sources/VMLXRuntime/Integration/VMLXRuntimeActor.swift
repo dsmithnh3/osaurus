@@ -253,22 +253,29 @@ public actor VMLXRuntimeActor {
     /// 2. Wraps the result in a `VMLXModelContainer`
     /// 3. Configures the `Scheduler` with the model's properties
     public func loadModel(from path: URL) async throws {
+        _vmlxLog2("[LoadModel] START path=\(path.lastPathComponent)")
         if modelContainer != nil {
+            _vmlxLog2("[LoadModel] Unloading previous model")
             await unloadModel()
         }
 
         // 1. Load model using native model registry
+        _vmlxLog2("[LoadModel] Step 1: ModelLoader.load")
         let loadedModel: LoadedModel
         do {
             loadedModel = try await ModelLoader.load(from: path)
+            _vmlxLog2("[LoadModel] Step 1 OK: \(loadedModel.detected.name), type=\(loadedModel.detected.modelType ?? "nil")")
         } catch {
+            _vmlxLog2("[LoadModel] Step 1 FAILED: \(error)")
             throw VMLXRuntimeError.modelLoadFailed(
                 "Failed to load model at \(path.path): \(error.localizedDescription)"
             )
         }
 
         // 2. Wrap in VMLXModelContainer
+        _vmlxLog2("[LoadModel] Step 2: ModelContainer.create")
         let container = VMLXModelContainer.create(model: loadedModel)
+        _vmlxLog2("[LoadModel] Step 2 OK: hybrid=\(container.isHybrid), tq=\(container.turboQuantConfig != nil), pattern=\(container.layerPattern?.prefix(5).map { "\($0)" } ?? ["nil"])")
 
         // 3. Configure the Scheduler
         scheduler.configureForModel(
@@ -461,11 +468,27 @@ public actor VMLXRuntimeActor {
     public func generateStream(
         request: VMLXChatCompletionRequest
     ) async throws -> AsyncThrowingStream<VMLXEvent, Error> {
-        // Cancel any in-flight generation before starting a new one.
-        // Metal command buffers cannot be shared across concurrent tasks.
-        for (id, task) in activeGenerations {
-            task.cancel()
-            activeGenerations.removeValue(forKey: id)
+        // Cancel any in-flight generation and WAIT for GPU to finish.
+        // Without waiting, the old task's MLX operations and the new task's
+        // run concurrently, corrupting MLX's CustomKernelCache (unordered_map
+        // race → EXC_BAD_ACCESS in CustomKernel::eval_gpu).
+        if !activeGenerations.isEmpty {
+            for (_, task) in activeGenerations {
+                task.cancel()
+            }
+            // Wait for tasks to actually stop (GPU must finish current op).
+            // Timeout after 3s to avoid hanging if a task is stuck.
+            await withTaskGroup(of: Void.self) { group in
+                for (_, task) in activeGenerations {
+                    group.addTask { await task.value }
+                }
+                group.addTask {
+                    try? await Task.sleep(nanoseconds: 3_000_000_000)
+                }
+                await group.next()
+                group.cancelAll()
+            }
+            activeGenerations.removeAll()
         }
 
         if powerState == .jitWake {
@@ -546,7 +569,11 @@ public actor VMLXRuntimeActor {
         let eosTokenIds = container.eosTokenIds
         let stopTokenIds = Set(samplingParams.stopTokenIds)
 
-        return AsyncThrowingStream { continuation in
+        // Capture the generation Task so we can register it AFTER
+        // the AsyncThrowingStream init closure returns (still on actor).
+        var generationTask: Task<Void, Never>?
+
+        let stream = AsyncThrowingStream<VMLXEvent, Error> { continuation in
             let task = Task { @Sendable in
                 let pagedWriteSession = self.scheduler.cache.beginPagedWriteSession(
                     requestId: requestId
@@ -571,7 +598,7 @@ public actor VMLXRuntimeActor {
                     let kvGroupSize = self.scheduler.config.kvCacheGroupSize
                     let tqConfig = self.scheduler.config.enableTurboQuant ? container.turboQuantConfig : nil
                     let tqEnabled = tqConfig != nil
-                    _vmlxLog2("[Gen] Config: kvQuant=\(kvBitsStr) tq=\(tqEnabled) hybrid=\(container.isHybrid)")
+                    _vmlxLog2("[Gen] Config: kvQuant=\(kvBitsStr) tq=\(tqEnabled) hybrid=\(container.isHybrid) thinking=\(enableThinking)")
                     let cache = container.newCache(config: VMLXLiveCacheConfig(
                         kvBits: kvBits,
                         kvGroupSize: kvGroupSize,
@@ -651,7 +678,9 @@ public actor VMLXRuntimeActor {
 
                         let genSuffix = genPromptLen > 0 ? Array(tokens.suffix(genPromptLen)) : [Int]()
                         cachedTokenCount = restoredBoundary
-                        inputTokens = MLXArray((replayTokens + genSuffix).map { Int32($0) })
+                        let allReplay = replayTokens + genSuffix
+                        inputTokens = MLXArray(allReplay.map { Int32($0) })
+                        _vmlxLog2("[Gen] CachedPrefix: boundary=\(restoredBoundary), replay=\(replayTokens.count), genSuffix=\(genSuffix.count), total=\(allReplay.count), trim=\(trimAttentionToBoundary)")
                     }
 
                     func _captureCurrentSSMSnapshot() -> [[MLXArray]] {
@@ -903,6 +932,15 @@ public actor VMLXRuntimeActor {
 
                     var generatedTokenCount = 0
 
+                    // Cancel any background SSM re-derivation before starting
+                    // forward passes. The re-deriver calls container.forward()
+                    // which must not run concurrently with generation's forward()
+                    // — MLX's internal state (compiled kernel caches, Metal command
+                    // queues) is not safe for concurrent model inference.
+                    if let reDeriver = self.ssmReDeriver, await reDeriver.activeTaskCount > 0 {
+                        await reDeriver.cancelAll()
+                    }
+
                     // Hybrid models need a boundary-aligned SSM snapshot for the
                     // cache store. The target boundary is storeTokens.count, which
                     // can already be satisfied by a restored cache hit.
@@ -979,10 +1017,13 @@ public actor VMLXRuntimeActor {
                                boundaryAdvance < chunkEnd {
                                 chunkEnd = boundaryAdvance
                             }
-                            _ = container.forward(
-                                inputTokens[pos ..< chunkEnd].expandedDimensions(axis: 0),
-                                cache: cache)
-                            eval(cache)
+                            _vmlxLog2("[Gen] Prefill chunk \(pos)..<\(chunkEnd) (\(chunkEnd - pos) tokens)")
+                            let chunkInput = inputTokens[pos ..< chunkEnd].expandedDimensions(axis: 0)
+                            _vmlxLog2("[Gen] Prefill: calling forward (input shape: \(chunkInput.shape))")
+                            let prefillLogits = container.forward(chunkInput, cache: cache)
+                            _vmlxLog2("[Gen] Prefill: forward returned (logits shape: \(prefillLogits.shape)), calling MLX.eval on cache")
+                            MLX.eval(cache)
+                            _vmlxLog2("[Gen] Prefill chunk \(pos)..<\(chunkEnd) forward+eval OK")
                             Memory.clearCache()
                             pos = chunkEnd
                             if needSSMSnapshot && prefillSSMSnapshot == nil && pos == boundaryAdvance {
@@ -996,15 +1037,19 @@ public actor VMLXRuntimeActor {
                     // For hybrid cache storage, capture SSM exactly when the cache
                     // reaches the store boundary instead of snapshotting only on
                     // uncached turns or after the whole prompt.
+                    _vmlxLog2("[Gen] Prefill: \(totalPrefillTokens) tokens, step=\(prefillStep), cacheTypes=\(cache.prefix(3).map { String(describing: type(of: $0)) })")
                     if totalPrefillTokens > 1 {
                         _chunkedPrefill(0, totalPrefillTokens - 1)
+                        _vmlxLog2("[Gen] Chunked prefill done")
                     }
 
                     // Final token → logits for first generated token
                     let _prefillStart = CFAbsoluteTimeGetCurrent()
+                    _vmlxLog2("[Gen] Final token forward pass starting")
                     let lastToken = inputTokens[(totalPrefillTokens - 1)...]
                     let prefillLogits = container.forward(
                         lastToken.expandedDimensions(axis: 0), cache: cache)
+                    _vmlxLog2("[Gen] Final token forward pass done, sampling...")
                     let firstTokenId = Sampler.sample(
                         logits: prefillLogits[0, -1], params: samplingParams)
                     var y = MLXArray(Int32(firstTokenId))
@@ -1055,6 +1100,14 @@ public actor VMLXRuntimeActor {
                     let isGreedy = samplingParams.isGreedy
                     let temp = samplingParams.temperature
 
+                    // compile(shapeless:true) for the full step crashes during graph tracing
+                    // on hybrid SSM models (Qwen3.5 GatedDeltaNet). The crash occurs even
+                    // without custom Metal kernels or nested compiles — likely an MLX framework
+                    // limitation with Updatable cache state tracking for hybrid cache arrays
+                    // (mixed VMLXMambaCache + TurboQuantKVCache).
+                    // TODO: File MLX issue, test with pure-attention models, try compile on
+                    // attention-only subset.
+
                     let _genStart = CFAbsoluteTimeGetCurrent()
                     var _steadyStart: Double = 0
                     let _warmupTokens = 3  // First N tokens are slow (Metal pipeline warmup)
@@ -1067,8 +1120,6 @@ public actor VMLXRuntimeActor {
                             let stepLogits = container.forward(y.reshaped(1, 1), cache: cache)
                             var logits = stepLogits[0, -1]
 
-                            // Apply repetition penalty to previously generated tokens.
-                            // Element-wise ops only — no sorting, no softmax, no cumsum.
                             if applyRepPenalty && !generatedTokenIds.isEmpty {
                                 logits = Sampler.applyRepetitionPenalty(
                                     logits: logits, tokens: generatedTokenIds, penalty: repPenalty)
@@ -1227,10 +1278,13 @@ public actor VMLXRuntimeActor {
                         cacheBytes: liveCacheBytes
                     ))
 
-                    continuation.finish()
-
-                    // Store cache AFTER stream is finished — TQ encode can take
-                    // hundreds of ms and must not block the UI stream.
+                    // Pre-compute the cache export BEFORE finishing the stream.
+                    // This is the expensive part (trim + export 40 layers + materialize).
+                    // Doing it before finish() means the GPU work overlaps with the
+                    // last token's eval, and the store after finish() is just a fast
+                    // pointer copy into the cache coordinator.
+                    var preparedCache: HybridCache? = nil
+                    var pagedHandledByLiveSession = false
                     if !storeTokens.isEmpty {
                         let targetOffset = storeTokens.count
                         for c in cache {
@@ -1239,16 +1293,6 @@ public actor VMLXRuntimeActor {
                             }
                         }
 
-                        // Store ORIGINAL float KV for multi-turn cache (not TQ-decoded lossy data).
-                        // If TQ was applied during this generation, use the pre-TQ snapshot.
-                        // Storing TQ-decoded data across turns causes quality degradation.
-
-                        // If no boundary-aligned SSM snapshot was captured during prefill,
-                        // do NOT capture current state — it's contaminated with decode tokens.
-                        // SSM state is cumulative and includes generated response tokens at this
-                        // point. Storing it would corrupt future cache hits. Instead, emit
-                        // .placeholder for SSM layers so layer count stays aligned. The next
-                        // fetch will trigger proper SSM re-derivation.
                         if needSSMSnapshot && prefillSSMSnapshot == nil {
                             _vmlxLog2("[Gen] SSM snapshot skipped: no boundary-aligned snapshot (post-decode state is contaminated)")
                         }
@@ -1263,7 +1307,6 @@ public actor VMLXRuntimeActor {
                                         state: snapshots[ssmSnapshotIdx])))
                                     ssmSnapshotIdx += 1
                                 } else {
-                                    // No valid snapshot — emit placeholder to preserve layer alignment
                                     layers.append(.placeholder)
                                 }
                             } else if let entry = c.exportCacheEntry() {
@@ -1284,7 +1327,8 @@ public actor VMLXRuntimeActor {
                         if !layers.isEmpty {
                             let hybridCache = HybridCache(layers: layers)
                             hybridCache.materialized()
-                            var pagedHandledByLiveSession = false
+                            preparedCache = hybridCache
+
                             if let pagedWriteSession,
                                let pagedHybridCache = _exportLiveHybridCache(
                                 targetOffset: targetOffset,
@@ -1296,14 +1340,22 @@ public actor VMLXRuntimeActor {
                                 )
                                 pagedHandledByLiveSession = true
                             }
-
-                            self.scheduler.cache.store(
-                                tokens: storeTokens,
-                                cache: hybridCache,
-                                includePaged: !pagedHandledByLiveSession
-                            )
-                            _vmlxLog2("[Gen] Stored cache: \(storeTokens.count) tokens (stripped \(genPromptLen) gen_prompt + \(generatedTokenCount) generated + 1 last)")
                         }
+                    }
+
+                    // Finish the stream IMMEDIATELY — UI can now dismiss
+                    // the stop button and show stats without waiting for
+                    // the cache store.
+                    continuation.finish()
+
+                    // Store the pre-computed cache (fast — just pointer copies).
+                    if let hybridCache = preparedCache {
+                        self.scheduler.cache.store(
+                            tokens: storeTokens,
+                            cache: hybridCache,
+                            includePaged: !pagedHandledByLiveSession
+                        )
+                        _vmlxLog2("[Gen] Stored cache: \(storeTokens.count) tokens (stripped \(genPromptLen) gen_prompt + \(generatedTokenCount) generated + 1 last)")
                     }
 
                 } catch is CancellationError {
@@ -1322,14 +1374,23 @@ public actor VMLXRuntimeActor {
                 }
             }
 
-            Task { @MainActor [requestId] in
-                await self._trackGeneration(requestId: requestId, task: task)
-            }
+            generationTask = task
 
             continuation.onTermination = { @Sendable _ in
                 task.cancel()
             }
         }
+
+        // Register the task IMMEDIATELY on the actor — no @MainActor dispatch.
+        // The old pattern (Task { @MainActor in await self._trackGeneration(...) })
+        // introduced a 2-hop scheduling delay (MainActor → VMLXRuntimeActor) which
+        // caused the task to be missing from activeGenerations when the next request
+        // tried to cancel it, leading to concurrent GPU access and crashes.
+        if let task = generationTask {
+            _trackGeneration(requestId: requestId, task: task)
+        }
+
+        return stream
     }
 
     /// Non-streaming generation. Collects all output into a single string.

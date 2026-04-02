@@ -104,18 +104,34 @@ public func vmlxLoadWeights(
             NSLog("[WeightLoader] Config bits=\(defaultBits) unsupported by MLX, using \(effectiveBits) as initial default (will be corrected per-layer)")
         }
 
-        // Quantize all layers with initial bits/group_size.
-        // The actual per-layer bits will be fixed by vmlxFixQuantizedBits() after
-        // model.update() loads the packed weights.
+        // Quantize all layers with per-layer bits inferred from weight/scales shapes.
+        // JANG mixed-precision models have different bit widths per layer (3/4/5/8).
+        // We MUST set the correct bits BEFORE model.update() loads weights, otherwise
+        // MLX's gather_qmm crashes with shape mismatch (e.g., 3-bit weight loaded as 4-bit).
         var quantizedCount = 0
         quantize(model: model) { path, module in
-            if weights["\(path).scales"] != nil {
-                quantizedCount += 1
-                return (defaultGroupSize, effectiveBits, mode)
+            guard let scalesArray = weights["\(path).scales"],
+                  let weightArray = weights["\(path).weight"] else { return nil }
+            quantizedCount += 1
+
+            // Infer bits from weight/scales column ratio.
+            // For quantized weights: wCols * 32 = inputDim * bits
+            // For scales: sCols = inputDim / groupSize
+            // So: bits = (wCols * 32) / (sCols * groupSize)
+            let wCols = weightArray.dim(weightArray.ndim - 1)
+            let sCols = scalesArray.dim(scalesArray.ndim - 1)
+            var inferredBits = effectiveBits
+            for tryGS in [defaultGroupSize, 64, 128, 32, 256] {
+                let inDim = sCols * tryGS
+                guard inDim > 0, (wCols * 32) % inDim == 0 else { continue }
+                let tryBits = (wCols * 32) / inDim
+                guard [2, 3, 4, 5, 6, 8].contains(tryBits) else { continue }
+                inferredBits = tryBits
+                break
             }
-            return nil
+            return (defaultGroupSize, inferredBits, mode)
         }
-        NSLog("[WeightLoader] Quantized \(quantizedCount) modules, bits=\(effectiveBits), gs=\(defaultGroupSize)")
+        NSLog("[WeightLoader] Quantized \(quantizedCount) modules, default_bits=\(effectiveBits), gs=\(defaultGroupSize)")
     }
 
     // Load weights (no strict verification for JANG mixed-precision compatibility)

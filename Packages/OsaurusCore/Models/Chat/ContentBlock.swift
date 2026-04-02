@@ -383,8 +383,11 @@ extension ContentBlock {
                 )
             }
 
-            // Show inference stats below assistant messages (if available and enabled)
-            if !isStreaming, turn.role == .assistant, let stats = turn.generationStats {
+            // Show inference stats below assistant messages (if available and enabled).
+            // Stats arrive as the last event before the stream ends, so show them
+            // immediately rather than waiting for isStreaming to turn false —
+            // otherwise fast generations have a visible delay before stats appear.
+            if turn.role == .assistant, let stats = turn.generationStats {
                 if showInferenceStats {
                     turnBlocks.append(
                         ContentBlock(

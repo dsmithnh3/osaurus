@@ -404,8 +404,11 @@ public final class CacheCoordinator: @unchecked Sendable {
             } else if let ssm = lastSSM {
                 layers.append(.ssm(ssm))
             } else {
-                // Layer has no data across all blocks — shouldn't happen
-                return nil
+                // Layer has no data across all blocks. This can happen when SSM
+                // layers have nil in all blocks (e.g., partial store without final SSM).
+                // Emit placeholder to preserve layer alignment — the fetch handler
+                // will detect the missing SSM and trigger re-derivation if needed.
+                layers.append(.placeholder)
             }
         }
 
@@ -482,11 +485,28 @@ public final class CacheCoordinator: @unchecked Sendable {
                 parentHash: parentHash, tokenIds: blockTokens)
 
             // Check dedup: does a block with this hash already exist?
+            // peekCachedBlock already touches the block (updates LRU timestamp).
+            // Do NOT forkBlock here — this path has no cleanup to decrement refCount,
+            // so forking would leak refCounts and make blocks non-evictable.
             if let existing = pagedCache.peekCachedBlock(hash: blockHash) {
                 if isLastBlock && isHybrid && _blockLacksCumulativeSSM(existing) {
                     // Fall through to allocate new block with SSM data
+                } else if existing.refCount <= 1 && _blockHasCompressedUpgrade(existing, cache: cache) {
+                    // Existing block has float data but source has TQ-compressed data.
+                    // Upgrade in-place since the block is exclusively owned.
+                    let blockData = _makePagedBlockData(
+                        from: cache, tokenRange: tokenStart..<tokenEnd,
+                        includeFinalSSM: isLastBlock
+                    )
+                    pagedCache.updateBlock(
+                        blockId: existing.blockId,
+                        tokenCount: blockTokens.count,
+                        cacheData: blockData,
+                        hash: blockHash
+                    )
+                    parentHash = blockHash
+                    continue
                 } else {
-                    pagedCache.forkBlock(existing, hash: blockHash)
                     parentHash = blockHash
                     continue
                 }
@@ -514,15 +534,34 @@ public final class CacheCoordinator: @unchecked Sendable {
         }
     }
 
-    /// Check if a block lacks cumulative SSM data (Bug 2 prevention).
-    /// Returns true if the block has SSM layer positions but they're all nil (skip).
+    /// Check if the source HybridCache has compressed attention entries while the
+    /// existing block only has float attention. Used to decide whether to upgrade
+    /// a paged block from float to TQ-compressed.
+    private func _blockHasCompressedUpgrade(_ block: CacheBlock, cache: HybridCache) -> Bool {
+        guard let data = block.cacheData else { return false }
+        let blockHasFloat = data.contains { entry in
+            guard let entry else { return false }
+            if case .attention = entry { return true }
+            return false
+        }
+        let cacheHasCompressed = cache.layers.contains { entry in
+            if case .compressedAttention = entry { return true }
+            return false
+        }
+        return blockHasFloat && cacheHasCompressed
+    }
+
+    /// Check if a block lacks cumulative SSM data.
+    /// Returns true only if SSM layer positions are nil (pre-dates SSM storage).
+    /// .placeholder at SSM positions means "no SSM captured this turn" and is valid.
     private func _blockLacksCumulativeSSM(_ block: CacheBlock) -> Bool {
         guard let data = block.cacheData else { return true }
-        // Check if any entry is .ssm — if yes, it has cumulative data
         for entry in data {
-            if let entry = entry, case .ssm = entry { return false }
+            if let entry = entry {
+                if case .ssm = entry { return false }
+                if case .placeholder = entry { return false }
+            }
         }
-        // No .ssm entries found — either all attention (fine) or SSM positions are nil (lacks data)
         return true
     }
 
@@ -738,12 +777,26 @@ public final class CacheCoordinator: @unchecked Sendable {
 
             if blockIdx < session.committedBlockIds.count {
                 if finalize {
-                    session.pagedCache.updateBlock(
-                        blockId: session.committedBlockIds[blockIdx],
-                        tokenCount: blockTokens.count,
-                        cacheData: blockData,
-                        hash: blockHash
-                    )
+                    let committedId = session.committedBlockIds[blockIdx]
+                    let committedBlock = session.pagedCache.peekCachedBlock(hash: blockHash)
+                    if let cb = committedBlock, cb.blockId == committedId, cb.refCount > 1 {
+                        // COW: block was forked by another session since commit.
+                        // Allocate a fresh block instead of mutating shared data.
+                        if let newBlock = session.pagedCache.allocateBlock() {
+                            newBlock.tokenCount = blockTokens.count
+                            newBlock.blockHash = blockHash
+                            newBlock.cacheData = blockData
+                            session.pagedCache.markCached(block: newBlock, hash: blockHash)
+                            session.committedBlockIds[blockIdx] = newBlock.blockId
+                        }
+                    } else {
+                        session.pagedCache.updateBlock(
+                            blockId: committedId,
+                            tokenCount: blockTokens.count,
+                            cacheData: blockData,
+                            hash: blockHash
+                        )
+                    }
                 }
                 parentHash = blockHash
                 continue

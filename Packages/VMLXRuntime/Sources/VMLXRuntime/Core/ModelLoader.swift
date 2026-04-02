@@ -100,10 +100,18 @@ public struct ModelLoader: Sendable {
     /// 2. Runs `ModelDetector.detect(at:)` for JANG/hybrid/family metadata
     /// 3. Loads tokenizer via swift-transformers
     public static func load(from path: URL) async throws -> LoadedModel {
+        _vmlxLog("[ModelLoader] detect at \(path.lastPathComponent)")
         let detected = try ModelDetector.detect(at: path)
+        _vmlxLog("[ModelLoader] detect OK: \(detected.name), type=\(detected.modelType ?? "nil")")
+        _vmlxLog("[ModelLoader] loadConfig")
         let config = try _loadConfig(at: path)
+        _vmlxLog("[ModelLoader] loadConfig OK")
+        _vmlxLog("[ModelLoader] loadModel (weights)")
         let (nativeModel, _) = try VMLXModelRegistry.loadModel(from: path)
+        _vmlxLog("[ModelLoader] loadModel OK")
+        _vmlxLog("[ModelLoader] loadTokenizer")
         let tokenizer = try await _loadTokenizer(at: path)
+        _vmlxLog("[ModelLoader] loadTokenizer OK")
 
         return LoadedModel(
             nativeModel: nativeModel,

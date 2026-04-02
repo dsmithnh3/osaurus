@@ -195,6 +195,102 @@ When no explicit override is set (auto mode), these fallbacks can disagree:
 
 ---
 
+## Reasoning Box & Inference Audit Fixes
+
+### GPT-OSS reasoningFormat: .qwen3 → .gptoss
+
+**File:** `ModelConfig.swift:163-167`
+
+**Bug:** GPT-OSS ModelFamilyConfig had `reasoningFormat: .qwen3`. This caused `VMLXServiceBridge` to report `configReasoningFormat = "qwen3"` to the UI middleware resolver, which selected `PrependThinkTagMiddleware` instead of `ChannelTagMiddleware`.
+
+**Fix:** Changed to `reasoningFormat: .gptoss`. Also changed `reasoningParserForFormat(.gptoss)` in `ReasoningParser.swift:34-38` to return `ThinkTagReasoningParser()` (not `GPTOSSReasoningParser`) because the VMLX decode loop already converts `<|channel|>` tokens to `<think>` tags before the accumulator runs.
+
+**Files:** `ModelConfig.swift:165`, `ReasoningParser.swift:34-38`
+
+### MLXService reasoningEffort passthrough
+
+**File:** `MLXGenerationEngine.swift:144-156`
+
+**Bug:** `MLXGenerationEngine` only forwarded `disableThinking` to the chat template context. `reasoningEffort` from `modelOptions` was silently dropped for MLX models.
+
+**Fix:** Added `reasoning_effort` to `additionalContext` dict when `modelOptions["reasoningEffort"]` is set. Uses dict merging pattern to combine with `enable_thinking`.
+
+**Known limitation:** `toolParser` and `reasoningParser` per-model overrides cannot be forwarded to mlx-swift-lm — it has its own config.json-based tool call detection. Documented in code comment.
+
+### mlxServiceOnlyTypes stays empty (intentional)
+
+**File:** `ModelRegistry.swift:62-71`
+
+Initially populated with `deepseek_v3`, `falcon_h1`, `granitemoehybrid`, `jamba_3b` — but reverted. Routing models to MLXService loses all VMLX features (TurboQuant, paged cache, L2 disk cache, SSM re-derivation). `StandardTransformerModel` handles most architectures. Models with custom architectures already have dedicated VMLX implementations. Empty set is correct. Added TODO comment for future audit.
+
+### C4: SSM fallback — replaced by .placeholder approach
+
+**File:** `VMLXRuntimeActor.swift:1252-1268`
+
+My original fix captured SSM state at store time as a fallback. This was **replaced** by a better approach (by Eric/linter): when no boundary-aligned snapshot exists, `.placeholder` entries are emitted for SSM layers to preserve layer count alignment. Post-decode SSM state is contaminated with response tokens and would corrupt future cache hits. The placeholder triggers SSM re-derivation on the next fetch — correct behavior.
+
+---
+
+## Verification Summary
+
+All fixes were re-read line-by-line from the actual files. Results:
+
+| Fix | Verified | Notes |
+|-----|----------|-------|
+| C1: @ParameterInfo for aLog/D/dtBias | OK | Keys match mlx-swift-lm reference |
+| C2: Gate sizing hiddenSize | OK | callAsFunction receives hiddenSize |
+| C3: SSM snapshot $0 * 1 | OK | Matches _deepCopy pattern |
+| C4: SSM placeholder | OK | Replaced by Eric, better than my original |
+| H1: Dense MLP "-" block type | OK | Weight key "mixer" matches reference |
+| H4: SSMReDeriver chunking | OK | Array-of-tuples type consistent |
+| M1: TQ finalize guard | OK | trim() sets .fill first, guard doesn't block |
+| M2: TQ export debug log | OK | DEBUG-only |
+| M3: BlockMemoizer clear() | OK | Trivial |
+| M4: SSMReDeriver eviction | OK | LRU via ordered array |
+| GPT-OSS config .gptoss | OK | Engine uses ThinkTag, UI uses Channel |
+| MLX reasoningEffort | OK | Dict merging pattern |
+| Middleware resolver refactor | OK | All call sites updated |
+| mlxServiceOnlyTypes empty | OK | Intentional, documented |
+
+---
+
+### C5: TQ cache export always emits float KV (CRITICAL — second-prompt garbage fix)
+
+**File:** `Packages/VMLXRuntime/Sources/VMLXRuntime/Quantization/TurboQuantKVCache.swift` lines 377-383
+
+**Bug:** `exportCacheEntry()` returned `.compressedAttention` when in compressed phase. On cache restore, the TQ-decoded (lossy) keys/values were the SOLE attention prefix — no fresh float window to anchor quality. For models with large headDim (Qwen3.5 headDim=256, 2-bit key codebook = 4 levels), the lossy approximation broke attention weights, producing degenerate output ("!!!!!!!!!") on the second prompt.
+
+**Root cause:** TQ works during live inference because the float decode window provides fresh, exact-precision keys alongside the lossy prefix. On cache restore, the entire prefix is lossy with no anchoring float data, causing attention weight collapse.
+
+**Fix:** `exportCacheEntry()` now ALWAYS returns `.attention` (float) by calling `getKeys()`/`getValues()` which concatenate decoded prefix + float window. TQ compression remains active for live inference memory savings (during the decode loop), but the persistent cache (memory/disk/paged) always stores original-quality float KV.
+
+**Isolation method:** Confirmed via systematic testing:
+1. Forced cache miss → works (proves conversation assembly is correct)
+2. Skip SSM restore → still fails (proves SSM is not the issue)  
+3. Disable TQ finalize → works (proves TQ lossy data is the cause)
+4. Float-only export → works (the final fix)
+
+---
+
+### Additional Cache Fixes (2026-04-02)
+
+**Paged cache COW violation in finalize** (`CacheCoordinator.swift`):
+When `_syncPagedWriteSession` finalize updated committed blocks that were forked by other sessions (refCount > 1), it mutated shared data. Fix: allocate new block via COW when refCount > 1.
+
+**`_reconstructFromBlocks` nil return** (`CacheCoordinator.swift`):
+Layers with no data across all paged blocks (e.g., SSM without final snapshot) caused the entire reconstruction to return nil. Fix: emit `.placeholder` to preserve layer alignment.
+
+**DiskCache `file_size` stale on re-store** (`DiskCache.swift`):
+When `storeCache` overwrote an existing entry (e.g., float→TQ re-store), SQLite `file_size` retained the old value. Fix: added `_updateAccessAndSize()` that updates both fields.
+
+**Paged store float→TQ upgrade** (`CacheCoordinator.swift`):
+When `_storeToPagedCache` found existing float blocks but the source had TQ-compressed data, it just forked the stale float blocks. Fix: added `_blockHasCompressedUpgrade()` check to upgrade in-place when exclusively owned.
+
+**Paged cache refCount leak** (`CacheCoordinator.swift`):
+`_storeToPagedCache` called `forkBlock` on every dedup match with no cleanup path, making blocks non-evictable. Fix: removed `forkBlock` — `peekCachedBlock` already updates LRU timestamp.
+
+---
+
 ### Test Gaps Identified
 
 - No test for compressed-phase decode token accumulation (`appendDecodeTokens` after `compress()`)

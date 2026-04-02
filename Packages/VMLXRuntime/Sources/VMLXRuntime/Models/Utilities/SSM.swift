@@ -81,11 +81,20 @@ final class VMLXSSMKernelManager: Sendable {
 /// MLX's internal `CustomKernelCache` uses an unprotected `std::unordered_map` for compiled libraries.
 /// If multiple threads (e.g. generation vs background SSM recovery) invoke `eval` on a custom kernel
 /// for the first time concurrently, it will crash with `EXC_BAD_ACCESS` in `CustomKernel::eval_gpu`.
+private func _prewarmLog(_ msg: String) {
+    let line = "[\(Date())] \(msg)\n"
+    if let fh = FileHandle(forWritingAtPath: "/tmp/vmlx_debug.log") {
+        fh.seekToEndOfFile(); fh.write(line.data(using: .utf8)!); fh.closeFile()
+    }
+}
+
 public func vmlxPrewarmCustomKernels() {
+    _prewarmLog("[Prewarm] START")
     let dtype = DType.float16
     let B = 1, T = 1, Hv = 1, Dv = 1, Hk = 1, Dk = 1
-    
+
     // GatedDelta without mask
+    _prewarmLog("[Prewarm] GatedDelta no-mask")
     if let kernel = GatedDeltaKernelManager.shared.kernel {
         let q = MLXArray.zeros([B, T, Hv, Dk], dtype: dtype)
         let state = MLXArray.zeros([B, Hv, Dv, Dk], dtype: dtype)
@@ -97,9 +106,10 @@ public func vmlxPrewarmCustomKernels() {
             outputDTypes: [dtype, dtype]
         )
         MLX.eval(out)
+        _prewarmLog("[Prewarm] GatedDelta no-mask OK")
     }
-    
-    // GatedDelta with mask
+
+    _prewarmLog("[Prewarm] GatedDelta masked")
     if let kernel = GatedDeltaKernelManager.shared.kernelMasked {
         let q = MLXArray.zeros([B, T, Hv, Dk], dtype: dtype)
         let state = MLXArray.zeros([B, Hv, Dv, Dk], dtype: dtype)
@@ -114,7 +124,9 @@ public func vmlxPrewarmCustomKernels() {
         MLX.eval(out)
     }
     
-    // SSM
+    _prewarmLog("[Prewarm] GatedDelta masked OK")
+
+    _prewarmLog("[Prewarm] SSM kernel")
     if let kernel = VMLXSSMKernelManager.shared.kernel {
         let x = MLXArray.zeros([1, 1, 1, 1], dtype: dtype)
         let state = MLXArray.zeros([1, 1, 1, 1], dtype: dtype)
@@ -126,7 +138,9 @@ public func vmlxPrewarmCustomKernels() {
             outputDTypes: [dtype, dtype]
         )
         MLX.eval(out)
+        _prewarmLog("[Prewarm] SSM kernel OK")
     }
+    _prewarmLog("[Prewarm] DONE")
 }
 
 /// Single-step SSM update via Metal kernel (seq_len == 1, generation).
@@ -300,18 +314,9 @@ public func vmlxSSMUpdate(
 ) -> (MLXArray, MLXArray) {
     let seqLen = hiddenStates.dim(1)
 
-    if seqLen == 1,
-       let state,
-       VMLXSSMKernelManager.shared.kernel != nil
-    {
-        return vmlxSSMUpdateKernel(
-            hiddenStates: hiddenStates,
-            ALog: ALog, B: B, C: C, D: D,
-            dt: dt, dtBias: dtBias,
-            state: state,
-            timeStepLimit: timeStepLimit
-        )
-    }
+    // Metal kernel DISABLED — crashes with EXC_BAD_ACCESS even during serialized
+    // prewarm. Same root cause as GatedDelta kernel.
+    // TODO: Debug kernel template params for Qwen3.5-35B-A3B dimensions.
 
     return vmlxSSMAttn(
         x: hiddenStates,

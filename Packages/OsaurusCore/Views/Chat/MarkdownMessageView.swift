@@ -107,6 +107,13 @@ private struct MemoizedMarkdownView: View {
         }
         .onChange(of: text) { oldText, newText in
             if lastParsedText != newText {
+                // Skip markdown parsing during streaming for large content.
+                // The full parse runs once when streaming ends (onChange of isStreaming).
+                // This prevents the main thread from being blocked by repeated
+                // markdown re-parses on every token at 50+ tok/s.
+                if isStreaming && newText.utf8.count > 3_000 {
+                    return
+                }
                 scheduleBackgroundParse(for: newText, oldText: oldText, debounce: true)
             }
         }

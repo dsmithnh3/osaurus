@@ -138,3 +138,5 @@ benchmarks/
 
 # Generated benchmark/test output
 results/*.profraw
+*.profraw
+*.ips

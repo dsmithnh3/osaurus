@@ -97,9 +97,10 @@ public final class DiskCache: @unchecked Sendable {
         let fileName = "\(hash).safetensors"
 
         return lock.withLock {
-            // Check if already cached
+            // Check if already cached — update access + file_size (data may have changed,
+            // e.g., float→TQ-compressed re-store produces a smaller file).
             if _lookupEntry(hash: hash) != nil {
-                _updateAccess(hash: hash)
+                _updateAccessAndSize(hash: hash, fileSize: fileSize)
                 return true
             }
 
@@ -227,8 +228,8 @@ public final class DiskCache: @unchecked Sendable {
                 metadata["__layer_\(i)_type__"] = "compressed_attention"
                 metadata["__layer_\(i)_offset__"] = String(offset)
                 metadata["__layer_\(i)_index_bits__"] = String(ek.indexBits)
+                metadata["__layer_\(i)_value_index_bits__"] = String(ev.indexBits)
                 metadata["__layer_\(i)_seed__"] = String(ek.seed)
-                metadata["__layer_\(i)_sink_count__"] = String(ek.sinkCount)
                 metadata["__layer_\(i)_shape__"] = ek.shape.map(String.init).joined(separator: ",")
                 metadata["__layer_\(i)_value_shape__"] = ev.shape.map(String.init).joined(separator: ",")
                 MLX.eval(ek.indicesPacked, ek.qjlPacked, ek.residualNorms, ek.vectorNorms)
@@ -399,6 +400,11 @@ public final class DiskCache: @unchecked Sendable {
                 }
                 let offset = Int(metadata["__layer_\(i)_offset__"] ?? "0") ?? 0
                 let indexBits = Int(metadata["__layer_\(i)_index_bits__"] ?? "3") ?? 3
+                // Value index bits are stored separately — they differ from key index bits.
+                // Keys: indexBits = keyBits - 1 (MSE bits, +1 QJL bit).
+                // Values: indexBits = valueBits (full MSE bits, no QJL).
+                // Fallback to indexBits+1 for files written before this fix.
+                let valueIndexBits = Int(metadata["__layer_\(i)_value_index_bits__"] ?? "") ?? (indexBits + 1)
                 let seed = Int(metadata["__layer_\(i)_seed__"] ?? "42") ?? 42
                 let shapeStr = metadata["__layer_\(i)_shape__"] ?? ""
                 let shape = shapeStr.split(separator: ",").compactMap { Int($0) }
@@ -417,7 +423,7 @@ public final class DiskCache: @unchecked Sendable {
                 )
                 let ev = EncodedValues(
                     indicesPacked: evIndices, vectorNorms: evNorms,
-                    shape: valShape, indexBits: indexBits, seed: seed,
+                    shape: valShape, indexBits: valueIndexBits, seed: seed,
                     sinkData: evSink
                 )
                 layers.append(.compressedAttention(ek, ev, offset))
@@ -512,6 +518,17 @@ public final class DiskCache: @unchecked Sendable {
         defer { sqlite3_finalize(stmt) }
         sqlite3_bind_double(stmt, 1, CFAbsoluteTimeGetCurrent())
         sqlite3_bind_text(stmt, 2, hash, -1, Self.sqliteTransient)
+        sqlite3_step(stmt)
+    }
+
+    private func _updateAccessAndSize(hash: String, fileSize: Int) {
+        var stmt: OpaquePointer?
+        let sql = "UPDATE cache_entries SET last_accessed = ?, access_count = access_count + 1, file_size = ? WHERE token_hash = ?"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+        defer { sqlite3_finalize(stmt) }
+        sqlite3_bind_double(stmt, 1, CFAbsoluteTimeGetCurrent())
+        sqlite3_bind_int(stmt, 2, Int32(fileSize))
+        sqlite3_bind_text(stmt, 3, hash, -1, Self.sqliteTransient)
         sqlite3_step(stmt)
     }
 

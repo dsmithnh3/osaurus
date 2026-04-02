@@ -419,23 +419,46 @@ actor ChatEngine: Sendable, ChatEngineProtocol {
                 }
             }
 
-            // Fallback to plain generation (no tools)
-            let text = try await service.generateOneShot(
+            // Use streaming internally to capture engine stats from sentinels.
+            let stream = try await service.streamDeltas(
                 messages: messages,
                 parameters: params,
-                requestedModel: request.model
+                requestedModel: request.model,
+                stopSequences: request.stop ?? []
             )
-            let outputTokens = max(1, text.count / 4)
+            var text = ""
+            var engineStats: GenerationStats? = nil
+            for try await delta in stream {
+                if let stats = StreamingToolHint.decodeStats(delta) {
+                    engineStats = stats
+                } else if !StreamingToolHint.isSentinel(delta) {
+                    text += delta
+                }
+            }
+            let outputTokens = engineStats?.completionTokens ?? max(1, text.count / 4)
+            let promptToks = engineStats?.promptTokens ?? inputTokens
             let choice = ChatChoice(
                 index: 0,
                 message: ChatMessage(role: "assistant", content: text, tool_calls: nil, tool_call_id: nil),
                 finish_reason: "stop"
             )
             let usage = Usage(
-                prompt_tokens: inputTokens,
+                prompt_tokens: promptToks,
                 completion_tokens: outputTokens,
-                total_tokens: inputTokens + outputTokens
+                total_tokens: promptToks + outputTokens,
+                cached_tokens: engineStats.map { $0.cachedTokens > 0 ? $0.cachedTokens : nil } ?? nil
             )
+
+            // Build engine stats for API response
+            let xEngine: EngineStats? = engineStats.map {
+                EngineStats(
+                    ttft: $0.ttft,
+                    prompt_tokens_per_sec: $0.prefillTokensPerSecond,
+                    generation_tokens_per_sec: $0.decodeTokensPerSecond,
+                    cache_detail: $0.cacheDetail,
+                    cache_bytes: Int($0.cacheBytes)
+                )
+            }
 
             // Log the inference (only for Chat UI - HTTP requests are logged by HTTPHandler)
             if inferenceSource == .chatUI {
@@ -443,7 +466,7 @@ actor ChatEngine: Sendable, ChatEngineProtocol {
                 InsightsService.logInference(
                     source: inferenceSource,
                     model: effectiveModel,
-                    inputTokens: inputTokens,
+                    inputTokens: promptToks,
                     outputTokens: outputTokens,
                     durationMs: durationMs,
                     temperature: temperature,
@@ -458,7 +481,8 @@ actor ChatEngine: Sendable, ChatEngineProtocol {
                 model: effectiveModel,
                 choices: [choice],
                 usage: usage,
-                system_fingerprint: nil
+                system_fingerprint: nil,
+                x_engine: xEngine
             )
         case .none:
             throw EngineError()

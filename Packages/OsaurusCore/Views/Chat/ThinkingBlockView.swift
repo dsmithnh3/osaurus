@@ -166,7 +166,20 @@ struct ThinkingBlockView: View {
         VStack(alignment: .leading, spacing: 0) {
             ScrollViewReader { proxy in
                 ScrollView {
-                    Text(thinking)
+                    // During streaming, only show the TAIL of the thinking text
+                    // to avoid SwiftUI re-measuring the entire multi-KB string
+                    // on every token (which freezes the main thread).
+                    let displayText: String = {
+                        if isStreaming && thinking.utf8.count > 2000 {
+                            let suffix = String(thinking.suffix(1500))
+                            if let nl = suffix.firstIndex(of: "\n") {
+                                return "…" + String(suffix[suffix.index(after: nl)...])
+                            }
+                            return "…" + suffix
+                        }
+                        return thinking
+                    }()
+                    Text(displayText)
                         .font(theme.font(size: CGFloat(theme.bodySize) - 1, weight: .regular))
                         .foregroundColor(theme.primaryText.opacity(0.85))
                         .lineSpacing(4)
@@ -175,8 +188,10 @@ struct ThinkingBlockView: View {
                         .id("thinkingBottom")
                 }
                 .frame(maxHeight: 300)
-                .onChange(of: characterCount) { _, _ in
-                    if isStreaming {
+                .onChange(of: characterCount) { _, newCount in
+                    // Throttle scroll-to-bottom: only scroll every ~500 chars
+                    // to avoid 55 layout passes/second at full tok/s.
+                    if isStreaming && newCount % 500 < 20 {
                         proxy.scrollTo("thinkingBottom", anchor: .bottom)
                     }
                 }

@@ -67,6 +67,7 @@ public final class TurboQuantKVCache: VMLXBaseKVCache, @unchecked Sendable {
         decodedValueBuffer = nil
         floatWindowKeys = nil
         floatWindowValues = nil
+        windowOffset = 0
         offset = 0
     }
 
@@ -80,6 +81,7 @@ public final class TurboQuantKVCache: VMLXBaseKVCache, @unchecked Sendable {
         decodedValueBuffer = nil
         floatWindowKeys = nil
         floatWindowValues = nil
+        windowOffset = 0
         offset = keys.dim(2)
     }
 
@@ -97,6 +99,7 @@ public final class TurboQuantKVCache: VMLXBaseKVCache, @unchecked Sendable {
         floatValues = nil
         floatWindowKeys = nil
         floatWindowValues = nil
+        windowOffset = 0
         phase = .compressed
         self.offset = offset
     }
@@ -195,32 +198,70 @@ public final class TurboQuantKVCache: VMLXBaseKVCache, @unchecked Sendable {
         _ = finalizePrefillIfNeeded()
     }
 
+    /// Pre-allocated window step size (matches VMLXKVCacheSimple pattern).
+    /// Window grows in chunks of `windowStep` to avoid per-token allocation.
+    private let windowStep = 256
+    /// Number of tokens written into the pre-allocated window buffer.
+    private var windowOffset = 0
+
     public func appendDecodeTokens(newKeys: MLXArray, newValues: MLXArray) {
         guard phase == .compressed else {
             appendFloat(keys: newKeys, values: newValues)
             return
         }
 
-        offset += newKeys.dim(2)
-        if let existingKeys = floatWindowKeys, let existingValues = floatWindowValues {
-            floatWindowKeys = concatenated([existingKeys, newKeys], axis: 2)
-            floatWindowValues = concatenated([existingValues, newValues], axis: 2)
+        let newTokens = newKeys.dim(2)
+        offset += newTokens
+
+        // Pre-allocated buffer pattern (O(1) per token, same as VMLXKVCacheSimple):
+        // Allocate in chunks of `windowStep`. Write new tokens in-place via scatter.
+        // This avoids the O(N) concatenation chain that killed long-context speed.
+        let needsRealloc: Bool
+        if let existingKeys = floatWindowKeys {
+            needsRealloc = (windowOffset + newTokens) > existingKeys.dim(2)
         } else {
-            floatWindowKeys = newKeys
-            floatWindowValues = newValues
+            needsRealloc = true
         }
+
+        if needsRealloc {
+            let B = newKeys.dim(0)
+            let H = newKeys.dim(1)
+            let kD = newKeys.dim(3)
+            let vD = newValues.dim(3)
+            let nSteps = (windowStep + newTokens - 1) / windowStep
+            let newK = MLXArray.zeros([B, H, nSteps * windowStep, kD], dtype: newKeys.dtype)
+            let newV = MLXArray.zeros([B, H, nSteps * windowStep, vD], dtype: newValues.dtype)
+
+            if let existingKeys = floatWindowKeys, let existingValues = floatWindowValues, windowOffset > 0 {
+                floatWindowKeys = concatenated([existingKeys[.ellipsis, ..<windowOffset, 0...], newK], axis: 2)
+                floatWindowValues = concatenated([existingValues[.ellipsis, ..<windowOffset, 0...], newV], axis: 2)
+            } else {
+                floatWindowKeys = newK
+                floatWindowValues = newV
+            }
+        }
+
+        // In-place scatter write (O(1) — no new array allocation)
+        floatWindowKeys?[.ellipsis, windowOffset..<(windowOffset + newTokens), 0...] = newKeys
+        floatWindowValues?[.ellipsis, windowOffset..<(windowOffset + newTokens), 0...] = newValues
+        windowOffset += newTokens
     }
 
     public func getKeys() -> MLXArray? {
         switch phase {
         case .compressed:
             if let decodedKeyBuffer {
-                if let floatWindowKeys {
-                    return concatenated([decodedKeyBuffer, floatWindowKeys], axis: 2)
+                if let floatWindowKeys, windowOffset > 0 {
+                    // O(1) slice view — NOT a copy
+                    let windowSlice = floatWindowKeys[.ellipsis, ..<windowOffset, 0...]
+                    return concatenated([decodedKeyBuffer, windowSlice], axis: 2)
                 }
                 return decodedKeyBuffer
             }
-            return floatWindowKeys
+            if let floatWindowKeys, windowOffset > 0 {
+                return floatWindowKeys[.ellipsis, ..<windowOffset, 0...]
+            }
+            return nil
         case .fill:
             return floatKeys
         }
@@ -230,12 +271,16 @@ public final class TurboQuantKVCache: VMLXBaseKVCache, @unchecked Sendable {
         switch phase {
         case .compressed:
             if let decodedValueBuffer {
-                if let floatWindowValues {
-                    return concatenated([decodedValueBuffer, floatWindowValues], axis: 2)
+                if let floatWindowValues, windowOffset > 0 {
+                    let windowSlice = floatWindowValues[.ellipsis, ..<windowOffset, 0...]
+                    return concatenated([decodedValueBuffer, windowSlice], axis: 2)
                 }
                 return decodedValueBuffer
             }
-            return floatWindowValues
+            if let floatWindowValues, windowOffset > 0 {
+                return floatWindowValues[.ellipsis, ..<windowOffset, 0...]
+            }
+            return nil
         case .fill:
             return floatValues
         }
@@ -375,37 +420,25 @@ public final class TurboQuantKVCache: VMLXBaseKVCache, @unchecked Sendable {
     }
 
     public override func exportCacheEntry() -> LayerCacheEntry? {
-        if phase == .compressed,
-           let compressedKeys,
-           let compressedValues {
-            if let floatWindowKeys, let floatWindowValues {
-                let prefixEntry = LayerCacheEntry.compressedAttention(
-                    compressedKeys,
-                    compressedValues,
-                    TurboQuantLayerCache.totalTokenCount(for: compressedKeys)
-                )
-                if let tailEntry = TurboQuantLayerCache.encodeAttentionLayer(
-                    keys: floatWindowKeys,
-                    values: floatWindowValues,
-                    config: config,
-                    layerIndex: layerIndex,
-                    totalLayers: totalLayers,
-                    sinkTokens: 0
-                ),
-                   let mergedEntry = TurboQuantLayerCache.mergeCompressedAttention([prefixEntry, tailEntry]) {
-                    return mergedEntry
-                }
-                // TQ merge failed — falling back to full float export.
-                // This silently destroys compression for this layer.
-                #if DEBUG
-                print("[TQ] exportCacheEntry: compressed merge failed for layer \(layerIndex), falling back to float (window: \(floatWindowKeys.dim(2)) tokens)")
-                #endif
-            } else {
-                return .compressedAttention(compressedKeys, compressedValues, offset)
-            }
+        // Export compressed representation directly when in compressed phase.
+        // This avoids the old decode→float→store→restore→re-encode round-trip
+        // that doubled TQ lossy cycles and inflated I/O 5x.
+        //
+        // The previous approach decoded to float on export, then re-encoded on
+        // restore — two lossy cycles caused attention drift on multi-turn.
+        // By preserving the original compressed encoding, restore installs it
+        // directly (single decode for inference buffers only, zero re-encode),
+        // maintaining the same quality as live inference.
+        if phase == .compressed, let ek = compressedKeys, let ev = compressedValues {
+            // Export only the compressed prefix (decode window excluded).
+            // The store path truncates to targetOffset ≤ compressed boundary,
+            // so float window tokens (generated after prefill) are not persisted.
+            let compressedTokenCount = TurboQuantLayerCache.totalTokenCount(for: ek)
+            return .compressedAttention(ek, ev, compressedTokenCount)
         }
 
-        guard let (keys, values) = currentFloatKV() else { return nil }
+        // Fill phase: export as float (pre-compression prefill data)
+        guard let keys = getKeys(), let values = getValues() else { return nil }
         return .attention(KVCacheLayer(keys: keys, values: values, offset: offset))
     }
 
@@ -416,6 +449,14 @@ public final class TurboQuantKVCache: VMLXBaseKVCache, @unchecked Sendable {
             loadFillState(keys: kv.keys, values: kv.values)
             return true
         case .compressedAttention(let encodedKeys, let encodedValues, let offset):
+            // Install compressed state directly — single decode for inference
+            // buffers only, zero re-encode. This replaces the old path that
+            // decoded to float → fill phase → re-encoded on finalizePrefill,
+            // causing double-lossy degradation and 2x encode/decode overhead.
+            //
+            // New tokens (remaining prefill + gen_prompt) go to the float window
+            // via appendDecodeTokens, preserving full precision for fresh data
+            // while the compressed prefix stays as-is from the original encoding.
             let state = restoreEncoderState(
                 encodedKeys: encodedKeys,
                 encodedValues: encodedValues,
