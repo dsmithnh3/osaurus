@@ -58,6 +58,7 @@ public struct SSMStateLayer: @unchecked Sendable {
 /// Every layer in a model produces exactly one of these.
 /// Hybrid models (Nemotron-H, Jamba, Qwen3.5-A3B) mix both types.
 /// TurboQuant-compressed layers use `.compressedAttention` for 3-bit storage.
+/// Layers that don't need cache (MoE-MLP, Dense-MLP) use `.placeholder`.
 public enum LayerCacheEntry: @unchecked Sendable {
     case attention(KVCacheLayer)
     case ssm(SSMStateLayer)
@@ -65,6 +66,10 @@ public enum LayerCacheEntry: @unchecked Sendable {
     /// Stores 3-bit encoded keys/values + token offset.
     /// On cache fetch, decode to float and load into VMLXKVCacheSimple.
     case compressedAttention(EncodedKeys, EncodedValues, Int)
+    /// No-op placeholder for layers that don't use KV or SSM cache
+    /// (e.g., MoE-MLP and Dense-MLP blocks in NemotronH).
+    /// Preserves layer index alignment between stored HybridCache and live cache.
+    case placeholder
 
     public var isAttention: Bool {
         switch self {
@@ -83,11 +88,17 @@ public enum LayerCacheEntry: @unchecked Sendable {
         return false
     }
 
+    public var isPlaceholder: Bool {
+        if case .placeholder = self { return true }
+        return false
+    }
+
     public var canTruncate: Bool {
         switch self {
         case .attention: return true
         case .compressedAttention: return false  // Compressed data can't be partially truncated
         case .ssm(let s): return s.canTruncate
+        case .placeholder: return true  // No data to truncate
         }
     }
 
@@ -97,6 +108,7 @@ public enum LayerCacheEntry: @unchecked Sendable {
         case .ssm(let ssm): return ssm.estimatedBytes
         case .compressedAttention(let ek, let ev, _):
             return ek.estimatedBytes + ev.estimatedBytes
+        case .placeholder: return 0
         }
     }
 
@@ -105,6 +117,8 @@ public enum LayerCacheEntry: @unchecked Sendable {
         switch self {
         case .attention(let kv):
             return .attention(kv.truncated(to: tokenCount))
+        case .placeholder:
+            return .placeholder
         case .ssm, .compressedAttention:
             return nil  // Cannot truncate cumulative SSM or compressed data
         }

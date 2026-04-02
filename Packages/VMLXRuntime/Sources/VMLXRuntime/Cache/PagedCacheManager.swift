@@ -182,12 +182,58 @@ public final class PagedCacheManager: @unchecked Sendable {
         }
     }
 
+    /// Look up a cached block by hash without mutating fetch hit/miss stats.
+    public func peekCachedBlock(hash: BlockHash) -> CacheBlock? {
+        lock.withLock {
+            guard let block = hashMap.getBlock(hash: hash) else { return nil }
+            block.touch()
+            return block
+        }
+    }
+
     // MARK: - Block Table Management
 
     /// Register a block table for a request, associating block IDs with the request.
     public func registerBlockTable(_ requestId: String, blockIds: [Int]) {
         lock.withLock {
             requestTables[requestId] = blockIds
+        }
+    }
+
+    /// Append one block to the request-scoped block table.
+    public func appendBlockTable(_ requestId: String, blockId: Int) {
+        lock.withLock {
+            requestTables[requestId, default: []].append(blockId)
+        }
+    }
+
+    /// Update cached block contents in place. Used by live paged sessions to
+    /// rewrite previously committed blocks once the final cache representation
+    /// (for example TurboQuant-compressed attention or final hybrid SSM state)
+    /// is available.
+    public func updateBlock(
+        blockId: Int,
+        tokenCount: Int,
+        cacheData: [LayerCacheEntry?],
+        hash: BlockHash
+    ) {
+        lock.withLock {
+            guard blockId > 0, blockId < blocks.count else { return }
+            let block = blocks[blockId]
+            guard block.refCount > 0 || allocatedBlocks[blockId] != nil else { return }
+
+            if let previousHash = block.blockHash, previousHash != hash {
+                _ = hashMap.pop(hash: previousHash, blockId: blockId)
+            }
+
+            block.tokenCount = tokenCount
+            block.cacheData = cacheData
+            block.blockHash = hash
+            block.touch()
+
+            allocatedBlocks[blockId] = block
+            hashMap.insert(hash: hash, block: block)
+            stats.allocatedBlocks = allocatedBlocks.count
         }
     }
 

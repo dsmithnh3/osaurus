@@ -87,6 +87,12 @@ public actor VMLXRuntimeActor {
     /// Whether a model is loaded and ready.
     public var isModelLoaded: Bool { modelContainer != nil }
 
+    /// The loaded model's family config (reasoning format, tool format, etc.).
+    /// Returns nil if no model is loaded.
+    public var loadedFamilyConfig: ModelFamilyConfig? {
+        modelContainer?.familyConfig
+    }
+
     /// Scheduler owns request queue, cache coordinator, and batching logic.
     private var scheduler: Scheduler
 
@@ -115,7 +121,7 @@ public actor VMLXRuntimeActor {
 
     private func estimateLiveCacheBytes(_ cache: [any VMLXKVCache]) -> Int {
         cache.reduce(into: 0) { total, layer in
-            total += layer.state.reduce(into: 0) { $0 += $1.nbytes }
+            total += layer.estimatedBytes
         }
     }
 
@@ -127,8 +133,8 @@ public actor VMLXRuntimeActor {
         guard totalPrefillTokens > 1 else { return configuredStep }
 
         let detectedExperts = container.model.detected.numExperts ?? 0
-        let isLargeJangMoE = container.isJang && detectedExperts >= 256
-        guard isLargeJangMoE else { return configuredStep }
+        let isLargeMoE = detectedExperts >= 256
+        guard isLargeMoE else { return configuredStep }
 
         let shortPromptCap = 8
         let mediumPromptCap = 16
@@ -328,8 +334,6 @@ public actor VMLXRuntimeActor {
         let nameLower = name.lowercased()
 
         let matched = available.first(where: { $0.name.lowercased() == nameLower })
-            ?? available.first(where: { $0.name.lowercased().contains(nameLower) })
-            ?? available.first(where: { $0.modelPath.lastPathComponent.lowercased().contains(nameLower) })
 
         guard let model = matched else {
             let availableNames = available.map(\.name).joined(separator: ", ")
@@ -544,6 +548,9 @@ public actor VMLXRuntimeActor {
 
         return AsyncThrowingStream { continuation in
             let task = Task { @Sendable in
+                let pagedWriteSession = self.scheduler.cache.beginPagedWriteSession(
+                    requestId: requestId
+                )
                 do {
                     let requestStart = CFAbsoluteTimeGetCurrent()
                     var ttftTime: Double = 0
@@ -565,11 +572,13 @@ public actor VMLXRuntimeActor {
                     let tqConfig = self.scheduler.config.enableTurboQuant ? container.turboQuantConfig : nil
                     let tqEnabled = tqConfig != nil
                     _vmlxLog2("[Gen] Config: kvQuant=\(kvBitsStr) tq=\(tqEnabled) hybrid=\(container.isHybrid)")
-                    let cache = container.newCache(kvBits: kvBits, kvGroupSize: kvGroupSize)
+                    let cache = container.newCache(config: VMLXLiveCacheConfig(
+                        kvBits: kvBits,
+                        kvGroupSize: kvGroupSize,
+                        turboQuantConfig: tqConfig
+                    ))
                     var inputTokens = MLXArray()
                     var cachedTokenCount = 0
-                    var restoredStoreBoundary = 0
-                    var fetchedHybridForStore: HybridCache? = nil
 
                     func _makeTQState(
                         encodedKeys: EncodedKeys,
@@ -601,38 +610,13 @@ public actor VMLXRuntimeActor {
                     @discardableResult
                     func _restoreCachedHybrid(_ cachedHybrid: HybridCache) -> Int {
                         let tqState = _makeTQState(for: cachedHybrid)
+                        let restoreOptions = VMLXCacheRestoreOptions(turboQuantState: tqState)
                         var restoredLayers = 0
 
                         for (i, entry) in cachedHybrid.layers.enumerated() {
                             guard i < cache.count else { break }
-                            switch entry {
-                            case .attention(let kv):
-                                if let kvBase = cache[i] as? VMLXBaseKVCache,
-                                   !(cache[i] is VMLXMambaCache) {
-                                    kvBase.state = [kv.keys, kv.values]
-                                    restoredLayers += 1
-                                }
-                            case .compressedAttention(let ek, let ev, _):
-                                if let kvBase = cache[i] as? VMLXBaseKVCache,
-                                   !(cache[i] is VMLXMambaCache) {
-                                    let dk: MLXArray
-                                    let dv: MLXArray
-                                    if let st = tqState {
-                                        dk = TurboQuantEncoder.decodeKeys(ek, state: st)
-                                        dv = TurboQuantEncoder.decodeValues(ev, state: st)
-                                    } else {
-                                        dk = TurboQuantEncoder.decodeKeys(ek, seed: ek.seed)
-                                        dv = TurboQuantEncoder.decodeValues(ev, seed: ev.seed)
-                                    }
-                                    eval(dk, dv)
-                                    kvBase.state = [dk, dv]
-                                    restoredLayers += 1
-                                }
-                            case .ssm(let ssm):
-                                if let mambaCache = cache[i] as? VMLXMambaCache {
-                                    mambaCache.state = ssm.state
-                                    restoredLayers += 1
-                                }
+                            if cache[i].restore(from: entry, options: restoreOptions) {
+                                restoredLayers += 1
                             }
                         }
 
@@ -643,9 +627,11 @@ public actor VMLXRuntimeActor {
                     func _injectSSMCheckpoint(_ checkpoint: SSMCheckpoint) -> Int {
                         var ssmIdx = 0
                         for c in cache {
-                            if let mambaCache = c as? VMLXMambaCache,
-                               ssmIdx < checkpoint.ssmStates.count {
-                                mambaCache.state = checkpoint.ssmStates[ssmIdx].state
+                            guard ssmIdx < checkpoint.ssmStates.count else { break }
+                            if c.restore(
+                                from: .ssm(checkpoint.ssmStates[ssmIdx]),
+                                options: .init()
+                            ) {
                                 ssmIdx += 1
                             }
                         }
@@ -671,28 +657,68 @@ public actor VMLXRuntimeActor {
                     func _captureCurrentSSMSnapshot() -> [[MLXArray]] {
                         cache.compactMap { c -> [MLXArray]? in
                             guard let mamba = c as? VMLXMambaCache else { return nil }
-                            return mamba.state.map { $0[.ellipsis] }
+                            // Force real buffer copy via multiply-by-1 (not $0[.ellipsis] which is a lazy view).
+                            // SSM state is modified in-place by forward pass — lazy view would be corrupted.
+                            return mamba.state.map { $0 * 1 }
                         }
                     }
 
-                    func _compressedPrefixEntry(
-                        layerIndex: Int,
-                        boundary: Int,
-                        from cachedHybrid: HybridCache?
-                    ) -> LayerCacheEntry? {
-                        guard boundary > 0,
-                              let cachedHybrid,
-                              layerIndex < cachedHybrid.layers.count else {
-                            return nil
+                    func _attentionCacheOffset() -> Int {
+                        cache.first(where: { !($0 is VMLXMambaCache) })?.offset ?? 0
+                    }
+
+                    func _exportLiveHybridCache(
+                        targetOffset: Int,
+                        ssmSnapshot: [[MLXArray]]? = nil
+                    ) -> HybridCache? {
+                        guard targetOffset > 0 else { return nil }
+
+                        var layers: [LayerCacheEntry] = []
+                        var ssmSnapshotIdx = 0
+
+                        for c in cache {
+                            if c is VMLXMambaCache,
+                               let snapshot = ssmSnapshot,
+                               ssmSnapshotIdx < snapshot.count {
+                                layers.append(.ssm(SSMStateLayer(
+                                    state: snapshot[ssmSnapshotIdx].map { $0[.ellipsis] }
+                                )))
+                                ssmSnapshotIdx += 1
+                                continue
+                            }
+
+                            guard let entry = c.exportCacheEntry() else { return nil }
+
+                            switch entry {
+                            case .attention(let kv):
+                                if kv.offset > targetOffset {
+                                    layers.append(.attention(kv.truncated(to: targetOffset)))
+                                } else {
+                                    layers.append(entry)
+                                }
+
+                            case .compressedAttention(let encodedKeys, let encodedValues, let offset):
+                                if offset > targetOffset {
+                                    guard let sliced = TurboQuantLayerCache.sliceCompressedAttention(
+                                        encodedKeys,
+                                        encodedValues,
+                                        range: 0..<targetOffset
+                                    ) else {
+                                        return nil
+                                    }
+                                    layers.append(sliced)
+                                } else {
+                                    layers.append(entry)
+                                }
+
+                            case .ssm, .placeholder:
+                                layers.append(entry)
+                            }
                         }
-                        guard case .compressedAttention(let encodedKeys, let encodedValues, _) = cachedHybrid.layers[layerIndex] else {
-                            return nil
-                        }
-                        return TurboQuantLayerCache.sliceCompressedAttention(
-                            encodedKeys,
-                            encodedValues,
-                            range: 0..<boundary
-                        )
+
+                        let hybridCache = HybridCache(layers: layers)
+                        hybridCache.materialized()
+                        return hybridCache
                     }
 
                     _vmlxLog2("[Gen] Fetch cache: \(cacheKeyTokens.count) cacheKeyTokens, \(tokens.count) total tokens, genPromptLen=\(genPromptLen)")
@@ -722,8 +748,14 @@ public actor VMLXRuntimeActor {
                                     cacheDetailStr = "rederived/\(detail)"
                                     _vmlxLog2("[Gen] Exact hybrid hit: recovered boundary-aligned SSM at \(restoredBoundary) tokens")
                                 } else {
-                                    canUseHit = false
-                                    _vmlxLog2("[Gen] Exact hybrid hit: boundary-aligned SSM unavailable at \(restoredBoundary) tokens; falling back to full prefill")
+                                    let requiresSSM = request.enableThinking ?? true
+                                    if requiresSSM {
+                                        canUseHit = false
+                                        _vmlxLog2("[Gen] Exact hybrid hit: boundary-aligned SSM unavailable at \(restoredBoundary) tokens; falling back to full prefill (SSM required for thinking)")
+                                    } else {
+                                        cacheDetailStr = "async-rederive/\(detail)"
+                                        _vmlxLog2("[Gen] Exact hybrid hit: async re-derive started, proceeding with KV-only for this turn (thinking disabled)")
+                                    }
                                 }
                             } catch {
                                 canUseHit = false
@@ -733,8 +765,6 @@ public actor VMLXRuntimeActor {
 
                         if canUseHit {
                             let restoredLayers = _restoreCachedHybrid(cachedHybrid)
-                            restoredStoreBoundary = restoredBoundary
-                            fetchedHybridForStore = cachedHybrid
                             // Log cache state after restore for debugging
                             let cacheType = cache.first.map { String(describing: type(of: $0)) } ?? "unknown"
                             let restoredOffset = (cache.first as? VMLXBaseKVCache)?.offset ?? -1
@@ -743,6 +773,7 @@ public actor VMLXRuntimeActor {
                                 case .attention: return "attention"
                                 case .compressedAttention: return "compressedAttention(TQ)"
                                 case .ssm: return "ssm"
+                                case .placeholder: return "placeholder"
                                 }
                             } ?? "empty"
                             _vmlxLog2("[Gen] Restored \(restoredLayers)/\(cachedHybrid.layerCount) layers, type=\(cacheType), offset=\(restoredOffset), entryType=\(firstEntryType)")
@@ -807,8 +838,6 @@ public actor VMLXRuntimeActor {
                                     ) {
                                         let restoredLayers = _restoreCachedHybrid(attentionCache)
                                         let injectedLayers = _injectSSMCheckpoint(checkpoint)
-                                        restoredStoreBoundary = recoveryBoundary
-                                        fetchedHybridForStore = attentionCache
                                         eval(cache)
                                         Memory.clearCache()
 
@@ -820,8 +849,23 @@ public actor VMLXRuntimeActor {
                                         cacheDetailStr = "rederived/\(detail)"
                                         _vmlxLog2("[Gen] Cache PARTIAL HIT (hybrid): recovered SSM at boundary=\(recoveryBoundary), restored=\(restoredLayers), injected=\(injectedLayers), remaining=\(replayTokens.count)")
                                     } else {
-                                        _vmlxLog2("[Gen] Cache PARTIAL HIT (hybrid): re-derive pending/unavailable at boundary=\(recoveryBoundary); full prefill \(tokens.count) tokens")
-                                        inputTokens = MLXArray(tokens.map { Int32($0) })
+                                        let requiresSSM = request.enableThinking ?? true
+                                        if requiresSSM {
+                                            _vmlxLog2("[Gen] Cache PARTIAL HIT (hybrid): re-derive pending/unavailable at boundary=\(recoveryBoundary); full prefill \(tokens.count) tokens (SSM required for thinking)")
+                                            inputTokens = MLXArray(tokens.map { Int32($0) })
+                                        } else {
+                                            let restoredLayers = _restoreCachedHybrid(attentionCache)
+                                            eval(cache)
+                                            Memory.clearCache()
+
+                                            _configureCachedPrefixState(
+                                                restoredBoundary: recoveryBoundary,
+                                                replayTokens: replayTokens,
+                                                trimAttentionToBoundary: trimAttentionToBoundary
+                                            )
+                                            cacheDetailStr = "async-rederive/\(detail)"
+                                            _vmlxLog2("[Gen] Cache PARTIAL HIT (hybrid): async re-derive started, proceeding with KV-only (restored=\(restoredLayers)) for this turn (thinking disabled)")
+                                        }
                                     }
                                 } catch {
                                     _vmlxLog2("[Gen] Cache PARTIAL HIT (hybrid): re-derive failed at boundary=\(recoveryBoundary): \(error.localizedDescription); full prefill \(tokens.count) tokens")
@@ -836,10 +880,6 @@ public actor VMLXRuntimeActor {
                             // Restore attention KV and prefill only remaining + gen_prompt_len.
                             _vmlxLog2("[Gen] Cache PARTIAL HIT (non-hybrid): \(attentionCache.layerCount) layers, \(remaining.count) remaining, detail=\(detail)")
                             _ = _restoreCachedHybrid(attentionCache)
-                            restoredStoreBoundary = remaining.isEmpty
-                                ? max(0, cacheKeyTokens.count - 1)
-                                : cacheKeyTokens.count - remaining.count
-                            fetchedHybridForStore = attentionCache
                             if remaining.isEmpty {
                                 _configureCachedPrefixState(
                                     restoredBoundary: max(0, cacheKeyTokens.count - 1),
@@ -880,10 +920,42 @@ public actor VMLXRuntimeActor {
                                 + "experts=\(container.model.detected.numExperts ?? 0), total=\(totalPrefillTokens))"
                         )
                     }
-                    let storeTokensCount = max(0, cacheKeyTokens.count - 1)
+                    let storeTokens: [Int]
+                    if cacheKeyTokens.count > 1 {
+                        storeTokens = Array(cacheKeyTokens.dropLast(1))
+                    } else {
+                        storeTokens = cacheKeyTokens
+                    }
+                    let storeTokensCount = storeTokens.count
                     var prefillSSMSnapshot: [[MLXArray]]? = nil
                     let needSSMSnapshot = container.isHybrid && storeTokensCount > 0
                     let boundaryAdvance = max(0, storeTokensCount - cachedTokenCount)
+
+                    func _syncPagedPrefixIfNeeded() {
+                        guard let pagedWriteSession, storeTokensCount > 0 else { return }
+                        let currentPrefixCount = min(storeTokensCount, _attentionCacheOffset())
+                        guard currentPrefixCount > 0 else { return }
+
+                        let pagedBlockSize = self.scheduler.config.pagedCacheBlockSize
+                        let fullyCommittedTokens =
+                            pagedWriteSession.committedBlockCount * pagedBlockSize
+                        guard currentPrefixCount >= pagedBlockSize,
+                              currentPrefixCount > fullyCommittedTokens else {
+                            return
+                        }
+
+                        let syncTokenCount =
+                            (currentPrefixCount / pagedBlockSize)
+                            * pagedBlockSize
+                        guard syncTokenCount > fullyCommittedTokens else { return }
+
+                        if let hybridCache = _exportLiveHybridCache(targetOffset: syncTokenCount) {
+                            pagedWriteSession.sync(
+                                tokens: Array(storeTokens.prefix(syncTokenCount)),
+                                cache: hybridCache
+                            )
+                        }
+                    }
 
                     func _captureBoundarySnapshotIfNeeded(_ reason: String) {
                         guard needSSMSnapshot, prefillSSMSnapshot == nil else { return }
@@ -894,6 +966,7 @@ public actor VMLXRuntimeActor {
                     if needSSMSnapshot && cachedTokenCount == storeTokensCount {
                         _captureBoundarySnapshotIfNeeded("restored")
                     }
+                    _syncPagedPrefixIfNeeded()
 
                     // Chunked prefill helper
                     func _chunkedPrefill(_ start: Int, _ end: Int) {
@@ -915,6 +988,7 @@ public actor VMLXRuntimeActor {
                             if needSSMSnapshot && prefillSSMSnapshot == nil && pos == boundaryAdvance {
                                 _captureBoundarySnapshotIfNeeded("post-prefill")
                             }
+                            _syncPagedPrefixIfNeeded()
                         }
                     }
 
@@ -938,68 +1012,19 @@ public actor VMLXRuntimeActor {
                     let _prefillMs = (CFAbsoluteTimeGetCurrent() - _prefillStart) * 1000
                     _vmlxLog2("[Gen] Final prefill token: \(String(format: "%.0f", _prefillMs))ms")
 
-                    // TurboQuant in-memory compression: encode prefill KV → decode once → replace.
-                    // After this, attention KV buffers are still float (baseline SDPA speed)
-                    // but the original high-precision data is freed, saving ~5x memory.
-                    // Only applies to attention layers (not SSM/Mamba layers).
-                    //
-                    // IMPORTANT: Save original float KV BEFORE compression for the cross-turn
-                    // cache store. Storing TQ-decoded (lossy) data across turns causes quality
-                    // degradation because the lossy reconstruction compounds through layers.
-                    var preTQCacheSnapshot: [(keys: MLXArray, values: MLXArray)]? = nil
-                    if let tqConfig, tqEnabled && cachedTokenCount == 0 {
-                        // Snapshot original float KV for cross-turn storage
-                        var snapshot: [(keys: MLXArray, values: MLXArray)] = []
-                        for c in cache {
-                            if let kvBase = c as? VMLXBaseKVCache, !(c is VMLXMambaCache) {
-                                let s = kvBase.state
-                                if s.count == 2 {
-                                    snapshot.append((keys: s[0], values: s[1]))
-                                } else {
-                                    snapshot.append((keys: MLXArray(), values: MLXArray()))
-                                }
-                            } else {
-                                snapshot.append((keys: MLXArray(), values: MLXArray()))
-                            }
-                        }
-                        preTQCacheSnapshot = snapshot
-
-                        // Now compress in-place for memory reduction during decode
+                    if tqEnabled {
                         let tqStart = CFAbsoluteTimeGetCurrent()
                         var tqLayers = 0
-                        for (layerIdx, c) in cache.enumerated() {
-                            guard let kvBase = c as? VMLXBaseKVCache,
-                                  !(c is VMLXMambaCache) else { continue }
-                            let s = kvBase.state
-                            guard s.count == 2 else { continue }
-                            let keys = s[0]
-                            let values = s[1]
-                            guard let encodedEntry = TurboQuantLayerCache.encodeAttentionLayer(
-                                keys: keys,
-                                values: values,
-                                config: tqConfig,
-                                layerIndex: layerIdx,
-                                totalLayers: cache.count
-                            ) else {
-                                continue
+                        for c in cache {
+                            if c.finalizePrefillIfNeeded() {
+                                tqLayers += 1
                             }
-                            guard case .compressedAttention(let encodedKeys, let encodedValues, _) = encodedEntry else {
-                                continue
-                            }
-                            let state = _makeTQState(
-                                encodedKeys: encodedKeys,
-                                encodedValues: encodedValues
-                            )
-                            let dk = TurboQuantEncoder.decodeKeys(encodedKeys, state: state)
-                            let dv = TurboQuantEncoder.decodeValues(encodedValues, state: state)
-                            eval(dk, dv)
-                            kvBase.state = [dk, dv]
-                            tqLayers += 1
                         }
                         if tqLayers > 0 {
+                            eval(cache)
                             Memory.clearCache()
                             let tqMs = (CFAbsoluteTimeGetCurrent() - tqStart) * 1000
-                            _vmlxLog2("[Gen] TQ compress: \(tqLayers) layers in \(String(format: "%.0f", tqMs))ms")
+                            _vmlxLog2("[Gen] TQ finalize: \(tqLayers) layers in \(String(format: "%.0f", tqMs))ms")
                         }
                     }
 
@@ -1206,13 +1231,6 @@ public actor VMLXRuntimeActor {
 
                     // Store cache AFTER stream is finished — TQ encode can take
                     // hundreds of ms and must not block the UI stream.
-                    let storeTokens: [Int]
-                    if cacheKeyTokens.count > 1 {
-                        storeTokens = Array(cacheKeyTokens.dropLast(1))
-                    } else {
-                        storeTokens = cacheKeyTokens
-                    }
-
                     if !storeTokens.isEmpty {
                         let targetOffset = storeTokens.count
                         for c in cache {
@@ -1224,100 +1242,66 @@ public actor VMLXRuntimeActor {
                         // Store ORIGINAL float KV for multi-turn cache (not TQ-decoded lossy data).
                         // If TQ was applied during this generation, use the pre-TQ snapshot.
                         // Storing TQ-decoded data across turns causes quality degradation.
+
+                        // If no boundary-aligned SSM snapshot was captured during prefill,
+                        // do NOT capture current state — it's contaminated with decode tokens.
+                        // SSM state is cumulative and includes generated response tokens at this
+                        // point. Storing it would corrupt future cache hits. Instead, emit
+                        // .placeholder for SSM layers so layer count stays aligned. The next
+                        // fetch will trigger proper SSM re-derivation.
+                        if needSSMSnapshot && prefillSSMSnapshot == nil {
+                            _vmlxLog2("[Gen] SSM snapshot skipped: no boundary-aligned snapshot (post-decode state is contaminated)")
+                        }
+
                         var ssmSnapshotIdx = 0
                         var layers: [LayerCacheEntry] = []
-                        for (layerIdx, c) in cache.enumerated() {
+                        for c in cache {
                             if c is VMLXMambaCache {
                                 if let snapshots = prefillSSMSnapshot,
                                    ssmSnapshotIdx < snapshots.count {
                                     layers.append(.ssm(SSMStateLayer(
                                         state: snapshots[ssmSnapshotIdx])))
                                     ssmSnapshotIdx += 1
-                                }
-                            } else if let kvBase = c as? VMLXBaseKVCache {
-                                // Use pre-TQ original float if available, otherwise current state.
-                                // preTQCacheSnapshot is indexed by layerIdx (same order as cache array).
-                                let sourceState: [MLXArray]
-                                if let snapshot = preTQCacheSnapshot,
-                                   layerIdx < snapshot.count,
-                                   snapshot[layerIdx].keys.ndim > 0 {
-                                    sourceState = [snapshot[layerIdx].keys, snapshot[layerIdx].values]
                                 } else {
-                                    sourceState = kvBase.state
+                                    // No valid snapshot — emit placeholder to preserve layer alignment
+                                    layers.append(.placeholder)
                                 }
-                                guard sourceState.count == 2 else { continue }
-
-                                // Trim to storeTokens length (snapshot has full prefill tokens).
-                                let storeKeys: MLXArray
-                                let storeValues: MLXArray
-                                if sourceState[0].dim(2) > targetOffset {
-                                    storeKeys = sourceState[0][.ellipsis, ..<targetOffset, 0...]
-                                    storeValues = sourceState[1][.ellipsis, ..<targetOffset, 0...]
-                                } else {
-                                    storeKeys = sourceState[0]
-                                    storeValues = sourceState[1]
-                                }
-                                let floatEntry = LayerCacheEntry.attention(KVCacheLayer(
-                                    keys: storeKeys,
-                                    values: storeValues,
-                                    offset: targetOffset
-                                ))
-
-                                guard let tqConfig else {
-                                    layers.append(floatEntry)
-                                    continue
-                                }
-
-                                let reusableBoundary = min(restoredStoreBoundary, targetOffset)
-                                let prefixEntry = _compressedPrefixEntry(
-                                    layerIndex: layerIdx,
-                                    boundary: reusableBoundary,
-                                    from: fetchedHybridForStore
-                                )
-                                let prefixTokens: Int
-                                if case .compressedAttention(_, _, let offset)? = prefixEntry {
-                                    prefixTokens = offset
-                                } else {
-                                    prefixTokens = 0
-                                }
-
-                                if prefixTokens >= targetOffset, let prefixEntry {
-                                    layers.append(prefixEntry)
-                                    continue
-                                }
-
-                                let tailStart = prefixTokens
-                                guard tailStart < targetOffset else {
-                                    layers.append(floatEntry)
-                                    continue
-                                }
-
-                                let tailKeys = storeKeys[.ellipsis, tailStart..<targetOffset, 0...]
-                                let tailValues = storeValues[.ellipsis, tailStart..<targetOffset, 0...]
-                                let tailEntry = TurboQuantLayerCache.encodeAttentionLayer(
-                                    keys: tailKeys,
-                                    values: tailValues,
-                                    config: tqConfig,
-                                    layerIndex: layerIdx,
-                                    totalLayers: cache.count,
-                                    sinkTokens: tailStart == 0 ? TurboQuantEncoder.defaultSinkTokens : 0
-                                )
-
-                                if let prefixEntry,
-                                   let tailEntry,
-                                   let mergedEntry = TurboQuantLayerCache.mergeCompressedAttention([prefixEntry, tailEntry]) {
-                                    layers.append(mergedEntry)
-                                } else if let tailEntry {
-                                    layers.append(tailEntry)
-                                } else {
-                                    layers.append(floatEntry)
+                            } else if let entry = c.exportCacheEntry() {
+                                switch entry {
+                                case .attention(let kv):
+                                    let trimmedEntry: LayerCacheEntry
+                                    if kv.offset > targetOffset {
+                                        trimmedEntry = .attention(kv.truncated(to: targetOffset))
+                                    } else {
+                                        trimmedEntry = entry
+                                    }
+                                    layers.append(trimmedEntry)
+                                case .compressedAttention, .ssm, .placeholder:
+                                    layers.append(entry)
                                 }
                             }
                         }
                         if !layers.isEmpty {
                             let hybridCache = HybridCache(layers: layers)
                             hybridCache.materialized()
-                            self.scheduler.cache.store(tokens: storeTokens, cache: hybridCache)
+                            var pagedHandledByLiveSession = false
+                            if let pagedWriteSession,
+                               let pagedHybridCache = _exportLiveHybridCache(
+                                targetOffset: targetOffset,
+                                ssmSnapshot: prefillSSMSnapshot
+                               ) {
+                                pagedWriteSession.finalize(
+                                    tokens: storeTokens,
+                                    cache: pagedHybridCache
+                                )
+                                pagedHandledByLiveSession = true
+                            }
+
+                            self.scheduler.cache.store(
+                                tokens: storeTokens,
+                                cache: hybridCache,
+                                includePaged: !pagedHandledByLiveSession
+                            )
                             _vmlxLog2("[Gen] Stored cache: \(storeTokens.count) tokens (stripped \(genPromptLen) gen_prompt + \(generatedTokenCount) generated + 1 last)")
                         }
                     }
@@ -1326,10 +1310,12 @@ public actor VMLXRuntimeActor {
                     // Generation was stopped before cache store completed.
                     // Do not nuke the cache stack here — that destroys unrelated
                     // L2 entries and makes cancellations look like cache failures.
+                    pagedWriteSession?.abort()
                     continuation.finish()
                 } catch {
                     // Request-scoped recovery only: invalidate the request key and
                     // clear volatile layers. Preserve unrelated persistent entries.
+                    pagedWriteSession?.abort()
                     self.scheduler.cache.invalidate(tokens: cacheKeyTokens)
                     self.scheduler.cache.clearVolatile()
                     continuation.finish(throwing: error)

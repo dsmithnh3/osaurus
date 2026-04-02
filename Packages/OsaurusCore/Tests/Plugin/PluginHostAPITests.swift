@@ -682,8 +682,6 @@ struct TaskStateDictTests {
 
 struct DispatchRateLimitTests {
 
-    private let testAgentId = UUID()
-
     private func makeContext() throws -> PluginHostContext {
         try PluginHostContext(pluginId: "com.test.ratelimit.\(UUID().uuidString)")
     }
@@ -691,24 +689,26 @@ struct DispatchRateLimitTests {
     @Test func allowsFirstRequest() throws {
         let ctx = try makeContext()
         defer { ctx.teardown() }
-        #expect(ctx.checkDispatchRateLimit(agentId: testAgentId) == true)
+        #expect(ctx.checkDispatchRateLimit(agentId: UUID()) == true)
     }
 
     @Test func allowsUpTo10Requests() throws {
         let ctx = try makeContext()
         defer { ctx.teardown() }
+        let agentId = UUID()
         for i in 0 ..< 10 {
-            #expect(ctx.checkDispatchRateLimit(agentId: testAgentId) == true, "Request \(i) should be allowed")
+            #expect(ctx.checkDispatchRateLimit(agentId: agentId) == true, "Request \(i) should be allowed")
         }
     }
 
     @Test func denies11thRequest() throws {
         let ctx = try makeContext()
         defer { ctx.teardown() }
+        let agentId = UUID()
         for _ in 0 ..< 10 {
-            _ = ctx.checkDispatchRateLimit(agentId: testAgentId)
+            _ = ctx.checkDispatchRateLimit(agentId: agentId)
         }
-        #expect(ctx.checkDispatchRateLimit(agentId: testAgentId) == false)
+        #expect(ctx.checkDispatchRateLimit(agentId: agentId) == false)
     }
 
     @Test func separateContextsHaveIndependentLimits() throws {
@@ -717,11 +717,12 @@ struct DispatchRateLimitTests {
         let ctx2 = try makeContext()
         defer { ctx2.teardown() }
 
+        let agentId = UUID()
         for _ in 0 ..< 10 {
-            _ = ctx1.checkDispatchRateLimit(agentId: testAgentId)
+            _ = ctx1.checkDispatchRateLimit(agentId: agentId)
         }
-        #expect(ctx1.checkDispatchRateLimit(agentId: testAgentId) == false)
-        #expect(ctx2.checkDispatchRateLimit(agentId: testAgentId) == true)
+        #expect(ctx1.checkDispatchRateLimit(agentId: agentId) == false)
+        #expect(ctx2.checkDispatchRateLimit(agentId: agentId) == true)
     }
 }
 

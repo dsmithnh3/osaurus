@@ -43,8 +43,10 @@ public actor SSMReDeriver {
     /// In-progress re-derivation tasks, keyed by token hash.
     private var activeTasks: [String: Task<SSMCheckpoint, Error>] = [:]
 
-    /// Completed checkpoints waiting to be consumed.
-    private var completedCheckpoints: [String: SSMCheckpoint] = [:]
+    /// Completed checkpoints in insertion order (oldest first). Capped at maxCompletedCheckpoints.
+    /// Uses ordered array instead of Dictionary so eviction is truly LRU (oldest inserted).
+    private var completedCheckpoints: [(key: String, checkpoint: SSMCheckpoint)] = []
+    private let maxCompletedCheckpoints = 8
 
     /// SSM state cache to store re-derived checkpoints.
     private let ssmCache: SSMStateCache
@@ -97,8 +99,8 @@ public actor SSMReDeriver {
         let tokenHash = SSMStateCache.hashTokens(tokens, count: stableBoundary)
 
         // Check if already completed
-        if let existing = completedCheckpoints[tokenHash] {
-            return existing
+        if let existing = completedCheckpoints.first(where: { $0.key == tokenHash }) {
+            return existing.checkpoint
         }
 
         // Check if already in progress (deduplicate)
@@ -119,16 +121,25 @@ public actor SSMReDeriver {
         // Start new re-derivation
         let prefillTokens = Array(tokens.prefix(stableBoundary))
         let task = Task<SSMCheckpoint, Error> {
-            // Run full forward pass to re-derive SSM state.
-            // This populates both attention KV and SSM state in the cache objects.
+            // Run chunked forward pass to re-derive SSM state.
+            // Chunking prevents OOM on large MoE models (Mistral-119B, MiniMax-122B).
             let cache = container.newCache()
 
             if !prefillTokens.isEmpty {
                 let inputIds = MLXArray(prefillTokens.map { Int32($0) })
-                let logits = container.forward(
-                    inputIds.expandedDimensions(axis: 0), cache: cache)
-                // Force GPU computation to materialize SSM state
-                MLX.eval(logits)
+                let totalTokens = prefillTokens.count
+                // Adaptive chunk size: small for large token counts to limit peak memory
+                let chunkSize = totalTokens > 2048 ? 32 : (totalTokens > 512 ? 128 : 512)
+                var pos = 0
+                while pos < totalTokens {
+                    try Task.checkCancellation()
+                    let end = min(pos + chunkSize, totalTokens)
+                    let chunk = inputIds[pos..<end].expandedDimensions(axis: 0)
+                    _ = container.forward(chunk, cache: cache)
+                    MLX.eval(cache)
+                    Memory.clearCache()
+                    pos = end
+                }
             }
 
             // Extract SSM states from VMLXMambaCache objects
@@ -152,7 +163,8 @@ public actor SSMReDeriver {
             syncReDerives += 1
             let checkpoint = try await task.value
             activeTasks.removeValue(forKey: tokenHash)
-            completedCheckpoints[tokenHash] = checkpoint
+            _insertCompleted(key: tokenHash, checkpoint: checkpoint)
+            _evictCompletedIfNeeded()
             ssmCache.store(checkpoint: checkpoint)
             return checkpoint
         } else {
@@ -161,7 +173,8 @@ public actor SSMReDeriver {
                 do {
                     let checkpoint = try await task.value
                     self.activeTasks.removeValue(forKey: tokenHash)
-                    self.completedCheckpoints[tokenHash] = checkpoint
+                    self._insertCompleted(key: tokenHash, checkpoint: checkpoint)
+                    self._evictCompletedIfNeeded()
                     self.ssmCache.store(checkpoint: checkpoint)
                 } catch {
                     self.activeTasks.removeValue(forKey: tokenHash)
@@ -178,15 +191,32 @@ public actor SSMReDeriver {
     }
 
     public func hasCheckpoint(tokenHash: String) -> Bool {
-        completedCheckpoints[tokenHash] != nil
+        completedCheckpoints.contains { $0.key == tokenHash }
     }
 
     public func consumeCheckpoint(tokenHash: String) -> SSMCheckpoint? {
-        completedCheckpoints.removeValue(forKey: tokenHash)
+        guard let idx = completedCheckpoints.firstIndex(where: { $0.key == tokenHash }) else { return nil }
+        return completedCheckpoints.remove(at: idx).checkpoint
     }
 
     public var activeTaskCount: Int {
         activeTasks.count
+    }
+
+    /// Insert a completed checkpoint, replacing any existing entry with the same key.
+    private func _insertCompleted(key: String, checkpoint: SSMCheckpoint) {
+        if let idx = completedCheckpoints.firstIndex(where: { $0.key == key }) {
+            completedCheckpoints.remove(at: idx)
+        }
+        completedCheckpoints.append((key: key, checkpoint: checkpoint))
+    }
+
+    /// Evict oldest completed checkpoints when over the cap.
+    /// Ordered array: index 0 is oldest (inserted first), so removeFirst is true LRU.
+    private func _evictCompletedIfNeeded() {
+        while completedCheckpoints.count > maxCompletedCheckpoints {
+            completedCheckpoints.removeFirst()
+        }
     }
 
     public func clearCompleted() {
@@ -198,5 +228,6 @@ public actor SSMReDeriver {
             task.cancel()
         }
         activeTasks.removeAll()
+        completedCheckpoints.removeAll()
     }
 }

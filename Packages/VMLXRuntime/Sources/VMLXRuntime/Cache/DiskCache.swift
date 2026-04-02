@@ -253,9 +253,12 @@ public final class DiskCache: @unchecked Sendable {
                 metadata["__layer_\(i)_offset__"] = "0"
                 metadata["__layer_\(i)_state_count__"] = String(ssm.state.count)
                 for (j, s) in ssm.state.enumerated() {
-                    MLX.eval(s)
+                    MLX.eval(s)  // MLX tensor materialization (not JS eval)
                     arrays["layer_\(i)_state_\(j)"] = s
                 }
+
+            case .placeholder:
+                metadata["__layer_\(i)_type__"] = "placeholder"
             }
         }
 
@@ -431,6 +434,9 @@ public final class DiskCache: @unchecked Sendable {
                     stateArrays.append(s)
                 }
                 layers.append(.ssm(SSMStateLayer(state: stateArrays)))
+
+            case "placeholder":
+                layers.append(.placeholder)
 
             default:
                 lock.withLock { _misses += 1 }

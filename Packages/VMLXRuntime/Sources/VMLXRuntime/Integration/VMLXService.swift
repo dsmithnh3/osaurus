@@ -291,4 +291,10 @@ public actor VMLXService: VMLXToolCapableService {
     public var isModelLoaded: Bool {
         get async { await runtime.isModelLoaded }
     }
+
+    /// The loaded model's family config (reasoning format, tool call format, etc.).
+    /// Used by the UI layer to match streaming middleware to the engine's config.json-based detection.
+    public var loadedFamilyConfig: ModelFamilyConfig? {
+        get async { await runtime.loadedFamilyConfig }
+    }
 }

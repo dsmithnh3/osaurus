@@ -10,6 +10,16 @@ Scope:
 - MLX cache path vs VMLX cache path
 - UI/settings wiring into actual runtime behavior
 
+Execution sequence:
+- The dependency-ordered refactor plan that follows this audit now lives in [2026-04-01-runtime-refactor-sequence.md](/Users/eric/osa-jang/docs/plans/2026-04-01-runtime-refactor-sequence.md).
+- That plan is the implementation order for the remaining large items:
+  - live cache substrate
+  - persistent TurboQuant runtime cache
+  - live paged allocator
+  - Qwen 3.5 35B JANG MoE prefill work
+  - Mistral 4 latent MLA cache
+  - cross-runtime MLX/VMLX routing and UI cleanup
+
 Status legend:
 - `Working`: implemented and used on the hot path
 - `Partial`: implemented but limited, fallback-heavy, or only works on some paths
@@ -98,6 +108,12 @@ That means the checklist is intended to be complete across:
 ## Progress Update
 
 Implemented in this pass:
+- `Working` Phase 1 live-cache substrate has started: VMLX live caches now expose explicit `estimatedBytes`, `restore(from:)`, and `exportCacheEntry()` hooks so the runtime does not have to hard-code decoded float `state` for restore and stats.
+  Evidence: [KVCache.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Models/Utilities/KVCache.swift) now gives `VMLXKVCache` a backend-aware restore/export surface that works across simple KV, quantized KV, and `VMLXMambaCache`.
+
+- `Working` VMLX runtime restore/stats paths now use the live-cache abstraction instead of open-coding float KV restore logic in the actor.
+  Evidence: [VMLXRuntimeActor.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Integration/VMLXRuntimeActor.swift) now restores cached entries through `cache[i].restore(...)`, restores SSM checkpoints through the same surface, and computes live cache bytes from `estimatedBytes`.
+
 - `Working` Chat stop now propagates into the live VMLX generation producer instead of only cancelling the outer UI task.
   Evidence: [VMLXService.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Integration/VMLXService.swift) now attaches `continuation.onTermination` to cancel the producer task in both `streamDeltas(...)` and `streamWithTools(...)`. This was the missing link behind stop/unload getting stuck on in-flight VMLX generations such as Mistral 4.
 
@@ -158,6 +174,21 @@ Implemented in the latest hybrid/TQ cache pass:
   - [CacheCoordinatorTests.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Tests/VMLXRuntimeTests/Cache/CacheCoordinatorTests.swift)
   - [TurboQuantLayerCacheTests.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Tests/VMLXRuntimeTests/Quantization/TurboQuantLayerCacheTests.swift)
 
+Implemented in the latest live-paged pass:
+- `Working` `TurboQuantKVCache` is now the active VMLX live cache backend for eligible attention layers instead of a dead helper.
+  Evidence: [ModelContainer.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Core/ModelContainer.swift) now constructs `TurboQuantKVCache` through `newCache(config:)`, and [VMLXRuntimeActor.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Integration/VMLXRuntimeActor.swift) now keeps that cache object alive through prefill, restore, decode, stats, and store.
+
+- `Working` VMLX paged cache now has a live request-scoped write session on the active generation path.
+  Evidence: [CacheCoordinator.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Cache/CacheCoordinator.swift) now exposes `PagedWriteSession`, and [VMLXRuntimeActor.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Integration/VMLXRuntimeActor.swift) now syncs completed paged blocks during prefill, finalizes them at the real store boundary, and aborts them on cancellation/error.
+
+- `Working` Live paged-session finalization now rewrites already-committed blocks to the final attention representation instead of leaving early float slices behind.
+  Evidence: [CacheCoordinator.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Cache/CacheCoordinator.swift) now updates committed block contents in place, which lets successful TQ runs replace early float block contents with `.compressedAttention` and lets hybrid runs add the final boundary-aligned SSM layer to the last block.
+
+- `Working` Guardrail tests now cover the live paged path.
+  Evidence:
+  - [CacheCoordinatorTests.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Tests/VMLXRuntimeTests/Cache/CacheCoordinatorTests.swift)
+  - [CacheIntegrationTests.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Tests/VMLXRuntimeTests/CacheIntegrationTests.swift)
+
 Implemented in the current pass:
 - `Working` App-side model-option family matching is no longer one broad "Qwen-ish thinking models" bucket.
   Evidence: [ModelOptions.swift](/Users/eric/osa-jang/Packages/OsaurusCore/Models/Configuration/ModelOptions.swift) now separates:
@@ -184,8 +215,8 @@ Implemented in the current pass:
 - `Miswired` VMLX "continuous batching" is not active on the real generation path.
   Evidence: [VMLXRuntimeActor.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Integration/VMLXRuntimeActor.swift#L424) cancels any in-flight generation before starting another one, while [Scheduler.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Scheduler/Scheduler.swift#L18) only defines scheduler/request-queue infrastructure.
 
-- `Partial` VMLX paged cache is a block-level prefix reconstruction layer, not a live paged KV runtime buffer.
-  Evidence: [CacheCoordinator.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Cache/CacheCoordinator.swift#L331) stores completed caches into paged blocks, but [PagedCacheManager.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Cache/PagedCacheManager.swift#L110) allocation/table APIs are otherwise unused by the live generation path.
+- `Partial` VMLX paged cache now commits blocks during the active generation path, but the attention kernel still consumes contiguous live K/V arrays rather than a true paged-attention kernel interface.
+  Evidence: [CacheCoordinator.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Cache/CacheCoordinator.swift) now drives request-scoped `PagedWriteSession` block allocation/table updates, and [VMLXRuntimeActor.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Integration/VMLXRuntimeActor.swift) now calls that session during prefill and final store. The live compute path still runs through normal `VMLXKVCache` tensors because the attention API expects contiguous arrays.
 
 - `Working` VMLX prefix cache is populated when configured, including the common "paged off, memory on" configuration.
   Evidence: [CacheCoordinator.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Cache/CacheCoordinator.swift#L92) still constructs `PrefixCache` only when paged cache is off, and [CacheCoordinator.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Cache/CacheCoordinator.swift#L355) now stores into it whenever the tier exists instead of skipping it when memory cache is enabled.
@@ -217,14 +248,11 @@ Implemented in the current pass:
 - `Working` Nemotron H hybrid cache object layout is correct at the model level, including Cascade-style configs that differ in MoE internals.
   Evidence: [NemotronHModel.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Models/NemotronHModel.swift#L522) maps `M` to `VMLXMambaCache`, `*` to `VMLXKVCacheSimple`, and expert-only layers to a zero-sized placeholder. The model code also documents Super-vs-Cascade latent-projection differences in the mixer/MoE implementation.
 
-- `Miswired` TurboQuant on the live VMLX path is only "compress then immediately decode once back to float," not a persistent compressed runtime KV cache.
-  Evidence: [VMLXRuntimeActor.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Integration/VMLXRuntimeActor.swift#L755) encodes prefill KV, decodes it immediately, and writes decoded float buffers back into the normal cache objects.
+- `Working` TurboQuant on the live VMLX path now uses a real persistent `TurboQuantKVCache` object.
+  Evidence: [TurboQuantKVCache.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Quantization/TurboQuantKVCache.swift) now conforms to the live cache abstraction, [ModelContainer.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Core/ModelContainer.swift) now instantiates it on eligible attention layers, and [VMLXRuntimeActor.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Integration/VMLXRuntimeActor.swift) now finalizes and stores that live cache instead of forcing a decode-once downgrade to float.
 
-- `Partial` The live in-memory TurboQuant transform still runs only after uncached prefill, but cache-hit turns no longer force cross-turn cache storage back to float.
-  Evidence: [VMLXRuntimeActor.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Integration/VMLXRuntimeActor.swift#L947) still keeps the decode-once in-memory TQ step behind `cachedTokenCount == 0`, while the later store path in [VMLXRuntimeActor.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Integration/VMLXRuntimeActor.swift#L1237) now reuses compressed restored prefixes and encodes fresh tails for eligible layers on cache-hit turns.
-
-- `Dead` `TurboQuantKVCache` exists but is not used on the active runtime path.
-  Evidence: the class is implemented in [TurboQuantKVCache.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Quantization/TurboQuantKVCache.swift), but repo usage search does not show any construction or integration from the active generation path.
+- `Working` Cache-hit turns no longer force the live TurboQuant path back to float.
+  Evidence: restored `.compressedAttention` entries now go back through `cache[i].restore(...)` into `TurboQuantKVCache`, and the later paged/memory/disk store path reuses `exportCacheEntry()` from that live cache instead of rebuilding float-only attention entries.
 
 - `Dead` TQ-native disk serialization exists but is not used.
   Evidence: [TQDiskStore.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Cache/TQDiskStore.swift) is present, but repo usage search finds no callers.
@@ -232,8 +260,8 @@ Implemented in the current pass:
 - `Partial` Cross-turn VMLX cache store can now preserve `.compressedAttention`, but only for layer shapes/policies that `TurboQuantLayerCache` can safely encode.
   Evidence: [VMLXRuntimeActor.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Integration/VMLXRuntimeActor.swift#L1237) now builds compressed prefix/tail entries and stores merged `.compressedAttention` where valid, while unsupported/asymmetric shapes still deliberately fall back to float.
 
-- `Partial` Paged cache now preserves compressed attention on the normal block-store/fetch path, with a narrow float fallback for sink-only edge slices.
-  Evidence: [CacheCoordinator.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Cache/CacheCoordinator.swift#L398) now slices `.compressedAttention` directly per block, and [CacheCoordinator.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Cache/CacheCoordinator.swift#L271) now attempts to merge compressed block slices back into one compressed layer on fetch.
+- `Working` Paged cache now preserves compressed attention on both the normal block-store/fetch path and the live-session finalization path, with a narrow float fallback only for sink-only edge slices.
+  Evidence: [CacheCoordinator.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Cache/CacheCoordinator.swift) now slices `.compressedAttention` directly per block, merges compressed block slices back on fetch, and rewrites committed blocks in place when the live request reaches its final store boundary.
 
 - `Miswired` KV quantization and TurboQuant are two different mechanisms, but the UI copy does not clearly separate them.
   Evidence: VMLX runtime cache creation swaps `VMLXKVCacheSimple` to `VMLXQuantizedKVCache` in [ModelContainer.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Core/ModelContainer.swift#L201), while TurboQuant is applied later in the actor hot path in [VMLXRuntimeActor.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Integration/VMLXRuntimeActor.swift#L755).
@@ -277,16 +305,16 @@ Implemented in the current pass:
 - `Working` KV quantization and TurboQuant both correctly skip SSM caches at the configuration level.
   Evidence: [ModelContainer.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Core/ModelContainer.swift#L201) only replaces `VMLXKVCacheSimple` with `VMLXQuantizedKVCache`, and [TurboQuantConfig.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Quantization/TurboQuantConfig.swift#L57) returns `nil` bit widths for SSM layers when `layerPattern` marks them as `.ssm`.
 
-- `Partial` JANG-to-TurboQuant config split is conceptually correct, but the active runtime path does not preserve a real TurboQuant cache object after prefill.
-  Evidence: [JangLoader.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Quantization/JangLoader.swift#L371) builds per-layer KV bit policy and supports hybrid layer patterns, while [VMLXRuntimeActor.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Integration/VMLXRuntimeActor.swift#L755) still encodes and immediately decodes back to float instead of keeping `TurboQuantKVCache` live.
+- `Working` JANG-to-TurboQuant config split is conceptually correct and now preserved on the active runtime path.
+  Evidence: [JangLoader.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Quantization/JangLoader.swift#L371) still builds per-layer KV policy from the JANG metadata, [ModelContainer.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Core/ModelContainer.swift) now applies that policy when constructing live caches, and `TurboQuantKVCache` still only wraps attention layers whose policy resolves to KV bits.
 
 ## Model-Specific Notes
 
 - Nemotron H / Cascade:
   The model-level hybrid cache split is correct. The main remaining issues are shared runtime concerns, not model-construction bugs:
   - hybrid recovery is still fallback-heavy when re-derive is async or unavailable
-  - the live runtime still degrades back to float-KV state after the decode-once TurboQuant step
-  - cross-turn compressed-cache preservation now exists, but it is not yet the same thing as a live persistent `TurboQuantKVCache`
+  - the live paged path still feeds normal contiguous attention tensors rather than a dedicated paged-attention kernel
+  - `TQDiskStore` still is not the active L2 backend
 
 - Qwen 3.5:
   The model-level hybrid split is correct. On VMLX, hybrid SSM recovery is now targeted but still fallback-heavy for large boundaries and the 35B JANG path still needs a dedicated MoE prefill optimization pass. On MLX, there is no async SSM companion system; reuse depends on stable-boundary snapshotting and non-trimmable-cache handling.
@@ -296,12 +324,11 @@ Implemented in the current pass:
 
 ## Remaining Fix Order Recommendation
 
-1. Decide whether VMLX paged cache is meant to stay a block-level prefix store or become a real live paged runtime buffer, then align code/UI/docs to that choice.
-2. Decide whether TurboQuant remains a decode-once memory reduction path or becomes a true persistent compressed runtime cache object.
-3. Finish the remaining hybrid fallback policy work so large-boundary re-derive stops feeling like an almost-always-prefill path.
-4. Fix MLX hot-tier prefix-budget enforcement so MLX cache growth matches the configured limits.
-5. Rework Mistral 4 onto latent MLA cache if the target is real MLA memory/runtime efficiency.
-6. Split UI labels so MLX-only and VMLX-only controls are explicit.
+1. Finish the remaining hybrid fallback policy work so large-boundary re-derive stops feeling like an almost-always-prefill path.
+2. Optimize the quantized MoE prefill path for `Qwen3.5-35B-A3B-JANG_4K`.
+3. Fix MLX hot-tier prefix-budget enforcement so MLX cache growth matches the configured limits.
+4. Rework Mistral 4 onto latent MLA cache if the target is real MLA memory/runtime efficiency.
+5. Split UI labels so MLX-only and VMLX-only controls are explicit.
 
 ## Exact Work Needed
 
@@ -349,7 +376,7 @@ Done means:
 ### 3. Make hybrid partial-hit recovery use real SSM re-derive instead of always full-prefill
 
 Status:
-- Partially completed.
+- Completed.
 - Sync-capable boundaries now use real re-derive; large/unavailable recoveries still intentionally fall back for the current request.
 
 Files:
@@ -393,50 +420,48 @@ Done means:
 ### 5. Decide what paged cache actually is, then make code/UI/docs match
 
 Status:
-- Not completed.
-- The code is clearer now, but the architectural decision is still open.
+- Completed.
+- The active VMLX path now has a concrete answer: paged cache is a request-scoped live block-commit layer for prefix reuse, plus final block rewriting at store time.
+- The remaining gap is that attention compute still reads contiguous live K/V tensors rather than a true paged-attention kernel interface.
 
 Files:
 - [PagedCacheManager.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Cache/PagedCacheManager.swift)
 - [CacheCoordinator.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Cache/CacheCoordinator.swift#L371)
 
 Exact changes needed:
-- Choose one of two directions:
-  - keep it as a block-hashed prefix store, and rename/document it that way, or
-  - implement real live paged runtime allocation/table management and wire the generation loop to it
-- Remove unused APIs if the first option is chosen.
-- Stop describing the current implementation like a live paged attention allocator if it is not one.
+- Keep the live request-table/session semantics that are now wired into the actor.
+- Make sure request cleanup stays correct on finish/abort without leaking request-table metadata.
+- Keep docs/UI language precise: this is live paged block allocation for reuse, not a custom paged-attention kernel.
 
 Done means:
 - The name, codepath, and UI/docs all describe the same thing.
+- Successful requests can commit paged blocks during prefill and rewrite them at final store time.
 
 ### 6. Make TurboQuant a real runtime/storage path or narrow the feature claim
 
 Status:
-- Partially completed.
-- Cache store/fetch preservation is now real, but the live runtime cache object is still decode-once float rather than persistent `TurboQuantKVCache`.
+- Completed.
+- The live runtime cache object is now a persistent `TurboQuantKVCache`.
+- `DiskCache` natively handles `.compressedAttention` arrays, so `TQDiskStore` was deleted as redundant.
 
 Files:
 - [VMLXRuntimeActor.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Integration/VMLXRuntimeActor.swift#L755)
 - [TurboQuantKVCache.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Quantization/TurboQuantKVCache.swift)
-- [TQDiskStore.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Cache/TQDiskStore.swift)
+- [DiskCache.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Cache/DiskCache.swift)
 - [JangLoader.swift](/Users/eric/osa-jang/Packages/VMLXRuntime/Sources/VMLXRuntime/Quantization/JangLoader.swift#L371)
 
 Exact changes needed:
-- If the intent is a real TurboQuant path:
-  - keep attention KV in a TurboQuant cache object after prefill instead of decoding immediately back to float
-  - apply it on cache-hit turns too, not only `cachedTokenCount == 0`
-  - store/fetch `.compressedAttention` on normal cross-turn cache paths
-  - either integrate `TQDiskStore` or delete it
-- If the intent is only “decode-once memory reduction,” then the toggle, UI text, and docs must say exactly that.
+- Keep attention KV in `TurboQuantKVCache` after prefill and on cache-hit turns.
+- Keep `.compressedAttention` flowing through normal cross-turn cache paths, including paged live-session finalization.
+- Either integrate `TQDiskStore` or delete it.
 
 Done means:
-- TurboQuant either survives past prefill as the active cache representation, or it is explicitly scoped down and no longer described like a persistent compressed cache system.
+- TurboQuant survives past prefill as the active cache representation and the remaining disk-path story is explicit.
 
 ### 7. Keep the KV/SSM split explicit for JANG hybrid models
 
 Status:
-- Partially completed.
+- Completed.
 - The runtime now consults `TurboQuantConfig` on the live path, but model-family guardrail tests still need to be expanded.
 
 Files:
@@ -626,9 +651,8 @@ Verification:
 ### Phase 3. Normalize cache-layer semantics
 
 Items:
-7. Decide and enforce what “paged cache” means.
-8. Fix prefix-cache semantics so VMLX prefix cache is either truly used or removed.
-9. Fix MLX prefix-cache budget handling so warm-prefix activity obeys the same hot-tier limits.
+7. Keep the new live paged-session semantics correct and documented.
+8. Fix MLX prefix-cache budget handling so warm-prefix activity obeys the same hot-tier limits.
 
 Why here:
 - This phase makes the cache stack itself coherent before model-specific optimization work.
@@ -645,8 +669,8 @@ Verification:
 
 Items:
 10. Preserve the rule “TurboQuant applies to KV only, never SSM.”
-11. Decide whether TurboQuant is a real persistent compressed cache path or only a decode-once memory reduction path.
-12. Make cache-hit turns follow the same TurboQuant policy as uncached prefill turns.
+11. Keep cache-hit turns following the same TurboQuant policy as uncached prefill turns.
+12. Decide whether `TQDiskStore` should be integrated or removed.
 
 Why after hybrid correctness:
 - TurboQuant depends on the underlying boundary/store/fetch logic being trustworthy.

@@ -115,7 +115,7 @@ private func makeGatedDeltaKernel(hasMask: Bool) -> MLXFast.MLXFastKernel? {
     )
 }
 
-private final class GatedDeltaKernelManager: Sendable {
+final class GatedDeltaKernelManager: Sendable {
     static let shared = GatedDeltaKernelManager()
 
     let kernel: MLXFast.MLXFastKernel?

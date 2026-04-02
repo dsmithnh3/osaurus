@@ -141,9 +141,19 @@ struct MLXGenerationEngine {
                 maxKV: runtime.maxKV,
                 prefillStep: runtime.prefillStep
             )
-            let additionalContext: [String: any Sendable]? =
-                generation.modelOptions["disableThinking"]?.boolValue == true
-                ? ["enable_thinking": false] : nil
+            // Forward model options to chat template context.
+            // - enable_thinking: controls <think> injection in Qwen3/MiniMax templates
+            // - reasoning_effort: controls thinking depth (low/medium/high) in GPT-OSS/Qwen templates
+            // Note: toolParser/reasoningParser overrides are NOT forwarded here —
+            // mlx-swift-lm uses its own config.json-based tool call detection.
+            var additionalContext: [String: any Sendable]? = nil
+            let thinkingDisabled = generation.modelOptions["disableThinking"]?.boolValue == true
+            if thinkingDisabled {
+                additionalContext = (additionalContext ?? [:]).merging(["enable_thinking": false]) { _, new in new }
+            }
+            if let effort = generation.modelOptions["reasoningEffort"]?.stringValue {
+                additionalContext = (additionalContext ?? [:]).merging(["reasoning_effort": effort]) { _, new in new }
+            }
             let fullInput = MLXLMCommon.UserInput(
                 chat: chat,
                 processing: .init(),

@@ -11,6 +11,14 @@ import MLX
 import MLXFast
 import MLXNN
 
+public struct VMLXCacheRestoreOptions: Sendable {
+    public let turboQuantState: TurboQuantEncoder.EncoderState?
+
+    public init(turboQuantState: TurboQuantEncoder.EncoderState? = nil) {
+        self.turboQuantState = turboQuantState
+    }
+}
+
 // MARK: - KVCache Protocol
 
 /// Interface for Key/Value cache for LLMs.
@@ -20,8 +28,13 @@ public protocol VMLXKVCache: Evaluatable, Updatable {
     func update(keys: MLXArray, values: MLXArray) -> (MLXArray, MLXArray)
     var state: [MLXArray] { get set }
     var isTrimmable: Bool { get }
+    var estimatedBytes: Int { get }
+    @discardableResult func finalizePrefillIfNeeded() -> Bool
     @discardableResult func trim(_ n: Int) -> Int
     func copy() -> any VMLXKVCache
+    func exportCacheEntry() -> LayerCacheEntry?
+    @discardableResult
+    func restore(from entry: LayerCacheEntry, options: VMLXCacheRestoreOptions) -> Bool
 }
 
 // MARK: - Base KV Cache
@@ -42,11 +55,46 @@ open class VMLXBaseKVCache: VMLXKVCache {
 
     open var isTrimmable: Bool { false }
 
+    open var estimatedBytes: Int {
+        state.reduce(0) { $0 + $1.nbytes }
+    }
+
+    @discardableResult
+    open func finalizePrefillIfNeeded() -> Bool { false }
+
     @discardableResult
     open func trim(_ n: Int) -> Int { 0 }
 
     open func copy() -> any VMLXKVCache {
         fatalError("copy() must be implemented by subclass")
+    }
+
+    open func exportCacheEntry() -> LayerCacheEntry? { nil }
+
+    @discardableResult
+    open func restore(from entry: LayerCacheEntry, options: VMLXCacheRestoreOptions = .init()) -> Bool {
+        _ = options
+        switch entry {
+        case .attention(let kv):
+            state = [kv.keys, kv.values]
+            return true
+        case .compressedAttention(let encodedKeys, let encodedValues, _):
+            let decodedKeys: MLXArray
+            let decodedValues: MLXArray
+            if let turboQuantState = options.turboQuantState {
+                decodedKeys = TurboQuantEncoder.decodeKeys(encodedKeys, state: turboQuantState)
+                decodedValues = TurboQuantEncoder.decodeValues(encodedValues, state: turboQuantState)
+            } else {
+                decodedKeys = TurboQuantEncoder.decodeKeys(encodedKeys, seed: encodedKeys.seed)
+                decodedValues = TurboQuantEncoder.decodeValues(encodedValues, seed: encodedValues.seed)
+            }
+            state = [decodedKeys, decodedValues]
+            return true
+        case .placeholder:
+            return true  // No-op restore for placeholder layers
+        case .ssm:
+            return false
+        }
     }
 }
 
@@ -129,6 +177,10 @@ public class VMLXKVCacheSimple: VMLXBaseKVCache {
 
     public override var isTrimmable: Bool { true }
 
+    public override var estimatedBytes: Int {
+        state.reduce(0) { $0 + $1.nbytes }
+    }
+
     @discardableResult
     public override func trim(_ n: Int) -> Int {
         let trimmed = min(offset, n)
@@ -144,6 +196,16 @@ public class VMLXKVCacheSimple: VMLXBaseKVCache {
             new.state = s.map { $0[.ellipsis] }
         }
         return new
+    }
+
+    public override func exportCacheEntry() -> LayerCacheEntry? {
+        let currentState = state
+        guard currentState.count == 2 else { return nil }
+        return .attention(KVCacheLayer(
+            keys: currentState[0],
+            values: currentState[1],
+            offset: offset
+        ))
     }
 }
 
@@ -257,6 +319,17 @@ public class VMLXQuantizedKVCache: VMLXBaseKVCache {
 
     public override var isTrimmable: Bool { true }
 
+    public override var estimatedBytes: Int {
+        var total = 0
+        if let quantizedKeys { total += quantizedKeys.nbytes }
+        if let quantizedValues { total += quantizedValues.nbytes }
+        if let keyScales { total += keyScales.nbytes }
+        if let keyBiases { total += keyBiases.nbytes }
+        if let valueScales { total += valueScales.nbytes }
+        if let valueBiases { total += valueBiases.nbytes }
+        return total
+    }
+
     @discardableResult
     public override func trim(_ n: Int) -> Int {
         let trimmed = min(offset, n)
@@ -285,6 +358,16 @@ public class VMLXQuantizedKVCache: VMLXBaseKVCache {
         new.valueBiases = valueBiases
         new.offset = self.offset
         return new
+    }
+
+    public override func exportCacheEntry() -> LayerCacheEntry? {
+        let currentState = state
+        guard currentState.count == 2 else { return nil }
+        return .attention(KVCacheLayer(
+            keys: currentState[0],
+            values: currentState[1],
+            offset: offset
+        ))
     }
 }
 
@@ -315,6 +398,24 @@ public class VMLXArraysCache: VMLXBaseKVCache {
         set { cache = newValue.map { $0 as MLXArray? } }
     }
 
+    public override var estimatedBytes: Int {
+        state.reduce(0) { $0 + $1.nbytes }
+    }
+
+    public override func exportCacheEntry() -> LayerCacheEntry? {
+        // Size-0 caches (MoE/Dense placeholders) export as .placeholder
+        // to preserve layer index alignment in stored HybridCache.
+        if cache.isEmpty { return .placeholder }
+        return nil
+    }
+
+    @discardableResult
+    public override func restore(from entry: LayerCacheEntry, options: VMLXCacheRestoreOptions = .init()) -> Bool {
+        _ = options
+        if case .placeholder = entry { return true }  // Accept placeholder restore for size-0 caches
+        return false
+    }
+
     public override func copy() -> any VMLXKVCache {
         let new = VMLXArraysCache(size: cache.count)
         let s = self.state
@@ -342,6 +443,20 @@ public class VMLXArraysCache: VMLXBaseKVCache {
 public class VMLXMambaCache: VMLXArraysCache {
     public init(leftPadding: [Int]? = nil) {
         super.init(size: 2, leftPadding: leftPadding)
+    }
+
+    public override func exportCacheEntry() -> LayerCacheEntry? {
+        let currentState = state
+        guard !currentState.isEmpty else { return nil }
+        return .ssm(SSMStateLayer(state: currentState))
+    }
+
+    @discardableResult
+    public override func restore(from entry: LayerCacheEntry, options: VMLXCacheRestoreOptions = .init()) -> Bool {
+        _ = options
+        guard case .ssm(let ssm) = entry else { return false }
+        state = ssm.state
+        return true
     }
 
     public override func copy() -> any VMLXKVCache {

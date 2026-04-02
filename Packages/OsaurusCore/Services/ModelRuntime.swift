@@ -425,6 +425,8 @@ actor ModelRuntime {
             if !prefixArrays.isEmpty { eval(prefixArrays) }
 
             kvCacheStore.putPrefixCache(cache, tokens: newTokens, modelName: modelName, hash: hash)
+            let budget = currentKVBudget()
+            kvCacheStore.ensureBudget(budget)
             print("[ModelRuntime] Prefix cached for \(modelName) (hash: \(hash.prefix(8)))")
         } catch {
             print("[ModelRuntime] Failed to build prefix cache: \(error)")
@@ -490,7 +492,10 @@ actor ModelRuntime {
                 let (sessionCache, tokens) = kvCacheStore.getCache(sessionId: sid, modelName: modelName)
                 if sessionCache != nil { return (sessionCache, tokens) }
             }
-            return kvCacheStore.getPrefixCache(modelName: modelName, hash: prefixHash)
+            let (cache, tokens) = kvCacheStore.getPrefixCache(modelName: modelName, hash: prefixHash)
+            let budget = currentKVBudget()
+            kvCacheStore.ensureBudget(budget)
+            return (cache, tokens)
         }()
 
         nonisolated(unsafe) let existingCache = existingCacheInfo.0

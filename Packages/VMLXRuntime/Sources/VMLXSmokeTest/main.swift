@@ -60,7 +60,13 @@ struct SmokeTest {
         do {
             log("T2 Loading model (this may take 5-15s)...")
             let startLoad = CFAbsoluteTimeGetCurrent()
-            let loaded = try await ModelLoader.load(from: modelPath)
+            let loaded: LoadedModel
+            do {
+                loaded = try await ModelLoader.load(from: modelPath)
+            } catch {
+                fail("T2 Model Load Failed: \(error)")
+                return
+            }
             let elapsed = CFAbsoluteTimeGetCurrent() - startLoad
             container = VMLXModelContainer.create(model: loaded)
 

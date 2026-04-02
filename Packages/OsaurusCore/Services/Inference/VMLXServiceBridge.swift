@@ -46,6 +46,13 @@ actor VMLXServiceBridge: ToolCapableService {
     private var globalToolParser: String?
     private var globalReasoningParser: String?
 
+    /// Config-based formats from the loaded model's config.json (via ModelFamilyConfig).
+    /// Updated after each model load. Used by the UI streaming middleware to match
+    /// the engine's auto-detection instead of relying on model name substring matching.
+    private var configReasoningFormat: String?
+    private var configToolFormat: String?
+    private var configThinkInTemplate: Bool = false
+
     init(service: VMLXService = .shared) {
         self.service = service
     }
@@ -155,6 +162,20 @@ actor VMLXServiceBridge: ToolCapableService {
         }
 
         currentLoadedModel = modelName
+
+        // Capture the loaded model's config.json-based format detection.
+        // This is the source of truth for reasoning/tool parsers (not model name matching).
+        if let familyConfig = await service.loadedFamilyConfig {
+            let rf = familyConfig.reasoningFormat
+            configReasoningFormat = rf == .none ? nil : rf.rawValue
+            let tf = familyConfig.toolCallFormat
+            configToolFormat = tf == .none ? nil : tf.rawValue
+            configThinkInTemplate = familyConfig.thinkInTemplate
+            // Update static snapshots for sync access from UI
+            Self._lastReasoningFormat = configReasoningFormat
+            Self._lastThinkInTemplate = configThinkInTemplate
+            _vmlxLog("[Bridge] Model config: reasoning=\(configReasoningFormat ?? "none") tool=\(configToolFormat ?? "none") thinkInTemplate=\(configThinkInTemplate)")
+        }
 
         // Apply user's inference settings
         await applyRuntimeConfig()
@@ -294,6 +315,28 @@ actor VMLXServiceBridge: ToolCapableService {
     nonisolated static func getAvailableModelsWithPaths() -> [(name: String, path: URL)] {
         ModelDetector.scanAvailableModels().map { ($0.name, $0.modelPath) }
     }
+
+    /// Last-known config formats from the loaded model (synchronous access).
+    /// Updated after each model load. Safe for UI reads — worst case is one
+    /// message with stale format before the next load updates it.
+    nonisolated(unsafe) private static var _lastReasoningFormat: String?
+    nonisolated(unsafe) private static var _lastThinkInTemplate: Bool = false
+
+    /// Query the loaded model's config.json-based reasoning format (async).
+    /// Returns the ReasoningFormat rawValue (e.g. "qwen3", "mistral", "gptoss") or nil.
+    static func getConfigReasoningFormat() async -> String? {
+        await shared.configReasoningFormat
+    }
+
+    /// Query whether the loaded model's chat template natively injects <think> tags (async).
+    static func getConfigThinkInTemplate() async -> Bool {
+        await shared.configThinkInTemplate
+    }
+
+    /// Synchronous snapshot of the loaded model's reasoning format.
+    /// Use from non-async contexts (e.g. WorkSession delegate).
+    nonisolated static var lastKnownReasoningFormat: String? { _lastReasoningFormat }
+    nonisolated static var lastKnownThinkInTemplate: Bool { _lastThinkInTemplate }
 
     /// Force-unload the model from the shared VMLXService singleton.
     /// Use this from UI buttons — it unloads from the actual runtime

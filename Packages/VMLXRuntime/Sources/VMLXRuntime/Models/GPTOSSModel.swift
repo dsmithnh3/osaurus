@@ -297,7 +297,7 @@ class GPTOSSMLPBlock: Module {
     }
 
     func callAsFunction(_ x: MLXArray) -> MLXArray {
-        let g = router(x)
+        let g = router(x).asType(.float32)
         let (experts, indices) = mlxTopK(g, k: numExpertsPerTok, axis: -1)
         let stopIndices = MLX.stopGradient(indices)
         let expertWeights = softmax(experts, axis: -1, precise: true)

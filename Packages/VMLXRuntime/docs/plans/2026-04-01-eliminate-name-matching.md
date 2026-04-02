@@ -8,37 +8,37 @@
 ### 1. `ModelConfigRegistry.detect()` — ModelConfig.swift:201
 **Current:** `name.contains(config.family.lowercased())`
 **Fix:** Add a `modelTypes: [String]` field to `ModelFamilyConfig` mapping config.json `model_type` values. Lookup by exact `model_type` match first, fall back to family name only for JANG models where model_type isn't standard.
-**Status:** TODO
+**Status:** DONE ✓
 
 ### 2. `VMLXService.handles()` — VMLXService.swift:75-98
 **Current:** 30+ hardcoded family names in array with `.contains()`
 **Fix:** Accept ALL local models. Let `ModelLoader.load()` determine if the architecture is supported. If unsupported, the ChatEngine fallback router retries with MLXService. Remove the family name array entirely.
-**Status:** TODO
+**Status:** DONE ✓
 
 ### 3. `StreamingMiddlewareResolver` — StreamingMiddleware.swift:147-152
 **Current:** `vmlxFamilies` array with `.contains()` to detect VMLX vs MLX path
 **Fix:** Pass a flag from the service layer indicating which runtime is handling the request. Or: don't use middleware for VMLX path at all (VMLXRuntimeActor handles thinking).
-**Status:** TODO
+**Status:** DONE ✓
 
 ### 4. `ModelDetector.detectFamily()` — ModelDetector.swift:494-541
 **Current:** Two cascading if-chains with `.contains()` on model_type and source_model
 **Fix:** Use the `model_type` field directly from config.json (already parsed). Map `model_type` → family via a dictionary lookup, not substring matching.
-**Status:** TODO
+**Status:** DONE ✓
 
 ### 5. `autoDetectReasoningParser()` — ReasoningParser.swift:30-55
 **Current:** `.contains()` on model name
 **Fix:** Already partially fixed — VMLXRuntimeActor uses `container.familyConfig.reasoningFormat`. But the standalone function still uses name matching. Remove it or make it use `model_type`.
-**Status:** TODO
+**Status:** DONE ✓
 
 ### 6. `GPTOSSReasoningProfile.matches()` — ModelOptions.swift:141
 **Current:** `.contains("gpt-oss")` on model ID
 **Fix:** Use `model_type` from the loaded model's config. The UI needs access to the model's `model_type` at profile selection time.
-**Status:** TODO
+**Status:** DONE ✓
 
 ### 7. `QwenThinkingProfile.matches()` — ModelOptions.swift:178
 **Current:** `.contains("qwen3")`, `.contains("minimax")`, etc.
 **Fix:** Same as #6 — use `model_type` from config.
-**Status:** TODO
+**Status:** DONE ✓
 
 ### 8. `VMLXServiceBridge._isMLXServiceOnlyModel()` — VMLXServiceBridge.swift:264
 **Current:** Reads config.json `model_type` and checks against `mlxServiceOnlyTypes` set.
@@ -48,7 +48,7 @@
 ### 9. `ModelPickerItem` vision detection — ModelPickerItem.swift:379
 **Current:** `.contains("vision")` || `.contains("pixtral")`
 **Fix:** Use `supportsVision` from `ModelFamilyConfig` or `DetectedModel.hasVision`.
-**Status:** TODO
+**Status:** DONE ✓
 
 ### 10. `MLXService.getAllLocalModels()` / `getAvailableModels()` — MLXService.swift
 **Current:** No name matching (discovery-based). OK.
@@ -72,4 +72,18 @@ Used by:
   - Middleware: thinkInTemplate flag from loaded model config
 ```
 
-No model name substring matching anywhere in the chain.
+No model name substring matching for local VMLX models. Name matching
+retained ONLY as a last-resort fallback for remote/non-VMLX models (OpenAI,
+Anthropic, etc.) that don't have a config.json.
+
+### Opus Audit Fix (2026-04-01)
+
+The StreamingMiddlewareResolver still used name matching as its primary
+fallback in auto mode, disagreeing with the engine's config.json-based
+detection. Fixed by:
+1. VMLXRuntimeActor exposes `loadedFamilyConfig` property
+2. VMLXServiceBridge captures `configReasoningFormat` and `configThinkInTemplate` after load
+3. StreamingMiddlewareResolver accepts config-based format as priority 3 (above name matching)
+4. Name matching demoted to priority 4 (remote/non-VMLX models only)
+
+See `docs/audits/2026-04-01-opus-deep-audit-fixes.md` for full details.

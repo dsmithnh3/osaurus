@@ -110,7 +110,7 @@ public class MoEGate: Module {
     public func callAsFunction(_ x: MLXArray) -> (indices: MLXArray, weights: MLXArray) {
         // x: [tokens, hidden], weight: [numExperts, hidden]
         // logits = x @ weight^T -> [tokens, numExperts]
-        let logits = matmul(x, weight.transposed())
+        let logits = matmul(x, weight.transposed()).asType(.float32)
 
         // Top-k selection: sort descending, take first k indices
         // argSort of negated logits gives descending order

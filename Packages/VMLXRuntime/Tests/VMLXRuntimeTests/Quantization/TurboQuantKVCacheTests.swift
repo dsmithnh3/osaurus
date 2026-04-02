@@ -126,4 +126,43 @@ struct TurboQuantKVCacheTests {
         )
         #expect(cache.estimatedBytes > 0)
     }
+
+    @Test("Compressed live cache exports compressed attention")
+    func compressedExport() {
+        let config = TurboQuantConfig()
+        let cache = TurboQuantKVCache(config: config, layerIndex: 5, totalLayers: 32)
+        cache.appendFloat(
+            keys: MLXArray.zeros([1, 8, 12, 128]),
+            values: MLXArray.zeros([1, 8, 12, 128])
+        )
+
+        cache.compress()
+
+        guard case .compressedAttention(_, _, let offset)? = cache.exportCacheEntry() else {
+            Issue.record("Expected compressed export")
+            return
+        }
+        #expect(offset == 12)
+    }
+
+    @Test("Restoring compressed attention keeps live TurboQuant phase")
+    func restoreCompressedEntry() {
+        let config = TurboQuantConfig()
+        let source = TurboQuantKVCache(config: config, layerIndex: 5, totalLayers: 32)
+        source.appendFloat(
+            keys: MLXArray.zeros([1, 8, 12, 128]),
+            values: MLXArray.zeros([1, 8, 12, 128])
+        )
+        source.compress()
+
+        guard let entry = source.exportCacheEntry() else {
+            Issue.record("Expected export entry")
+            return
+        }
+
+        let restored = TurboQuantKVCache(config: config, layerIndex: 5, totalLayers: 32)
+        #expect(restored.restore(from: entry, options: .init()))
+        #expect(restored.phase == .compressed)
+        #expect(restored.offset == 12)
+    }
 }

@@ -63,6 +63,48 @@ public enum CacheFetchResult: Sendable {
 /// Store cascade: paged + memory + prefix + disk + SSM companion
 public final class CacheCoordinator: @unchecked Sendable {
 
+    public final class PagedWriteSession: @unchecked Sendable {
+        fileprivate let requestId: String
+        fileprivate let pagedCache: PagedCacheManager
+        fileprivate unowned let coordinator: CacheCoordinator
+        fileprivate var committedBlockIds: [Int] = []
+
+        fileprivate init(
+            requestId: String,
+            pagedCache: PagedCacheManager,
+            coordinator: CacheCoordinator
+        ) {
+            self.requestId = requestId
+            self.pagedCache = pagedCache
+            self.coordinator = coordinator
+        }
+
+        public var committedBlockCount: Int { committedBlockIds.count }
+
+        public func sync(tokens: [Int], cache: HybridCache) {
+            coordinator._syncPagedWriteSession(
+                self,
+                tokens: tokens,
+                cache: cache,
+                finalize: false
+            )
+        }
+
+        public func finalize(tokens: [Int], cache: HybridCache) {
+            coordinator._syncPagedWriteSession(
+                self,
+                tokens: tokens,
+                cache: cache,
+                finalize: true
+            )
+        }
+
+        public func abort() {
+            pagedCache.deleteBlockTable(requestId)
+            committedBlockIds.removeAll()
+        }
+    }
+
     public let config: CacheCoordinatorConfig
 
     // Cache layers (initialized based on config)
@@ -121,6 +163,15 @@ public final class CacheCoordinator: @unchecked Sendable {
 
     public var isHybrid: Bool {
         lock.withLock { _isHybrid }
+    }
+
+    public func beginPagedWriteSession(requestId: String) -> PagedWriteSession? {
+        guard let pagedCache else { return nil }
+        return PagedWriteSession(
+            requestId: requestId,
+            pagedCache: pagedCache,
+            coordinator: self
+        )
     }
 
     // MARK: - Fetch Cascade
@@ -271,6 +322,19 @@ public final class CacheCoordinator: @unchecked Sendable {
         var layers: [LayerCacheEntry] = []
 
         for layerIdx in 0..<numLayers {
+            // Check if this layer is a placeholder across all blocks.
+            // Placeholder layers (MoE/Dense) have no KV or SSM data.
+            let isPlaceholder = blocks.allSatisfy { block in
+                guard let data = block.cacheData, layerIdx < data.count else { return true }
+                guard let entry = data[layerIdx] else { return true }
+                if case .placeholder = entry { return true }
+                return false
+            }
+            if isPlaceholder {
+                layers.append(.placeholder)
+                continue
+            }
+
             // Collect KV slices for this layer across all blocks.
             var attentionEntries: [LayerCacheEntry] = []
             var keySlices: [MLXArray] = []
@@ -291,6 +355,8 @@ public final class CacheCoordinator: @unchecked Sendable {
                     if blockIdx == blocks.count - 1 {
                         lastSSM = ssm
                     }
+                case .placeholder:
+                    break
                 }
             }
 
@@ -315,7 +381,7 @@ public final class CacheCoordinator: @unchecked Sendable {
                         let decodedValues = TurboQuantEncoder.decodeValues(ev, seed: ev.seed)
                         keySlices.append(decodedKeys)
                         valueSlices.append(decodedValues)
-                    case .ssm:
+                    case .ssm, .placeholder:
                         break
                     }
                 }
@@ -350,9 +416,14 @@ public final class CacheCoordinator: @unchecked Sendable {
 
     /// Store cache state after generation.
     /// Writes to multiple layers: paged + memory + prefix + disk + SSM companion.
-    public func store(tokens: [Int], cache: HybridCache, tokenHash: String? = nil) {
+    public func store(
+        tokens: [Int],
+        cache: HybridCache,
+        tokenHash: String? = nil,
+        includePaged: Bool = true
+    ) {
         // Paged block cache (block-level storage with chain hashing)
-        if let pagedCache = pagedCache {
+        if includePaged, let pagedCache = pagedCache {
             _storeToPagedCache(tokens: tokens, cache: cache, pagedCache: pagedCache)
         }
 
@@ -411,7 +482,7 @@ public final class CacheCoordinator: @unchecked Sendable {
                 parentHash: parentHash, tokenIds: blockTokens)
 
             // Check dedup: does a block with this hash already exist?
-            if let existing = pagedCache.findCachedBlock(hash: blockHash) {
+            if let existing = pagedCache.peekCachedBlock(hash: blockHash) {
                 if isLastBlock && isHybrid && _blockLacksCumulativeSSM(existing) {
                     // Fall through to allocate new block with SSM data
                 } else {
@@ -429,44 +500,11 @@ public final class CacheCoordinator: @unchecked Sendable {
             block.blockHash = blockHash
 
             // Slice layer data for this block's token range.
-            var blockData: [LayerCacheEntry?] = []
-            for entry in cache.layers {
-                switch entry {
-                case .attention(let kv):
-                    let slicedKeys = kv.keys[.ellipsis, tokenStart..<tokenEnd, 0...]
-                    let slicedValues = kv.values[.ellipsis, tokenStart..<tokenEnd, 0...]
-                    let sliceOffset = tokenEnd - tokenStart
-                    blockData.append(.attention(KVCacheLayer(
-                        keys: slicedKeys, values: slicedValues, offset: sliceOffset)))
-
-                case .ssm(let ssm):
-                    if isLastBlock {
-                        blockData.append(.ssm(ssm))
-                    } else {
-                        blockData.append(nil)
-                    }
-
-                case .compressedAttention(let ek, let ev, _):
-                    if let slicedCompressed = TurboQuantLayerCache.sliceCompressedAttention(
-                        ek,
-                        ev,
-                        range: tokenStart..<tokenEnd
-                    ) {
-                        blockData.append(slicedCompressed)
-                    } else {
-                        // Sink-only edge case: materialize just this slice to float.
-                        let decodedKeys = TurboQuantEncoder.decodeKeys(ek, seed: ek.seed)
-                        let decodedValues = TurboQuantEncoder.decodeValues(ev, seed: ev.seed)
-                        let slicedKeys = decodedKeys[.ellipsis, tokenStart..<tokenEnd, 0...]
-                        let slicedValues = decodedValues[.ellipsis, tokenStart..<tokenEnd, 0...]
-                        blockData.append(.attention(KVCacheLayer(
-                            keys: slicedKeys,
-                            values: slicedValues,
-                            offset: tokenEnd - tokenStart
-                        )))
-                    }
-                }
-            }
+            let blockData = _makePagedBlockData(
+                from: cache,
+                tokenRange: tokenStart..<tokenEnd,
+                includeFinalSSM: isLastBlock
+            )
 
             block.cacheData = blockData
 
@@ -576,25 +614,39 @@ public final class CacheCoordinator: @unchecked Sendable {
     /// For hybrid models, check if we also have SSM companion state.
     /// If SSM state is found at the matching boundary, return a full hit.
     /// Otherwise return a partial hit (attention KV found but SSM missing).
+    ///
+    /// Check order:
+    /// 1. SSMStateCache (volatile RAM — fast, boundary-keyed)
+    /// 2. Embedded SSM layers in the HybridCache itself (from disk cache)
+    /// 3. Fall back to partialHit
     private func _resolveHybridFetch(
         cache: HybridCache, remaining: [Int],
         tokens: [Int], tokenHash: String, detail: CacheDetail
     ) -> CacheFetchResult {
-        guard let ssmCache = ssmStateCache else {
-            return .partialHit(
-                attentionCache: cache,
-                remainingTokens: remaining,
-                detail: detail
-            )
-        }
-
         // How many tokens the cache covers
         let boundary = tokens.count - remaining.count
-        let boundaryHash = SSMStateCache.hashTokens(tokens, count: boundary)
 
-        if let checkpoint = ssmCache.fetch(tokenHash: boundaryHash, boundary: boundary) {
-            // Full hit: have both attention KV and SSM state.
-            // Pass checkpoint to generation engine for merging into cache objects.
+        // Path 1: Check volatile SSMStateCache (boundary-aligned, deep-copied)
+        if let ssmCache = ssmStateCache {
+            let boundaryHash = SSMStateCache.hashTokens(tokens, count: boundary)
+            if let checkpoint = ssmCache.fetch(tokenHash: boundaryHash, boundary: boundary) {
+                return .hit(cache: cache, remainingTokens: remaining, detail: detail, ssmCheckpoint: checkpoint)
+            }
+        }
+
+        // Path 2: Check if the HybridCache already has SSM layers embedded
+        // (e.g., loaded from disk cache which stores full hybrid state).
+        // Build an ad-hoc SSMCheckpoint from the embedded layers.
+        let embeddedSSM = cache.ssmLayers
+        if !embeddedSSM.isEmpty {
+            let boundaryHash = SSMStateCache.hashTokens(tokens, count: boundary)
+            let checkpoint = SSMCheckpoint(
+                ssmStates: embeddedSSM,
+                boundary: boundary,
+                tokenHash: boundaryHash
+            )
+            // Promote to SSMStateCache for future fetches (avoids repeated disk reads)
+            ssmStateCache?.store(checkpoint: checkpoint)
             return .hit(cache: cache, remainingTokens: remaining, detail: detail, ssmCheckpoint: checkpoint)
         }
 
@@ -604,6 +656,138 @@ public final class CacheCoordinator: @unchecked Sendable {
             remainingTokens: remaining,
             detail: detail
         )
+    }
+
+    private func _makePagedBlockData(
+        from cache: HybridCache,
+        tokenRange: Range<Int>,
+        includeFinalSSM: Bool
+    ) -> [LayerCacheEntry?] {
+        cache.layers.map { entry in
+            switch entry {
+            case .attention(let kv):
+                let slicedKeys = kv.keys[.ellipsis, tokenRange, 0...]
+                let slicedValues = kv.values[.ellipsis, tokenRange, 0...]
+                return .attention(KVCacheLayer(
+                    keys: slicedKeys,
+                    values: slicedValues,
+                    offset: tokenRange.count
+                ))
+
+            case .compressedAttention(let ek, let ev, _):
+                if let slicedCompressed = TurboQuantLayerCache.sliceCompressedAttention(
+                    ek,
+                    ev,
+                    range: tokenRange
+                ) {
+                    return slicedCompressed
+                }
+
+                // Sink-only edge case: materialize just this slice to float.
+                let decodedKeys = TurboQuantEncoder.decodeKeys(ek, seed: ek.seed)
+                let decodedValues = TurboQuantEncoder.decodeValues(ev, seed: ev.seed)
+                return .attention(KVCacheLayer(
+                    keys: decodedKeys[.ellipsis, tokenRange, 0...],
+                    values: decodedValues[.ellipsis, tokenRange, 0...],
+                    offset: tokenRange.count
+                ))
+
+            case .ssm(let ssm):
+                return includeFinalSSM ? .ssm(ssm) : nil
+
+            case .placeholder:
+                return .placeholder
+            }
+        }
+    }
+
+    private func _syncPagedWriteSession(
+        _ session: PagedWriteSession,
+        tokens: [Int],
+        cache: HybridCache,
+        finalize: Bool
+    ) {
+        let blockSize = session.pagedCache.blockSize
+        guard !tokens.isEmpty, !cache.layers.isEmpty else { return }
+
+        let targetBlockCount =
+            if finalize {
+                (tokens.count + blockSize - 1) / blockSize
+            } else {
+                tokens.count / blockSize
+            }
+
+        guard targetBlockCount > 0 else { return }
+
+        var parentHash: BlockHash? = nil
+        for blockIdx in 0..<targetBlockCount {
+            let tokenStart = blockIdx * blockSize
+            let tokenEnd = min(tokenStart + blockSize, tokens.count)
+            let isLastBlock = finalize && blockIdx == targetBlockCount - 1
+            let tokenRange = tokenStart..<tokenEnd
+            let blockTokens = Array(tokens[tokenRange])
+            let blockHash = CacheBlock.computeBlockHash(
+                parentHash: parentHash,
+                tokenIds: blockTokens
+            )
+            let blockData = _makePagedBlockData(
+                from: cache,
+                tokenRange: tokenRange,
+                includeFinalSSM: isLastBlock
+            )
+
+            if blockIdx < session.committedBlockIds.count {
+                if finalize {
+                    session.pagedCache.updateBlock(
+                        blockId: session.committedBlockIds[blockIdx],
+                        tokenCount: blockTokens.count,
+                        cacheData: blockData,
+                        hash: blockHash
+                    )
+                }
+                parentHash = blockHash
+                continue
+            }
+
+            if let existing = session.pagedCache.peekCachedBlock(hash: blockHash) {
+                if isLastBlock && existing.refCount > 1 {
+                    // Block is shared by other requests — COW: allocate a new block
+                    // instead of mutating shared data in-place.
+                    guard let newBlock = session.pagedCache.allocateBlock() else { break }
+                    newBlock.tokenCount = blockTokens.count
+                    newBlock.blockHash = blockHash
+                    newBlock.cacheData = blockData
+                    session.pagedCache.markCached(block: newBlock, hash: blockHash)
+                    session.committedBlockIds.append(newBlock.blockId)
+                    session.pagedCache.appendBlockTable(session.requestId, blockId: newBlock.blockId)
+                    parentHash = blockHash
+                    continue
+                } else if isLastBlock {
+                    // Block is exclusively owned (refCount <= 1) — safe to update in-place
+                    session.pagedCache.updateBlock(
+                        blockId: existing.blockId,
+                        tokenCount: blockTokens.count,
+                        cacheData: blockData,
+                        hash: blockHash
+                    )
+                }
+                session.pagedCache.forkBlock(existing, hash: blockHash)
+                session.committedBlockIds.append(existing.blockId)
+                session.pagedCache.appendBlockTable(session.requestId, blockId: existing.blockId)
+                parentHash = blockHash
+                continue
+            }
+
+            guard let block = session.pagedCache.allocateBlock() else { break }
+
+            block.tokenCount = blockTokens.count
+            block.blockHash = blockHash
+            block.cacheData = blockData
+            session.pagedCache.markCached(block: block, hash: blockHash)
+            session.committedBlockIds.append(block.blockId)
+            session.pagedCache.appendBlockTable(session.requestId, blockId: block.blockId)
+            parentHash = blockHash
+        }
     }
 }
 

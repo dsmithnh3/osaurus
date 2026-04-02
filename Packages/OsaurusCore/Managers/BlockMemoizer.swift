@@ -79,7 +79,8 @@ final class BlockMemoizer {
                 in: turns,
                 streamingTurnId: streamingTurnId,
                 agentName: agentName,
-                thinkingEnabled: thinkingEnabled
+                thinkingEnabled: thinkingEnabled,
+                showInferenceStats: showInferenceStats
             )
         } else if canAppend {
             // Regenerate from the previous last turn onwards — it may have been
@@ -183,6 +184,8 @@ final class BlockMemoizer {
         lastPendingToolName = nil
         lastPendingToolArgSize = 0
         lastVersion = -1
+        lastIsStreaming = false
+        lastHasStats = false
     }
 
     // MARK: - Group Header Map

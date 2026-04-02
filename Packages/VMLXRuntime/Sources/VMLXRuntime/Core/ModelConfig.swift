@@ -135,13 +135,13 @@ public struct ModelConfigRegistry: Sendable {
                          defaultContextWindow: 32768, defaultStopTokens: ["</s>"]),
 
         // DeepSeek
-        ModelFamilyConfig(family: "deepseek", modelTypes: ["deepseek_v3", "deepseek_v2"],
+        ModelFamilyConfig(family: "deepseek", modelTypes: ["deepseek_v3", "deepseek_v2", "deepseek"],
                          toolCallFormat: .deepseek,
                          defaultContextWindow: 65536, defaultStopTokens: ["<|end\u{2581}of\u{2581}sentence|>"]),
 
         // Nemotron
         ModelFamilyConfig(family: "nemotron", modelTypes: ["nemotron", "nemotron_h"],
-                         toolCallFormat: .nemotron,
+                         toolCallFormat: .nemotron, isHybrid: true,
                          defaultContextWindow: 32768, defaultStopTokens: ["<|endoftext|>"]),
 
         // Gemma
@@ -159,18 +159,20 @@ public struct ModelConfigRegistry: Sendable {
                          toolCallFormat: .generic,
                          defaultContextWindow: 16384, defaultStopTokens: ["<|endoftext|>"]),
 
-        // GPT-OSS
+        // GPT-OSS — uses channel protocol (<|channel|>analysis), but decode loop
+        // converts to <think> before accumulator. reasoningFormat: .gptoss ensures
+        // UI middleware uses ChannelTagMiddleware for non-VMLX paths (MLX/remote).
         ModelFamilyConfig(family: "gpt-oss", modelTypes: ["gpt_oss"],
-                         toolCallFormat: .generic, reasoningFormat: .qwen3,
+                         toolCallFormat: .generic, reasoningFormat: .gptoss,
                          defaultContextWindow: 131072, defaultStopTokens: ["<|return|>"]),
 
         // GLM
-        ModelFamilyConfig(family: "glm", modelTypes: ["chatglm", "glm4", "glm4_moe", "glm4_moe_lite"],
+        ModelFamilyConfig(family: "glm", modelTypes: ["chatglm", "glm4", "glm4_moe", "glm4_moe_lite", "glm"],
                          toolCallFormat: .glm,
                          defaultContextWindow: 32768),
 
         // MiniMax
-        ModelFamilyConfig(family: "minimax", modelTypes: ["minimax_m2", "minimax_text_01"],
+        ModelFamilyConfig(family: "minimax", modelTypes: ["minimax_m2", "minimax_text_01", "minimax"],
                          toolCallFormat: .minimax, reasoningFormat: .qwen3, thinkInTemplate: true,
                          defaultContextWindow: 32768),
 
@@ -195,6 +197,14 @@ public struct ModelConfigRegistry: Sendable {
                          defaultContextWindow: 131072),
 
         // Others
+        ModelFamilyConfig(family: "xlam", modelTypes: ["xlam"],
+                         toolCallFormat: .xlam, defaultContextWindow: 8192),
+        ModelFamilyConfig(family: "stepfun", modelTypes: ["stepfun", "step"],
+                         toolCallFormat: .stepfun, defaultContextWindow: 8192),
+        ModelFamilyConfig(family: "moonshot", modelTypes: ["moonshot", "kimi"],
+                         toolCallFormat: .moonshot, defaultContextWindow: 8192),
+        ModelFamilyConfig(family: "functionary", modelTypes: ["functionary"],
+                         toolCallFormat: .functionary, defaultContextWindow: 8192),
         ModelFamilyConfig(family: "starcoder", modelTypes: ["starcoder2"],
                          toolCallFormat: .generic, defaultContextWindow: 16384),
         ModelFamilyConfig(family: "olmo", modelTypes: ["olmo", "olmo2"],
@@ -227,12 +237,40 @@ public struct ModelConfigRegistry: Sendable {
     /// Used only when model_type is not available (e.g., display name contexts).
     public static func configFor(modelName: String) -> ModelFamilyConfig {
         // First try exact model_type lookup
-        let normalized = modelName.lowercased()
+        let normalizedDash = modelName.lowercased()
             .replacingOccurrences(of: "_", with: "-")
             .replacingOccurrences(of: " ", with: "-")
-        if let config = modelTypeMap[modelName] ?? modelTypeMap[normalized] {
+        let normalizedUnderscore = modelName.lowercased()
+            .replacingOccurrences(of: "-", with: "_")
+            .replacingOccurrences(of: " ", with: "_")
+            
+        if let config = modelTypeMap[modelName] ?? modelTypeMap[normalizedDash] ?? modelTypeMap[normalizedUnderscore] ?? modelTypeMap[modelName.lowercased()] {
             return config
         }
+        
+        // Try substring match on model_types ignoring punctuation
+        let alphaNum = modelName.lowercased().filter { $0.isLetter || $0.isNumber }
+        
+        // Find all matches and pick the one with the longest matching key to avoid 'llama' overriding 'hermes-llama'
+        var bestMatch: ModelFamilyConfig? = nil
+        var longestMatch = 0
+        
+        for config in configs {
+            for key in config.modelTypes {
+                let keyAlphaNum = key.lowercased().filter { $0.isLetter || $0.isNumber }
+                if !keyAlphaNum.isEmpty && alphaNum.contains(keyAlphaNum) {
+                    if keyAlphaNum.count > longestMatch {
+                        longestMatch = keyAlphaNum.count
+                        bestMatch = config
+                    }
+                }
+            }
+        }
+        
+        if let bestMatch {
+            return bestMatch
+        }
+        
         // Fallback: generic config
         return ModelFamilyConfig(family: "generic", toolCallFormat: .generic, defaultContextWindow: 8192)
     }

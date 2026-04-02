@@ -107,6 +107,82 @@ struct LayerCacheTests {
         #expect(entry.estimatedBytes > 0)
     }
 
+    @Test("Simple live cache exports an attention entry")
+    func simpleLiveCacheExport() throws {
+        let cache = VMLXKVCacheSimple()
+        cache.state = [
+            MLXArray.zeros([1, 8, 24, 128]),
+            MLXArray.zeros([1, 8, 24, 128]),
+        ]
+
+        guard case .attention(let kv)? = cache.exportCacheEntry() else {
+            Issue.record("Expected attention export")
+            return
+        }
+
+        #expect(kv.offset == 24)
+        #expect(cache.estimatedBytes == kv.estimatedBytes)
+    }
+
+    @Test("Mamba live cache exports and restores SSM state")
+    func mambaLiveCacheExportRestore() throws {
+        let cache = VMLXMambaCache()
+        cache.state = [
+            MLXArray.zeros([1, 16, 64]),
+            MLXArray.zeros([1, 16, 64]),
+        ]
+
+        guard case .ssm(let entry)? = cache.exportCacheEntry() else {
+            Issue.record("Expected ssm export")
+            return
+        }
+
+        let restored = VMLXMambaCache()
+        #expect(restored.restore(from: .ssm(entry), options: .init()))
+        #expect(restored.state.count == 2)
+    }
+
+    @Test("Quantized live cache estimates compressed bytes instead of decoded float state")
+    func quantizedLiveCacheEstimatedBytes() throws {
+        let cache = VMLXQuantizedKVCache(bits: 4, groupSize: 64)
+        cache.state = [
+            MLXArray.zeros([1, 8, 32, 128]),
+            MLXArray.zeros([1, 8, 32, 128]),
+        ]
+
+        let floatBytes = cache.state.reduce(0) { $0 + $1.nbytes }
+        #expect(cache.estimatedBytes > 0)
+        #expect(cache.estimatedBytes < floatBytes)
+    }
+
+    @Test("Simple live cache restores compressed attention entries")
+    func simpleLiveCacheRestoresCompressedAttention() throws {
+        let keys = MLXArray.zeros([1, 8, 16, 128])
+        let values = MLXArray.zeros([1, 8, 16, 128])
+        let config = TurboQuantConfig()
+
+        guard let encodedEntry = TurboQuantLayerCache.encodeAttentionLayer(
+            keys: keys,
+            values: values,
+            config: config,
+            layerIndex: 3,
+            totalLayers: 32
+        ) else {
+            Issue.record("Expected TurboQuant encoding")
+            return
+        }
+
+        let cache = VMLXKVCacheSimple()
+        #expect(cache.restore(from: encodedEntry, options: .init()))
+
+        guard case .attention(let restored)? = cache.exportCacheEntry() else {
+            Issue.record("Expected restored attention export")
+            return
+        }
+
+        #expect(restored.offset == 16)
+    }
+
     @Test("parseHybridPattern converts string to layer types")
     func parsePattern() {
         let pattern = parseHybridPattern("MMM*MMM*")

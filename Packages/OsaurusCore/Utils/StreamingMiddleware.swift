@@ -181,20 +181,60 @@ final class MistralTagMiddleware: StreamingMiddleware {
 // MARK: - Resolver
 
 enum StreamingMiddlewareResolver {
+    /// Resolve the correct streaming middleware for a model.
+    ///
+    /// Resolution priority:
+    /// 1. Explicit per-model override (modelOptions["reasoningParser"])
+    /// 2. Global override (ServerConfiguration.reasoningParserOverride)
+    /// 3. Engine config (config.json model_type → ModelFamilyConfig.reasoningFormat)
+    /// 4. Model name matching (fallback for remote/non-VMLX models only)
+    ///
+    /// - Parameter configReasoningFormat: The loaded model's config.json-based reasoning
+    ///   format from VMLXServiceBridge.getConfigReasoningFormat(). Pass nil for remote models.
     @MainActor
     static func resolve(
         for modelId: String,
         modelOptions: [String: ModelOptionValue] = [:],
-        globalReasoningParserOverride: String? = nil
+        globalReasoningParserOverride: String? = nil,
+        configReasoningFormat: String? = nil,
+        configThinkInTemplate: Bool = false
     ) -> StreamingMiddleware? {
         let thinkingDisabled = modelOptions["disableThinking"]?.boolValue == true
-        let id = modelId.lowercased()
         let effectiveReasoningParser = LocalParserOptions.resolveReasoningOverride(
             perModel: modelOptions["reasoningParser"]?.stringValue,
             global: globalReasoningParserOverride
         )
 
-        switch effectiveReasoningParser {
+        // Priority 1 & 2: Explicit user override (per-model or global)
+        if let parser = effectiveReasoningParser {
+            return _middlewareForParser(parser, thinkingDisabled: thinkingDisabled)
+        }
+
+        // Priority 3: Engine config from config.json model_type
+        if let configFormat = configReasoningFormat {
+            return _middlewareForConfigFormat(
+                configFormat,
+                thinkingDisabled: thinkingDisabled,
+                thinkInTemplate: configThinkInTemplate
+            )
+        }
+
+        // Priority 4: Name matching fallback (remote/non-VMLX models only)
+        return _nameMatchFallback(
+            modelId: modelId,
+            thinkingDisabled: thinkingDisabled
+        )
+    }
+
+    // MARK: - Private Resolution Helpers
+
+    /// Map explicit parser override string to middleware.
+    @MainActor
+    private static func _middlewareForParser(
+        _ parser: String,
+        thinkingDisabled: Bool
+    ) -> StreamingMiddleware? {
+        switch parser {
         case "none":
             return nil
         case "gptoss":
@@ -204,8 +244,42 @@ enum StreamingMiddlewareResolver {
         case "think":
             return thinkingDisabled ? nil : PrependThinkTagMiddleware()
         default:
-            break
+            return nil
         }
+    }
+
+    /// Map engine's config.json-based ReasoningFormat to middleware.
+    /// This matches exactly what VMLXRuntimeActor does in its reasoningParser resolution.
+    @MainActor
+    private static func _middlewareForConfigFormat(
+        _ format: String,
+        thinkingDisabled: Bool,
+        thinkInTemplate: Bool
+    ) -> StreamingMiddleware? {
+        switch format {
+        case "gptoss":
+            return ChannelTagMiddleware()
+        case "mistral":
+            return MistralTagMiddleware()
+        case "qwen3", "deepseek_r1":
+            // thinkInTemplate means the template adds <think> itself —
+            // no need for PrependThinkTagMiddleware
+            if thinkingDisabled { return nil }
+            return thinkInTemplate ? nil : PrependThinkTagMiddleware()
+        default:
+            return nil
+        }
+    }
+
+    /// Legacy name-matching fallback for remote providers (OpenAI-routed, etc.)
+    /// where we don't have config.json model_type. For local VMLX models,
+    /// configReasoningFormat should always be provided, making this unreachable.
+    @MainActor
+    private static func _nameMatchFallback(
+        modelId: String,
+        thinkingDisabled: Bool
+    ) -> StreamingMiddleware? {
+        let id = modelId.lowercased()
 
         if id.contains("gptoss") || id.contains("harmony") {
             return ChannelTagMiddleware()
@@ -229,11 +303,5 @@ enum StreamingMiddlewareResolver {
         }
 
         return nil
-    }
-
-    /// Matches parameter-count tokens like "4b" while ignoring
-    /// quantization suffixes like "4bit" that share a prefix.
-    private static func hasParamSize(_ id: String, anyOf sizes: String...) -> Bool {
-        sizes.contains { id.range(of: "\($0)(?!it)", options: .regularExpression) != nil }
     }
 }

@@ -32,7 +32,10 @@ public func reasoningParserForFormat(_ format: ReasoningFormat) -> (any Reasonin
     case .qwen3, .deepseekR1:
         return ThinkTagReasoningParser()
     case .gptoss:
-        return GPTOSSReasoningParser()
+        // GPT-OSS channel tokens (<|channel|>analysis) are converted to <think> tags
+        // by VMLXRuntimeActor's decode loop before reaching the accumulator.
+        // ThinkTagReasoningParser handles the resulting <think>/</ think> tags.
+        return ThinkTagReasoningParser()
     case .mistral:
         return MistralReasoningParser()
     case .none:

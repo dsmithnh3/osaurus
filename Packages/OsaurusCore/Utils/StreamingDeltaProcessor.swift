@@ -23,6 +23,8 @@ final class StreamingDeltaProcessor {
     private let modelId: String
     private let modelOptions: [String: ModelOptionValue]
     private let globalReasoningParserOverride: String?
+    private let configReasoningFormat: String?
+    private let configThinkInTemplate: Bool
     private var middleware: StreamingMiddleware?
 
     /// Delta buffering
@@ -58,17 +60,23 @@ final class StreamingDeltaProcessor {
         modelId: String = "",
         modelOptions: [String: ModelOptionValue] = [:],
         globalReasoningParserOverride: String? = nil,
+        configReasoningFormat: String? = nil,
+        configThinkInTemplate: Bool = false,
         onSync: (() -> Void)? = nil
     ) {
         self.turn = turn
         self.modelId = modelId
         self.modelOptions = modelOptions
         self.globalReasoningParserOverride = globalReasoningParserOverride
+        self.configReasoningFormat = configReasoningFormat
+        self.configThinkInTemplate = configThinkInTemplate
         self.onSync = onSync
         self.middleware = StreamingMiddlewareResolver.resolve(
             for: modelId,
             modelOptions: modelOptions,
-            globalReasoningParserOverride: globalReasoningParserOverride
+            globalReasoningParserOverride: globalReasoningParserOverride,
+            configReasoningFormat: configReasoningFormat,
+            configThinkInTemplate: configThinkInTemplate
         )
     }
 
@@ -161,7 +169,9 @@ final class StreamingDeltaProcessor {
         middleware = StreamingMiddlewareResolver.resolve(
             for: modelId,
             modelOptions: modelOptions,
-            globalReasoningParserOverride: globalReasoningParserOverride
+            globalReasoningParserOverride: globalReasoningParserOverride,
+            configReasoningFormat: configReasoningFormat,
+            configThinkInTemplate: configThinkInTemplate
         )
     }
 

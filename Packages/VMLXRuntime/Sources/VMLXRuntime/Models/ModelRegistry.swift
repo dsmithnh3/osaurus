@@ -61,6 +61,12 @@ public struct VMLXModelRegistry {
     /// Model types that need dedicated implementations (NOT StandardTransformerModel).
     /// These are handled by mlx-swift-lm (MLXService) which has correct model classes.
     /// VMLXRuntime will add native support for these in future phases.
+    /// VMLXServiceBridge._isMLXServiceOnlyModel() checks this before attempting VMLX load.
+    ///
+    /// Currently empty — unknown model_types fall through to StandardTransformerModel
+    /// with a warning log. If they fail to load, ChatEngine falls back to MLXService.
+    /// TODO: Audit which mlx-swift-lm types actually break under StandardTransformerModel
+    /// and add them here to avoid silent garbage output.
     public static let mlxServiceOnlyTypes: Set<String> = [
     ]
 
@@ -195,21 +201,27 @@ public struct VMLXModelRegistry {
             return 0
         }
         if let n = json["num_local_experts"] as? Int { return n }
-        if let tc = json["text_config"] as? [String: Any],
-           let n = tc["num_local_experts"] as? Int { return n }
+        if let n = json["num_experts"] as? Int { return n }
+        if let tc = json["text_config"] as? [String: Any] {
+            if let n = tc["num_local_experts"] as? Int { return n }
+            if let n = tc["num_experts"] as? Int { return n }
+        }
         return 0
     }
 
     /// Convert all non-quantized floating-point parameters to bfloat16.
     /// Quantized weights (packed int) are left as-is.
     private static func _convertToBFloat16(model: Module) {
-        let params = model.parameters()
-        let converted = params.mapValues { (arr: MLXArray) -> MLXArray in
-            if arr.dtype == .float16 || arr.dtype == .float32 {
-                return arr.asType(.bfloat16)
+        let params = model.parameters().flattened()
+        let converted = Dictionary(uniqueKeysWithValues: params.map { (key: String, arr: MLXArray) -> (String, MLXArray) in
+            if key.hasSuffix(".scales") || key.hasSuffix(".biases") {
+                return (key, arr)
             }
-            return arr
-        }
-        _ = try? model.update(parameters: converted, verify: [])
+            if arr.dtype == .float16 || arr.dtype == .float32 {
+                return (key, arr.asType(.bfloat16))
+            }
+            return (key, arr)
+        })
+        _ = try? model.update(parameters: ModuleParameters.unflattened(converted), verify: [])
     }
 }

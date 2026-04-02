@@ -25,7 +25,7 @@ public struct HybridCache: @unchecked Sendable {
 
     public var layerCount: Int { layers.count }
 
-    /// True if the cache contains both attention and SSM layers.
+    /// True if the cache contains both attention and SSM layers (ignoring placeholders).
     public var isHybrid: Bool {
         let hasAttention = layers.contains { $0.isAttention }
         let hasSSM = layers.contains { $0.isSSM }
@@ -110,7 +110,7 @@ public struct HybridCache: @unchecked Sendable {
                     s.eval()
                 }
             case .compressedAttention(let ek, let ev, _):
-                // Eval compressed arrays so they're materialized for storage
+                // Force-evaluate compressed arrays so they're materialized for storage
                 ek.indicesPacked.eval()
                 ek.qjlPacked.eval()
                 ek.residualNorms.eval()
@@ -119,6 +119,8 @@ public struct HybridCache: @unchecked Sendable {
                 ev.indicesPacked.eval()
                 ev.vectorNorms.eval()
                 ev.sinkData?.eval()
+            case .placeholder:
+                break  // No data to materialize
             }
         }
     }

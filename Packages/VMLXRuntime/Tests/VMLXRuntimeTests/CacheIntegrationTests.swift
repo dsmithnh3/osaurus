@@ -235,7 +235,7 @@ struct CacheIntegrationTests {
 
     // MARK: - Test 5: Paged Cache with TurboQuant (Bug #1 regression test)
 
-    @Test("Paged cache decompresses TQ before slicing into blocks")
+    @Test("Paged cache preserves TQ-compressed slices across block store and fetch")
     func pagedCacheWithTQ() async throws {
         guard let container = try await Self.loadContainer() else {
             print("SKIP: No Qwen3.5-4B model found"); return
@@ -284,13 +284,9 @@ struct CacheIntegrationTests {
         switch result {
         case .hit(let cached, _, let detail, _):
             #expect(detail == .paged, "Should hit paged cache")
-            // Paged cache should return float .attention (decompressed during store)
-            for layer in cached.layers {
-                if case .compressedAttention = layer {
-                    Issue.record("Paged cache should NOT contain compressed entries (Bug #1 regression)")
-                }
-            }
-            print("OK Paged cache + TQ: all entries are float .attention")
+            let compressedCount = cached.layers.filter(\.isCompressed).count
+            #expect(compressedCount > 0, "Paged cache should preserve compressed entries")
+            print("OK Paged cache + TQ: compressed entries preserved through block store/fetch")
 
         case .partialHit(_, _, _):
             print("INFO: Paged cache returned partialHit (SSM companion missing from paged)")

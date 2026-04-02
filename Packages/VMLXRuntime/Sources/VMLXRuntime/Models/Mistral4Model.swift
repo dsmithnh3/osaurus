@@ -488,7 +488,7 @@ class Mistral4MoEGate: Module {
 
     func callAsFunction(_ x: MLXArray) -> (indices: MLXArray, weights: MLXArray) {
         // Gate matmul
-        let gates = x.matmul(weight.T)
+        let gates = x.matmul(weight.T).asType(.float32)
         var scores = softmax(gates, axis: -1, precise: true)
 
         // Group routing (for Mistral 4: nGroup=1, topkGroup=1 -> trivial, skip)

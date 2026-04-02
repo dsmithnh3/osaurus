@@ -449,8 +449,8 @@ final class Qwen35SparseMoeBlock: Module, UnaryLayer {
     @ModuleInfo(key: "gate") var gate: Linear
     @ModuleInfo(key: "switch_mlp") var switchMLP: VMLXSwitchGLU
 
-    @ModuleInfo(key: "shared_expert") var sharedExpert: Qwen35MLP
-    @ModuleInfo(key: "shared_expert_gate") var sharedExpertGate: Linear
+    @ModuleInfo(key: "shared_expert") var sharedExpert: Qwen35MLP?
+    @ModuleInfo(key: "shared_expert_gate") var sharedExpertGate: Linear?
 
     init(_ args: Qwen35TextConfiguration) {
         self.normTopkProb = args.normTopkProb
@@ -464,15 +464,17 @@ final class Qwen35SparseMoeBlock: Module, UnaryLayer {
             numExperts: args.numExperts
         )
 
-        _sharedExpert.wrappedValue = Qwen35MLP(
-            dimensions: args.hiddenSize,
-            hiddenDimensions: args.sharedExpertIntermediateSize
-        )
-        _sharedExpertGate.wrappedValue = Linear(args.hiddenSize, 1, bias: false)
+        if args.sharedExpertIntermediateSize > 0 {
+            _sharedExpert.wrappedValue = Qwen35MLP(
+                dimensions: args.hiddenSize,
+                hiddenDimensions: args.sharedExpertIntermediateSize
+            )
+            _sharedExpertGate.wrappedValue = Linear(args.hiddenSize, 1, bias: false)
+        }
     }
 
     func callAsFunction(_ x: MLXArray) -> MLXArray {
-        var gates = gate(x)
+        var gates = gate(x).asType(.float32)
         gates = MLX.softmax(gates, axis: -1, precise: true)
 
         let k = topK
@@ -486,10 +488,14 @@ final class Qwen35SparseMoeBlock: Module, UnaryLayer {
         let y = switchMLP(x, inds)
         let combined = (y * scores[.ellipsis, .newAxis]).sum(axis: -2)
 
-        var sharedY = sharedExpert(x)
-        sharedY = sigmoid(sharedExpertGate(x)) * sharedY
+        var out = combined
+        if let sharedExpert, let sharedExpertGate {
+            var sharedY = sharedExpert(x)
+            sharedY = sigmoid(sharedExpertGate(x)) * sharedY
+            out = out + sharedY
+        }
 
-        return combined + sharedY
+        return out
     }
 }
 
@@ -507,7 +513,11 @@ final class Qwen35DecoderLayer: Module {
     @ModuleInfo(key: "mlp") var mlp: Module
 
     init(_ args: Qwen35TextConfiguration, layerIdx: Int) {
-        self.isLinear = (layerIdx + 1) % args.fullAttentionInterval != 0
+        if args.fullAttentionInterval > 0 {
+            self.isLinear = (layerIdx + 1) % args.fullAttentionInterval != 0
+        } else {
+            self.isLinear = true // If no interval, treat as all linear or handle as pure linear model
+        }
 
         if isLinear {
             _linearAttn.wrappedValue = Qwen35GatedDeltaNet(args)
@@ -576,7 +586,7 @@ public class Qwen35TextModelInner: Module {
         self.norm = RMSNorm(dimensions: args.hiddenSize, eps: args.rmsNormEps)
 
         self.ssmIdx = 0
-        self.faIdx = args.fullAttentionInterval - 1
+        self.faIdx = args.fullAttentionInterval > 0 ? args.fullAttentionInterval - 1 : 0
 
         super.init()
     }

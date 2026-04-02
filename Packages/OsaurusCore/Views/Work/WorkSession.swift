@@ -1404,7 +1404,9 @@ extension WorkSession: WorkEngineDelegate {
         deltaProcessor = StreamingDeltaProcessor(
             turn: turn,
             modelId: selectedModel ?? "default",
-            globalReasoningParserOverride: ServerConfigurationStore.load()?.reasoningParserOverride
+            globalReasoningParserOverride: ServerConfigurationStore.load()?.reasoningParserOverride,
+            configReasoningFormat: VMLXServiceBridge.lastKnownReasoningFormat,
+            configThinkInTemplate: VMLXServiceBridge.lastKnownThinkInTemplate
         ) { [weak self] in
             self?.notifyIfSelected(self?.activeIssue?.id)
         }

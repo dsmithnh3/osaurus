@@ -17,6 +17,23 @@ struct CacheCoordinatorTests {
         return HybridCache(layers: layers)
     }
 
+    private func makeCompressedCache(tokenCount: Int) -> HybridCache {
+        let config = TurboQuantConfig(defaultKeyBits: 3, defaultValueBits: 3, seed: 42)
+        let keys = MLXArray.zeros([1, 8, tokenCount, 128])
+        let values = MLXArray.zeros([1, 8, tokenCount, 128])
+        let layers: [LayerCacheEntry] = (0..<4).compactMap { layerIndex in
+            TurboQuantLayerCache.encodeAttentionLayer(
+                keys: keys,
+                values: values,
+                config: config,
+                layerIndex: layerIndex,
+                totalLayers: 4,
+                sinkTokens: 0
+            )
+        }
+        return HybridCache(layers: layers)
+    }
+
     @Test("Default config initializes all layers")
     func defaultConfig() {
         let coord = CacheCoordinator()
@@ -226,5 +243,83 @@ struct CacheCoordinatorTests {
         coord.clearVolatile()
 
         #expect(coord.diskCache?.entryCount == 1)
+    }
+
+    @Test("Paged live session commits full blocks before final store")
+    func pagedLiveSessionCommitsPrefix() {
+        let coord = CacheCoordinator(config: CacheCoordinatorConfig(
+            usePagedCache: true,
+            useMemoryAwareCache: false,
+            pagedBlockSize: 2,
+            maxCacheBlocks: 32
+        ))
+        let tokens = [1, 2, 3, 4]
+        guard let session = coord.beginPagedWriteSession(requestId: "req-live") else {
+            Issue.record("Expected paged write session")
+            return
+        }
+
+        session.sync(tokens: tokens, cache: makeCache(tokenCount: tokens.count))
+
+        let result = coord.fetch(tokens: tokens)
+        if case .hit(_, let remaining, let detail, _) = result {
+            #expect(remaining.isEmpty)
+            #expect(detail == .paged)
+        } else {
+            Issue.record("Expected paged hit from live session sync")
+        }
+    }
+
+    @Test("Paged live session abort frees in-flight blocks")
+    func pagedLiveSessionAbort() {
+        let coord = CacheCoordinator(config: CacheCoordinatorConfig(
+            usePagedCache: true,
+            useMemoryAwareCache: false,
+            pagedBlockSize: 2,
+            maxCacheBlocks: 32
+        ))
+        let tokens = [1, 2, 3, 4]
+        guard let session = coord.beginPagedWriteSession(requestId: "req-abort") else {
+            Issue.record("Expected paged write session")
+            return
+        }
+
+        session.sync(tokens: tokens, cache: makeCache(tokenCount: tokens.count))
+        session.abort()
+
+        let result = coord.fetch(tokens: tokens)
+        if case .miss = result {
+            // expected
+        } else {
+            Issue.record("Expected paged miss after aborting live session")
+        }
+    }
+
+    @Test("Paged live session finalization rewrites compressed attention")
+    func pagedLiveSessionFinalizationRewritesCompressedAttention() {
+        let coord = CacheCoordinator(config: CacheCoordinatorConfig(
+            usePagedCache: true,
+            useMemoryAwareCache: false,
+            pagedBlockSize: 2,
+            maxCacheBlocks: 32
+        ))
+        let tokens = [1, 2, 3, 4]
+        guard let session = coord.beginPagedWriteSession(requestId: "req-finalize") else {
+            Issue.record("Expected paged write session")
+            return
+        }
+
+        session.sync(tokens: tokens, cache: makeCache(tokenCount: tokens.count))
+        session.finalize(tokens: tokens, cache: makeCompressedCache(tokenCount: tokens.count))
+
+        let result = coord.fetch(tokens: tokens)
+        if case .hit(let cache, let remaining, let detail, _) = result {
+            #expect(remaining.isEmpty)
+            #expect(detail == .paged)
+            let compressedCount = cache.layers.filter { $0.isCompressed }.count
+            #expect(compressedCount > 0)
+        } else {
+            Issue.record("Expected paged hit with compressed attention after finalization")
+        }
     }
 }

@@ -926,12 +926,20 @@ final class ChatSession: ObservableObject {
                         let streamStartTime = Date()
                         var uiDeltaCount = 0
 
+                        // Query engine's config.json-based reasoning format so the
+                        // streaming middleware matches the engine's auto-detection
+                        // instead of relying on model name substring matching.
+                        let configReasoningFmt = await VMLXServiceBridge.getConfigReasoningFormat()
+                        let configThinkInTpl = await VMLXServiceBridge.getConfigThinkInTemplate()
+
                         let processor = StreamingDeltaProcessor(
                             turn: assistantTurn,
                             modelId: selectedModel ?? "default",
                             modelOptions: activeModelOptions,
                             globalReasoningParserOverride: ServerConfigurationStore.load()?
-                                .reasoningParserOverride
+                                .reasoningParserOverride,
+                            configReasoningFormat: configReasoningFmt,
+                            configThinkInTemplate: configThinkInTpl
                         ) { [weak self] in
                             self?.objectWillChange.send()
                         }

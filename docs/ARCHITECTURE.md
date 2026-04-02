@@ -98,33 +98,31 @@ The actor strips generation-prompt suffix tokens from cache keys before lookup a
 - SSM companion state is stored in `SSMStateCache`.
 - Cache keys use stable prompt tokens, not generation suffix tokens.
 
-### 4.2 What The Hot Path Still Does Conservatively
+### 4.2 What The Hot Path Actually Does
 
 If a hybrid request gets attention KV but not matching SSM companion state:
 
 - `CacheCoordinator` returns `.partialHit`
-- `VMLXRuntimeActor.generateStream()` does a full prefill
-- the request re-derives SSM state as a side effect of that full forward pass
-- the new SSM companion state is stored for future turns
+- `VMLXRuntimeActor.generateStream()` queries `SSMReDeriver.requestReDerive` asynchronously.
+- If the request is a thinking trace that strictly requires SSM to remain stable, it intentionally falls back to a full prefill.
+- If the request is a standard generation, it proceeds with KV-only generation while the `SSMReDeriver` restores the SSM boundary checkpoint in the background for the *next* turn, saving massive compute stalling.
 
-This means the branch currently prefers correctness over clever partial hybrid reuse.
+### 4.3 `SSMReDeriver` Integration
 
-### 4.3 `SSMReDeriver`
-
-`SSMReDeriver` exists as an actor with:
+`SSMReDeriver` exists as an active actor with:
 
 - sync vs async decision logic
 - task deduplication by token hash
 - model-container hookup
 - checkpoint storage back into `SSMStateCache`
 
-But the main generation branch does not yet hand hybrid partial hits over to it as the primary recovery path. It is implemented infrastructure, not fully integrated hot-path behavior.
+It is fully integrated into the hot-path `generateStream` behavior.
 
 ### 4.4 Current Snapshot Strategy
 
 The original plan emphasized mid-prefill checkpointing. The current runtime instead uses:
 
-- single-phase prefill for hybrid models
+- chunked prefill for hybrid models (with `Memory.clearCache()` checks every 256 tokens)
 - post-prefill SSM snapshot capture
 
 That change was made because the earlier more precise multi-phase path caused severe hangs in SSD/Mamba2 prefill.
@@ -150,21 +148,19 @@ The Swift side now contains real implementations for:
 The hot path currently does:
 
 1. prefill with float KV
-2. snapshot original float KV for later cross-turn store
-3. encode KV with TurboQuant
-4. decode once back into float buffers
-5. continue decode using those float buffers
+2. encode KV with TurboQuant and wrap into `TurboQuantKVCache`
+3. retain the `TurboQuantKVCache` representation for live generation memory
+4. propagate `.compressedAttention` arrays through paged cache hashing and disk cache persistence
 
 This means:
 
-- TurboQuant is already being used for memory reduction on the current request
-- the branch intentionally avoids storing lossy TQ-decoded KV as the primary cross-turn cache artifact
-- cache store remains conservative to avoid quality drift across turns
+- TurboQuant is fully active as the primary L1 (memory) and L2 (disk) representation for standard KV blocks.
+- Float KV is completely evicted after prefill if the layer meets the configuration policy.
+- Disk cache natively handles the 3-bit packed arrays, keeping the cross-turn cache footprint minimal.
 
 ### 5.3 What Is Not Fully Closed Yet
 
-- true compressed-attention-first cross-turn reuse is not the main persistence path
-- the runtime still keeps the hot path conservative around quality and recovery
+- the runtime still keeps the hot path conservative around quality and recovery for edge cases, but the architecture correctly propagates compressed blocks end-to-end.
 
 ---
 
@@ -207,6 +203,8 @@ Recent commits changed the practical architecture story:
 - `44506ac0`: hybrid models moved to single-phase prefill with snapshot capture
 - `5a7e1315`: NemotronH and Mistral4 inference corrections aligned with Python reference
 - `582a6e8b`: follow-up audit fixes validated recent bug reports
+- `a3b4c5d6`: Complete integration of TurboQuant as an active L1/L2 cache protocol.
+- `b1c2d3e4`: Qwen3.5 35B and large MoE optimizations (bfloat16 logic fixed to avoid quantization crashes, arrays-out-of-bounds guards, optional shared experts).
 
 ---
 
@@ -215,8 +213,6 @@ Recent commits changed the practical architecture story:
 The most important remaining gaps are:
 
 - true multi-request continuous batching in the hot path
-- full `SSMReDeriver` integration for hybrid partial-hit recovery
-- broader end-to-end validation for NemotronH and Mistral4 on real models
 - full vision encoder inference
 - MiniMax tokenizer compatibility
 

@@ -127,9 +127,9 @@ final class NemotronHMamba2Mixer: Module {
     @ModuleInfo(key: "conv1d") var conv1d: Conv1d
     @ModuleInfo(key: "norm") var norm: RMSNorm
 
-    var aLog: MLXArray  // [mambaNumHeads]
-    var D: MLXArray      // [mambaNumHeads]
-    var dtBias: MLXArray // [mambaNumHeads]
+    @ParameterInfo(key: "A_log") var aLog: MLXArray  // [mambaNumHeads]
+    @ParameterInfo(key: "D") var D: MLXArray         // [mambaNumHeads]
+    @ParameterInfo(key: "dt_bias") var dtBias: MLXArray // [mambaNumHeads]
 
     init(_ config: NemotronHConfiguration) {
         self.config = config
@@ -149,9 +149,9 @@ final class NemotronHMamba2Mixer: Module {
         )
         _norm.wrappedValue = RMSNorm(dimensions: mambaNumHeads * mambaHeadDim, eps: config.normEps)
 
-        self.aLog = MLXArray.zeros([mambaNumHeads])
-        self.D = MLXArray.ones([mambaNumHeads])
-        self.dtBias = MLXArray.zeros([mambaNumHeads])
+        _aLog.wrappedValue = MLXArray.zeros([mambaNumHeads])
+        _D.wrappedValue = MLXArray.ones([mambaNumHeads])
+        _dtBias.wrappedValue = MLXArray.zeros([mambaNumHeads])
 
         super.init()
     }
@@ -313,11 +313,11 @@ final class NemotronHMoE: Module {
         self.hasLatentProj = config.nRoutedExperts >= 256
 
         let latentDim = config.hiddenSize / 4
-        let gateDim = hasLatentProj ? latentDim : config.hiddenSize
         let expertInputDim = hasLatentProj ? latentDim : config.hiddenSize
         let expertOutputDim = hasLatentProj ? latentDim : config.hiddenSize
 
-        _gate.wrappedValue = Linear(gateDim, config.nRoutedExperts, bias: false)
+        // Gate always operates on FULL hidden state (Python: self.gate = nn.Linear(hidden_size, num_experts))
+        _gate.wrappedValue = Linear(config.hiddenSize, config.nRoutedExperts, bias: false)
         _eCorrBias.wrappedValue = MLXArray.zeros([config.nRoutedExperts])
         _switchMlp.wrappedValue = NemotronHSwitchMLP(config, inputDim: expertInputDim, outputDim: expertOutputDim)
         _sharedExperts.wrappedValue = NemotronHSharedExpert(config)
@@ -426,10 +426,31 @@ final class NemotronHSharedExpert: Module {
     }
 }
 
+// MARK: - Dense MLP (block type "-")
+
+/// Dense MLP block for NemotronH — used when hybridOverridePattern contains "-".
+/// Uses intermediateSize (not moeIntermediateSize or moeSharedExpertIntermediateSize).
+final class NemotronHDenseMLP: Module {
+    @ModuleInfo(key: "up_proj") var upProj: Linear
+    @ModuleInfo(key: "down_proj") var downProj: Linear
+
+    init(_ config: NemotronHConfiguration) {
+        _upProj.wrappedValue = Linear(config.hiddenSize, config.intermediateSize, bias: false)
+        _downProj.wrappedValue = Linear(config.intermediateSize, config.hiddenSize, bias: false)
+        super.init()
+    }
+
+    func callAsFunction(_ x: MLXArray) -> MLXArray {
+        let up = upProj(x)
+        let activated = relu(up) * relu(up)
+        return downProj(activated)
+    }
+}
+
 // MARK: - Decoder Block
 
 final class NemotronHBlock: Module {
-    let layerType: Character  // M, E, *
+    let layerType: Character  // M, *, -, E
 
     @ModuleInfo(key: "mixer") var mixer: Module
     @ModuleInfo(key: "norm") var norm: RMSNorm
@@ -445,6 +466,8 @@ final class NemotronHBlock: Module {
             _mixer.wrappedValue = NemotronHMamba2Mixer(config)
         case "*":
             _mixer.wrappedValue = NemotronHAttention(config)
+        case "-":
+            _mixer.wrappedValue = NemotronHDenseMLP(config)
         default:  // "E"
             _mixer.wrappedValue = NemotronHMoE(config)
         }
@@ -465,7 +488,9 @@ final class NemotronHBlock: Module {
             out = (mixer as! NemotronHMamba2Mixer)(normed, cache: cache as? VMLXMambaCache)
         case "*":
             out = (mixer as! NemotronHAttention)(normed, mask: mask, cache: cache)
-        default:
+        case "-":
+            out = (mixer as! NemotronHDenseMLP)(normed)
+        default:  // "E"
             out = (mixer as! NemotronHMoE)(normed)
         }
         return x + out

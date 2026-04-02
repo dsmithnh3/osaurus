@@ -3,6 +3,22 @@ import MLX
 import MLXNN
 import Tokenizers
 
+public struct VMLXLiveCacheConfig: Sendable {
+    public let kvBits: Int?
+    public let kvGroupSize: Int
+    public let turboQuantConfig: TurboQuantConfig?
+
+    public init(
+        kvBits: Int? = nil,
+        kvGroupSize: Int = 64,
+        turboQuantConfig: TurboQuantConfig? = nil
+    ) {
+        self.kvBits = kvBits
+        self.kvGroupSize = kvGroupSize
+        self.turboQuantConfig = turboQuantConfig
+    }
+}
+
 /// Container wrapping a loaded model with runtime configuration.
 /// This is what gets passed around during inference.
 public final class VMLXModelContainer: @unchecked Sendable {
@@ -77,24 +93,30 @@ public final class VMLXModelContainer: @unchecked Sendable {
     }
 
     /// Factory method. Builds TQ/hybrid configuration from detected model properties.
+    ///
+    /// TurboQuant is available for ALL models going through VMLXRuntime, not just JANG.
+    /// - JANG models: TQ config is built from the JANG quantization profile (custom bit widths)
+    /// - Non-JANG models: TQ config uses sensible defaults (3-bit keys/values, 4-bit critical layers)
+    /// The user must still enable TQ via settings (`enableTurboQuant`) for it to activate at runtime.
     public static func create(model: LoadedModel) -> VMLXModelContainer {
-        // Build TQ config and layer pattern
-        let turboQuantConfig: TurboQuantConfig?
-        let layerPattern: [LayerType]?
+        vmlxPrewarmCustomKernels()
 
+        // Detect layer pattern (hybrid architecture) from config.json
+        let detectedLayerPattern: [LayerType]?
+        if let patternStr = model.detected.hybridOverridePattern {
+            detectedLayerPattern = parseHybridPattern(patternStr)
+        } else if let layerTypeStrs = model.detected.layerTypes {
+            detectedLayerPattern = layerTypeStrs.map { parseLayerTypeString($0) }
+        } else {
+            detectedLayerPattern = nil
+        }
+
+        // Build TQ config
+        let turboQuantConfig: TurboQuantConfig?
         if model.detected.isJang,
            JangLoader.isJangModel(at: model.detected.modelPath),
            let jangConfig = try? JangLoader.loadConfig(at: model.detected.modelPath) {
-
-            let detectedLayerPattern: [LayerType]?
-            if let patternStr = model.detected.hybridOverridePattern {
-                detectedLayerPattern = parseHybridPattern(patternStr)
-            } else if let layerTypeStrs = model.detected.layerTypes {
-                detectedLayerPattern = layerTypeStrs.map { parseLayerTypeString($0) }
-            } else {
-                detectedLayerPattern = nil
-            }
-
+            // JANG models: custom TQ config from quantization profile
             turboQuantConfig = JangLoader.buildTQConfig(
                 from: jangConfig,
                 layerPattern: detectedLayerPattern,
@@ -102,29 +124,22 @@ public final class VMLXModelContainer: @unchecked Sendable {
                 qkNopeHeadDim: model.detected.qkNopeHeadDim,
                 qkRopeHeadDim: model.detected.qkRopeHeadDim
             )
-            layerPattern = detectedLayerPattern
         } else {
-            turboQuantConfig = nil
-
-            if let patternStr = model.detected.hybridOverridePattern {
-                layerPattern = parseHybridPattern(patternStr)
-            } else if let layerTypeStrs = model.detected.layerTypes {
-                layerPattern = layerTypeStrs.map { str -> LayerType in
-                    switch str.lowercased() {
-                    case "attention", "attn": return .attention
-                    case "ssm", "mamba", "recurrent": return .ssm
-                    default: return .attention
-                    }
+            // Non-JANG MLX models: default TQ config with sensible defaults.
+            // Includes MLA dimensions from config.json if available (Mistral4, DeepSeek).
+            var defaultTQ = TurboQuantConfig(layerPattern: detectedLayerPattern)
+            if let rank = model.detected.kvLoraRank, rank > 0 {
+                if let nope = model.detected.qkNopeHeadDim, let rope = model.detected.qkRopeHeadDim {
+                    defaultTQ.mlaKeyDim = nope + rope
                 }
-            } else {
-                layerPattern = nil
             }
+            turboQuantConfig = defaultTQ
         }
 
         return VMLXModelContainer(
             model: model,
             turboQuantConfig: turboQuantConfig,
-            layerPattern: layerPattern
+            layerPattern: detectedLayerPattern
         )
     }
 
@@ -198,18 +213,35 @@ public final class VMLXModelContainer: @unchecked Sendable {
         nativeModel.newCache()
     }
 
+    /// Create fresh caches with the requested live-cache policy.
+    /// TurboQuant takes precedence over q4/q8 live KV quantization on layers where
+    /// the model config declares TurboQuant-eligible attention KV.
+    public func newCache(config: VMLXLiveCacheConfig) -> [VMLXKVCache] {
+        let baseCaches = nativeModel.newCache()
+        return baseCaches.enumerated().map { index, cache in
+            if let turboQuantConfig = config.turboQuantConfig,
+               cache is VMLXKVCacheSimple,
+               turboQuantConfig.keyBits(forLayer: index, totalLayers: baseCaches.count) != nil,
+               turboQuantConfig.valueBits(forLayer: index, totalLayers: baseCaches.count) != nil {
+                return TurboQuantKVCache(
+                    config: turboQuantConfig,
+                    layerIndex: index,
+                    totalLayers: baseCaches.count
+                )
+            }
+
+            if let bits = config.kvBits, bits < 16, cache is VMLXKVCacheSimple {
+                return VMLXQuantizedKVCache(bits: bits, groupSize: config.kvGroupSize)
+            }
+
+            return cache
+        }
+    }
+
     /// Create fresh caches with KV quantization applied.
     /// Replaces VMLXKVCacheSimple with VMLXQuantizedKVCache when kvBits < 16.
     /// SSM caches (VMLXMambaCache) are not affected — SSM state is not quantizable.
     public func newCache(kvBits: Int?, kvGroupSize: Int) -> [VMLXKVCache] {
-        let baseCaches = nativeModel.newCache()
-        guard let bits = kvBits, bits < 16 else { return baseCaches }
-
-        return baseCaches.map { cache in
-            if cache is VMLXKVCacheSimple {
-                return VMLXQuantizedKVCache(bits: bits, groupSize: kvGroupSize)
-            }
-            return cache  // SSM caches unchanged
-        }
+        newCache(config: VMLXLiveCacheConfig(kvBits: kvBits, kvGroupSize: kvGroupSize))
     }
 }

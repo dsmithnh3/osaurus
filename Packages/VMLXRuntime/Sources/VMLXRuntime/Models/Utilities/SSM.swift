@@ -77,6 +77,58 @@ final class VMLXSSMKernelManager: Sendable {
     private init() { kernel = makeSSMKernel() }
 }
 
+/// Pre-warm MLX Custom Kernels sequentially.
+/// MLX's internal `CustomKernelCache` uses an unprotected `std::unordered_map` for compiled libraries.
+/// If multiple threads (e.g. generation vs background SSM recovery) invoke `eval` on a custom kernel
+/// for the first time concurrently, it will crash with `EXC_BAD_ACCESS` in `CustomKernel::eval_gpu`.
+public func vmlxPrewarmCustomKernels() {
+    let dtype = DType.float16
+    let B = 1, T = 1, Hv = 1, Dv = 1, Hk = 1, Dk = 1
+    
+    // GatedDelta without mask
+    if let kernel = GatedDeltaKernelManager.shared.kernel {
+        let q = MLXArray.zeros([B, T, Hv, Dk], dtype: dtype)
+        let state = MLXArray.zeros([B, Hv, Dv, Dk], dtype: dtype)
+        let out = kernel(
+            [q, q, q, q, q, state, MLXArray(T)],
+            template: [("InT", dtype), ("Dk", Dk), ("Dv", Dv), ("Hk", Hk), ("Hv", Hv)],
+            grid: (32, Dv, B * Hv), threadGroup: (32, 4, 1),
+            outputShapes: [[B, T, Hv, Dv], state.shape],
+            outputDTypes: [dtype, dtype]
+        )
+        MLX.eval(out)
+    }
+    
+    // GatedDelta with mask
+    if let kernel = GatedDeltaKernelManager.shared.kernelMasked {
+        let q = MLXArray.zeros([B, T, Hv, Dk], dtype: dtype)
+        let state = MLXArray.zeros([B, Hv, Dv, Dk], dtype: dtype)
+        let mask = MLXArray.zeros([1])
+        let out = kernel(
+            [q, q, q, q, q, state, MLXArray(T), mask],
+            template: [("InT", dtype), ("Dk", Dk), ("Dv", Dv), ("Hk", Hk), ("Hv", Hv)],
+            grid: (32, Dv, B * Hv), threadGroup: (32, 4, 1),
+            outputShapes: [[B, T, Hv, Dv], state.shape],
+            outputDTypes: [dtype, dtype]
+        )
+        MLX.eval(out)
+    }
+    
+    // SSM
+    if let kernel = VMLXSSMKernelManager.shared.kernel {
+        let x = MLXArray.zeros([1, 1, 1, 1], dtype: dtype)
+        let state = MLXArray.zeros([1, 1, 1, 1], dtype: dtype)
+        let out = kernel(
+            [x, x, x, x, x, x, state],
+            template: [("T", dtype), ("Dh", 1), ("Ds", 1), ("H", 1), ("G", 1)],
+            grid: (32, 1, 1), threadGroup: (32, 4, 1),
+            outputShapes: [[1, 1, 1, 1], [1, 1, 1, 1]],
+            outputDTypes: [dtype, dtype]
+        )
+        MLX.eval(out)
+    }
+}
+
 /// Single-step SSM update via Metal kernel (seq_len == 1, generation).
 public func vmlxSSMUpdateKernel(
     hiddenStates: MLXArray,

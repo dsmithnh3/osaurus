@@ -4,18 +4,18 @@ import Testing
 @Suite("ModelConfigRegistry")
 struct ModelConfigRegistryTests {
 
-    @Test("Detects Qwen3 model")
-    func detectQwen3() {
-        let config = ModelConfigRegistry.detect(modelName: "Qwen3-8B-JANG_2L")
+    @Test("Detects by model type")
+    func detectByModelType() {
+        let config = ModelConfigRegistry.configForModelType("qwen3_moe")
         #expect(config != nil)
         #expect(config?.family == "qwen3")
         #expect(config?.toolCallFormat == .qwen)
         #expect(config?.reasoningFormat == .qwen3)
     }
 
-    @Test("Detects Llama 4")
-    func detectLlama4() {
-        let config = ModelConfigRegistry.detect(modelName: "Llama-4-Scout-17B")
+    @Test("Detects Llama by model type")
+    func detectLlamaByModelType() {
+        let config = ModelConfigRegistry.configForModelType("llama4")
         #expect(config != nil)
         #expect(config?.toolCallFormat == .llama)
         #expect(config?.defaultContextWindow == 131072)
@@ -23,29 +23,29 @@ struct ModelConfigRegistryTests {
 
     @Test("Detects Nemotron-H as hybrid")
     func detectNemotronH() {
-        let config = ModelConfigRegistry.detect(modelName: "Nemotron-H-47B-JANG")
+        let config = ModelConfigRegistry.configForModelType("nemotron_h")
         #expect(config != nil)
         #expect(config?.isHybrid == true)
         #expect(config?.toolCallFormat == .nemotron)
     }
 
-    @Test("Detects DeepSeek-R1 reasoning format")
-    func detectDeepSeekR1() {
-        let config = ModelConfigRegistry.detect(modelName: "DeepSeek-R1-0528")
+    @Test("Detects DeepSeek reasoning format")
+    func detectDeepSeek() {
+        let config = ModelConfigRegistry.configForModelType("deepseek_v3")
         #expect(config != nil)
-        #expect(config?.reasoningFormat == .deepseekR1)
+        #expect(config?.toolCallFormat == .deepseek)
     }
 
     @Test("Detects vision models")
     func detectVision() {
-        #expect(ModelConfigRegistry.supportsVision("Qwen2.5-VL-72B"))
-        #expect(ModelConfigRegistry.supportsVision("Pixtral-Large"))
-        #expect(!ModelConfigRegistry.supportsVision("Qwen3-8B"))
+        #expect(ModelConfigRegistry.configForModelType("qwen2_5_vl")?.supportsVision == true)
+        #expect(ModelConfigRegistry.configForModelType("pixtral")?.supportsVision == true)
+        #expect(ModelConfigRegistry.configForModelType("qwen3")?.supportsVision == false)
     }
 
-    @Test("Unknown model returns nil from detect")
-    func unknownModel() {
-        let config = ModelConfigRegistry.detect(modelName: "totally-unknown-model")
+    @Test("Unknown model type returns nil from configForModelType")
+    func unknownModelType() {
+        let config = ModelConfigRegistry.configForModelType("totally-unknown-model-type")
         #expect(config == nil)
     }
 
@@ -56,23 +56,8 @@ struct ModelConfigRegistryTests {
         #expect(config.toolCallFormat == .generic)
     }
 
-    @Test("Convenience methods work")
-    func convenienceMethods() {
-        #expect(ModelConfigRegistry.toolFormat(for: "Mistral-7B") == .mistral)
-        #expect(ModelConfigRegistry.reasoningFormat(for: "Qwen3-8B") == .qwen3)
-        #expect(ModelConfigRegistry.isHybrid("Jamba-1.5"))
-    }
-
-    @Test("Underscore and space normalization")
-    func normalization() {
-        let c1 = ModelConfigRegistry.detect(modelName: "nemotron_h_47b")
-        #expect(c1?.isHybrid == true)
-        let c2 = ModelConfigRegistry.detect(modelName: "Nemotron H 47B")
-        #expect(c2?.isHybrid == true)
-    }
-
-    @Test("Registry has at least 25 entries")
+    @Test("Registry has at least 15 entries")
     func registrySize() {
-        #expect(ModelConfigRegistry.configs.count >= 25)
+        #expect(ModelConfigRegistry.configs.count >= 15)
     }
 }
