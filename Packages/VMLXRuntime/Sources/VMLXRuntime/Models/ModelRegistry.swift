@@ -45,8 +45,7 @@ public struct VMLXModelRegistry {
         "gemma2",           // Gemma 2
         "gemma3",           // Gemma 3
         "gemma3_text",      // Gemma 3 text
-        "gemma4",           // Gemma 4
-        "gemma4_text",      // Gemma 4 text
+        // gemma4/gemma4_text handled by dedicated Gemma4TextModel (not standard)
         "gemma3n",          // Gemma 3n
         "phi3",             // Phi 3
         "phi4mm",           // Phi 4
@@ -126,6 +125,18 @@ public struct VMLXModelRegistry {
         case "gpt_oss":
             let config = try JSONDecoder().decode(GPTOSSConfiguration.self, from: configData)
             model = GPTOSSTransformerModel(config)
+
+        // Gemma 4: MoE with mixed sliding/full attention, VL (text-only path)
+        case "gemma4", "gemma4_text":
+            let topConfig = try JSONDecoder().decode(Gemma4TopLevelConfig.self, from: configData)
+            if let textConfig = topConfig.textConfig {
+                var tc = textConfig
+                if let tie = topConfig.tieWordEmbeddings { tc.tieWordEmbeddings = tie }
+                model = Gemma4TextModel(tc)
+            } else {
+                let textConfig = try JSONDecoder().decode(Gemma4TextConfiguration.self, from: configData)
+                model = Gemma4TextModel(textConfig)
+            }
 
         // Mistral Small 4: MLA attention + MoE with FP8 weights
         // Top-level model_type is "mistral3", text config model_type is "mistral4"

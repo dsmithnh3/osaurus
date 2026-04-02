@@ -134,20 +134,20 @@ public actor VMLXRuntimeActor {
         guard totalPrefillTokens > 1 else { return configuredStep }
 
         let detectedExperts = container.model.detected.numExperts ?? 0
-        let isLargeMoE = detectedExperts >= 256
-        guard isLargeMoE else { return configuredStep }
+        // Only throttle for very large MoE (512+ experts like MiniMax-M2.5).
+        // Qwen3.5 has 256 experts but only activates 4 per token (3B active),
+        // so it runs fine at full prefill step. Python VMLX uses 2048 chunks.
+        let isVeryLargeMoE = detectedExperts >= 512
+        guard isVeryLargeMoE else { return configuredStep }
 
-        let shortPromptCap = 8
-        let mediumPromptCap = 16
-        let longPromptCap = 32
+        // For 512+ expert models, cap prefill to avoid OOM from expert routing
         let cap: Int
-
-        if totalPrefillTokens <= 128 {
-            cap = shortPromptCap
-        } else if totalPrefillTokens <= 512 {
-            cap = mediumPromptCap
+        if totalPrefillTokens <= 256 {
+            cap = 64
+        } else if totalPrefillTokens <= 1024 {
+            cap = 128
         } else {
-            cap = longPromptCap
+            cap = 256
         }
 
         return min(configuredStep, cap)
