@@ -126,7 +126,8 @@ public final class VMLXModelContainer: @unchecked Sendable {
                 layerPattern: detectedLayerPattern,
                 kvLoraRank: model.detected.kvLoraRank,
                 qkNopeHeadDim: model.detected.qkNopeHeadDim,
-                qkRopeHeadDim: model.detected.qkRopeHeadDim
+                qkRopeHeadDim: model.detected.qkRopeHeadDim,
+                vHeadDim: model.detected.vHeadDim
             )
         } else {
             // Non-JANG MLX models: default TQ config with sensible defaults.
@@ -135,6 +136,9 @@ public final class VMLXModelContainer: @unchecked Sendable {
             if let rank = model.detected.kvLoraRank, rank > 0 {
                 if let nope = model.detected.qkNopeHeadDim, let rope = model.detected.qkRopeHeadDim {
                     defaultTQ.mlaKeyDim = nope + rope
+                }
+                if let vDim = model.detected.vHeadDim {
+                    defaultTQ.mlaValueDim = vDim
                 }
             }
             turboQuantConfig = defaultTQ

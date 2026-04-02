@@ -96,6 +96,9 @@ public struct DetectedModel: Sendable {
     /// QK rope head dimension for MLA models.
     public let qkRopeHeadDim: Int?
 
+    /// Value head dimension for MLA models.
+    public let vHeadDim: Int?
+
     // MARK: - Vision (from config.json)
 
     /// Image token ID.
@@ -155,6 +158,7 @@ public struct DetectedModel: Sendable {
         kvLoraRank: Int? = nil,
         qkNopeHeadDim: Int? = nil,
         qkRopeHeadDim: Int? = nil,
+        vHeadDim: Int? = nil,
         imageTokenId: Int? = nil,
         videoTokenId: Int? = nil,
         hasPreprocessorConfig: Bool = false,
@@ -192,6 +196,7 @@ public struct DetectedModel: Sendable {
         self.kvLoraRank = kvLoraRank
         self.qkNopeHeadDim = qkNopeHeadDim
         self.qkRopeHeadDim = qkRopeHeadDim
+        self.vHeadDim = vHeadDim
         self.imageTokenId = imageTokenId
         self.videoTokenId = videoTokenId
         self.hasPreprocessorConfig = hasPreprocessorConfig
@@ -378,6 +383,8 @@ public struct ModelDetector: Sendable {
             ?? textConfig?["qk_nope_head_dim"] as? Int
         let qkRopeHeadDim = hfConfig?["qk_rope_head_dim"] as? Int
             ?? textConfig?["qk_rope_head_dim"] as? Int
+        let vHeadDim = hfConfig?["v_head_dim"] as? Int
+            ?? textConfig?["v_head_dim"] as? Int
 
         // Vision IDs
         let imageTokenId = hfConfig?["image_token_id"] as? Int
@@ -452,6 +459,7 @@ public struct ModelDetector: Sendable {
             kvLoraRank: kvLoraRank,
             qkNopeHeadDim: qkNopeHeadDim,
             qkRopeHeadDim: qkRopeHeadDim,
+            vHeadDim: vHeadDim,
             imageTokenId: imageTokenId,
             videoTokenId: videoTokenId,
             hasPreprocessorConfig: hasPreprocessorConfig,
