@@ -161,6 +161,14 @@ actor VMLXServiceBridge: ToolCapableService {
                              userInfo: [NSLocalizedDescriptionKey: "Model requires MLXService (unsupported architecture for VMLXRuntime)"])
             }
 
+            // Block VLM/vision models — VMLX has no vision processing pipeline wired
+            // into the generation loop. VLMs must fall through to MLXService.
+            if _isVisionModel(at: resolved) {
+                _vmlxLog("[Bridge] VLM model detected, deferring to MLXService: \(modelName)")
+                throw NSError(domain: "VMLXServiceBridge", code: 3,
+                             userInfo: [NSLocalizedDescriptionKey: "Vision models require MLXService (VMLXRuntime has no vision pipeline)"])
+            }
+
             do {
                 try await service.loadModel(from: resolved)
             } catch {
@@ -304,6 +312,22 @@ actor VMLXServiceBridge: ToolCapableService {
 
     /// Check if a model at the given path needs MLXService (not VMLXRuntime).
     /// Reads config.json to check model_type against VMLXModelRegistry.mlxServiceOnlyTypes.
+    /// Check if a model is a vision/multimodal model that needs MLXService.
+    /// Checks config.json for vision_config, image_token_id, or preprocessor_config.json.
+    private func _isVisionModel(at path: URL) -> Bool {
+        // Check preprocessor_config.json existence (strongest signal)
+        if FileManager.default.fileExists(atPath: path.appendingPathComponent("preprocessor_config.json").path) {
+            return true
+        }
+        // Check config.json for vision fields
+        let configURL = path.appendingPathComponent("config.json")
+        guard let data = try? Data(contentsOf: configURL),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return false
+        }
+        return json["vision_config"] != nil || json["image_token_id"] != nil || json["video_token_id"] != nil
+    }
+
     private func _isMLXServiceOnlyModel(at path: URL) -> Bool {
         let configURL = path.appendingPathComponent("config.json")
         guard let data = try? Data(contentsOf: configURL),
