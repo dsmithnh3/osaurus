@@ -139,10 +139,11 @@ public struct ModelConfigRegistry: Sendable {
                          toolCallFormat: .deepseek,
                          defaultContextWindow: 65536, defaultStopTokens: ["<|end\u{2581}of\u{2581}sentence|>"]),
 
-        // Nemotron
+        // Nemotron (Cascade uses <think> reasoning, H-Super uses same format)
         ModelFamilyConfig(family: "nemotron", modelTypes: ["nemotron", "nemotron_h"],
-                         toolCallFormat: .nemotron, isHybrid: true,
-                         defaultContextWindow: 32768, defaultStopTokens: ["<|endoftext|>"]),
+                         toolCallFormat: .nemotron, reasoningFormat: .qwen3,
+                         isHybrid: true, thinkInTemplate: true,
+                         defaultContextWindow: 32768, defaultStopTokens: ["<|endoftext|>", "</s>"]),
 
         // Gemma
         ModelFamilyConfig(family: "gemma4", modelTypes: ["gemma4", "gemma4_text"],

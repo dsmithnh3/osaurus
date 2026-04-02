@@ -254,7 +254,6 @@ final class NemotronHAttention: Module {
         _vProj.wrappedValue = Linear(config.hiddenSize, numKVHeads * headDim, bias: config.attentionBias)
         _oProj.wrappedValue = Linear(numHeads * headDim, config.hiddenSize, bias: config.attentionBias)
 
-        // NemotronH attention has NO RoPE — positions come from SSM blocks
         self.rope = RoPE(
             dimensions: headDim,
             traditional: false,
@@ -274,8 +273,12 @@ final class NemotronHAttention: Module {
         var k = kProj(x).reshaped(B, S, numKVHeads, headDim).transposed(0, 2, 1, 3)
         var v = vProj(x).reshaped(B, S, numKVHeads, headDim).transposed(0, 2, 1, 3)
 
-        // NO RoPE for NemotronH attention (positions from SSM)
-        // RoPE kept as field for potential future use but not applied
+        // Apply RoPE — attention layers need positional encoding.
+        // SSM layers provide sequential ordering through recurrence,
+        // but attention layers still require explicit position information.
+        let offset = (cache as? VMLXKVCacheSimple)?.offset ?? 0
+        q = rope(q, offset: offset)
+        k = rope(k, offset: offset)
 
         if let cache = cache as? VMLXKVCacheSimple {
             (k, v) = cache.update(keys: k, values: v)

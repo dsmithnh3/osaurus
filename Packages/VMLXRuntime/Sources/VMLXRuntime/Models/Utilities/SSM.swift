@@ -293,7 +293,10 @@ public func vmlxSSMAttn(
     }
 
     let yFull = concatenated(ys, axis: 1) + x * D.reshaped(1, 1, h, 1)
-    return (yFull, currentState!)
+    // currentState is guaranteed non-nil if l > 0 (loop ran at least once).
+    // Guard against empty sequences to prevent force-unwrap crash.
+    let finalState = currentState ?? MLXArray.zeros([b, h, dh, d], dtype: x.dtype)
+    return (yFull, finalState)
 }
 
 // MARK: - Unified SSM Update
