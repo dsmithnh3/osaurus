@@ -1119,40 +1119,13 @@ public actor VMLXRuntimeActor {
                     }()
                     asyncEval([y] + _cacheStateArrays)
 
-                    // Compiled forward pass for non-hybrid models (matches Python VMLX --jit).
-                    // Wraps the entire model.__call__ with compile(shapeless:true), fusing
-                    // hundreds of Metal kernel dispatches into a single compiled graph.
-                    // MoE models benefit enormously: 36 layers × ~20 ops = 720 dispatches per
-                    // token become a single graph replay.
-                    //
-                    // Hybrid SSM models (Qwen3.5 GatedDeltaNet) crash during graph tracing —
-                    // MLX can't trace through mixed VMLXMambaCache + KV cache state updates.
-                    // Pure attention+MoE models (Gemma4, Mistral4, MiniMax, Qwen3.5-MoE) work.
-                    // Compiled forward pass for non-hybrid, non-TQ models (matches Python VMLX --jit).
-                    // Wraps model.__call__ with compile(shapeless:true), fusing hundreds of
-                    // Metal kernel dispatches into a single compiled graph.
-                    //
-                    // Disabled when:
-                    // - Hybrid SSM models: compile can't trace mixed cache types
-                    // - TurboQuant enabled: TQ cache has complex state (QJL, unified buffers,
-                    //   scatter writes) that crashes the compile tracer (EXC_BAD_ACCESS)
-                    let _compiledForward: ((@Sendable (MLXArray) -> MLXArray))?
-                    if !container.isHybrid && !tqEnabled {
-                        let nativeModel = container.nativeModel
-                        let modelModule = nativeModel as Module
-                        let cacheOutputs: [any Updatable] = cache.map { $0 as any Updatable }
-                        _compiledForward = compile(
-                            inputs: [modelModule],
-                            outputs: cacheOutputs,
-                            shapeless: true
-                        ) { (tokens: MLXArray) -> MLXArray in
-                            nativeModel(tokens, cache: cache)
-                        }
-                        _vmlxLog2("[Gen] Compiled forward pass enabled (non-hybrid, non-TQ)")
-                    } else {
-                        _compiledForward = nil
-                        _vmlxLog2("[Gen] Compiled forward pass DISABLED (hybrid=\(container.isHybrid) tq=\(tqEnabled))")
-                    }
+                    // compile(shapeless:true) on the full forward pass crashes with
+                    // EXC_BAD_ACCESS on ALL models tested (GPT-OSS, Nemotron, etc.).
+                    // The MLX Swift compile tracer can't handle KV cache slice assignment
+                    // during the model's update(keys:values:) calls.
+                    // Python VMLX uses mx.compile which has a more mature tracer.
+                    // TODO: Revisit when mlx-swift compile supports in-place cache updates.
+                    let _compiledForward: ((@Sendable (MLXArray) -> MLXArray))? = nil
 
                     // Repetition penalty state: track generated tokens to penalize repeats.
                     let repPenalty = samplingParams.repetitionPenalty
