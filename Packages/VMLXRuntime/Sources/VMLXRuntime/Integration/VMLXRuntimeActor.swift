@@ -187,7 +187,7 @@ public actor VMLXRuntimeActor {
         enableTurboQuant: Bool = false,
         cacheMemoryPercent: Float? = nil,
         usePagedCache: Bool? = nil
-    ) {
+    ) -> Bool {
         let kvQuantStr: String
         if let bits = kvBits, bits < 16 {
             kvQuantStr = "q\(bits)"
@@ -242,7 +242,9 @@ public actor VMLXRuntimeActor {
             scheduler.rebuildCacheCoordinator()
             lastCacheConfigFingerprint = fingerprint
             NSLog("[VMLX] CacheCoordinator rebuilt (config changed)")
+            return true
         }
+        return false
     }
 
     // MARK: - Model Management
@@ -1056,9 +1058,15 @@ public actor VMLXRuntimeActor {
                     // reaches the store boundary instead of snapshotting only on
                     // uncached turns or after the whole prompt.
                     _vmlxLog2("[Gen] Prefill: \(totalPrefillTokens) tokens, step=\(prefillStep), cacheTypes=\(cache.prefix(3).map { String(describing: type(of: $0)) })")
-                    if totalPrefillTokens > 1 {
-                        _chunkedPrefill(0, totalPrefillTokens - 1)
-                        _vmlxLog2("[Gen] Chunked prefill done")
+
+                    // Dedicated Metal stream for prefill — isolates GPU work from other
+                    // Metal activity (UI compositing, cache serialization, etc.).
+                    // Python vLLM-MLX: `with mx.stream(generation_stream):`
+                    Stream.withNewDefaultStream {
+                        if totalPrefillTokens > 1 {
+                            _chunkedPrefill(0, totalPrefillTokens - 1)
+                            _vmlxLog2("[Gen] Chunked prefill done")
+                        }
                     }
 
                     // Final token → logits for first generated token
@@ -1101,9 +1109,16 @@ public actor VMLXRuntimeActor {
                     // - StreamingDeltaProcessor parses <think>/</ think> tags
                     // VMLXRuntimeActor just passes raw token text through.
 
-                    // Kick off first token eval
+                    // Kick off first token eval — submit cache state arrays alongside
+                    // the token so GPU can pipeline KV/SSM state writes with token eval.
+                    // Python vLLM-MLX: asyncSubmit(sampled, logprobs, *cache_states).
                     var nextY: MLXArray? = nil
-                    asyncEval([y])
+                    var _cacheStateArrays: [MLXArray] {
+                        var arrays: [MLXArray] = []
+                        for c in cache { arrays.append(contentsOf: c.innerState()) }
+                        return arrays
+                    }
+                    asyncEval([y] + _cacheStateArrays)
 
                     // Repetition penalty state: track generated tokens to penalize repeats.
                     // Without this, models degenerate into repetition loops on long generations.
@@ -1129,6 +1144,10 @@ public actor VMLXRuntimeActor {
                     let _genStart = CFAbsoluteTimeGetCurrent()
                     var _steadyStart: Double = 0
                     let _warmupTokens = 3  // First N tokens are slow (Metal pipeline warmup)
+
+                    // Dedicated Metal stream for decode loop — GPU isolation from
+                    // UI compositing / cache serialization / other Metal consumers.
+                    try Stream.withNewDefaultStream {
                     for _step in 0 ..< maxTokens {
                         try Task.checkCancellation()
 
@@ -1145,11 +1164,15 @@ public actor VMLXRuntimeActor {
 
                             if isGreedy {
                                 nextY = logits.argMax()
+                            } else if temp > 0 {
+                                // Compiled sampler: fused temp scaling + categorical in single GPU kernel
+                                nextY = compiledCategoricalSample(logits, MLXArray(temp))
                             } else {
-                                let scaled = temp > 0 ? logits / temp : logits
-                                nextY = MLXRandom.categorical(scaled.expandedDimensions(axis: 0))
+                                nextY = MLXRandom.categorical(logits.expandedDimensions(axis: 0))
                             }
-                            asyncEval([nextY!])
+                            // Submit next token + all cache state arrays for GPU pipelining.
+                            // This lets the GPU write KV updates concurrently with CPU token decode.
+                            asyncEval([nextY!] + _cacheStateArrays)
                         }
 
                         // Materialize CURRENT token (blocks until GPU done with y)
@@ -1263,8 +1286,10 @@ public actor VMLXRuntimeActor {
                         // Swap: next becomes current
                         y = nextY ?? y
 
-                        // Periodic Metal cache cleanup (matches Python's mx.clear_cache every 256)
-                        if _step % 256 == 0 && _step > 0 {
+                        // Periodic Metal cache cleanup — release temporary GPU allocations.
+                        // At 90+ tok/s, every 1024 tokens = ~11s intervals. Was 256 (stall every ~2.8s).
+                        // GPU sync is expensive (~0.5-1ms) and breaks double-buffer pipelining.
+                        if _step % 1024 == 0 && _step > 0 {
                             Memory.clearCache()
                         }
                     }

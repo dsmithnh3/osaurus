@@ -400,11 +400,20 @@ public final class DiskCache: @unchecked Sendable {
                 }
                 let offset = Int(metadata["__layer_\(i)_offset__"] ?? "0") ?? 0
                 let indexBits = Int(metadata["__layer_\(i)_index_bits__"] ?? "3") ?? 3
-                // Value index bits are stored separately — they differ from key index bits.
-                // Keys: indexBits = keyBits - 1 (MSE bits, +1 QJL bit).
-                // Values: indexBits = valueBits (full MSE bits, no QJL).
-                // Fallback to indexBits+1 for files written before this fix.
-                let valueIndexBits = Int(metadata["__layer_\(i)_value_index_bits__"] ?? "") ?? (indexBits + 1)
+                // Value index bits stored separately since they can differ from key index bits.
+                // Keys use indexBits = keyBits - 1 (MSE bits, +1 QJL bit).
+                // Values use indexBits = valueBits (full MSE bits, no QJL).
+                // Fallback for files written before the value_index_bits field was added:
+                // indexBits + 1 works because default/critical configs use keyBits == valueBits,
+                // so keyIndexBits + 1 = keyBits = valueBits = valueIndexBits.
+                let valueIndexBitsRaw = metadata["__layer_\(i)_value_index_bits__"]
+                let valueIndexBits: Int
+                if let raw = valueIndexBitsRaw, let parsed = Int(raw) {
+                    valueIndexBits = parsed
+                } else {
+                    valueIndexBits = indexBits + 1
+                    NSLog("[DiskCache] Layer \(i): missing value_index_bits, using fallback \(indexBits + 1). Old cache file — will be correct if keyBits == valueBits.")
+                }
                 let seed = Int(metadata["__layer_\(i)_seed__"] ?? "42") ?? 42
                 let shapeStr = metadata["__layer_\(i)_shape__"] ?? ""
                 let shape = shapeStr.split(separator: ",").compactMap { Int($0) }

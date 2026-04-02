@@ -266,6 +266,8 @@ public actor VMLXService: VMLXToolCapableService {
     // MARK: - Runtime Configuration Passthrough
 
     /// Forward user-facing runtime settings to VMLXRuntimeActor.
+    /// Returns true if cache was rebuilt (all KV data cleared).
+    @discardableResult
     public func applyUserConfig(
         kvBits: Int? = nil,
         kvGroupSize: Int = 64,
@@ -276,7 +278,7 @@ public actor VMLXService: VMLXToolCapableService {
         enableTurboQuant: Bool = false,
         cacheMemoryPercent: Float? = nil,
         usePagedCache: Bool? = nil
-    ) async {
+    ) async -> Bool {
         await runtime.applyUserConfig(
             kvBits: kvBits,
             kvGroupSize: kvGroupSize,

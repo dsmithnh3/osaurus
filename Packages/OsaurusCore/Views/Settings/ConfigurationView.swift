@@ -443,12 +443,17 @@ struct ConfigurationView: View {
                                                 VStack(alignment: .leading, spacing: 12) {
                                                     SettingsStepperField(
                                                         label: "Cache Bits",
-                                                        help: "Quantization bits. Empty disables",
+                                                        help: "KV quantization bits (empty = auto-detect from model)",
                                                         text: $tempKVBits,
                                                         range: 2 ... 8,
                                                         step: 1,
                                                         defaultValue: 8
                                                     )
+                                                    if tempEnableTurboQuant && !tempKVBits.isEmpty {
+                                                        Text("Note: TurboQuant (3-bit) is also enabled. KV quant applies during layer creation; TQ compresses further after prefill.")
+                                                            .font(.system(size: 11))
+                                                            .foregroundColor(.orange)
+                                                    }
                                                     SettingsStepperField(
                                                         label: "Group Size",
                                                         help: "KV quantization group size",
@@ -457,14 +462,16 @@ struct ConfigurationView: View {
                                                         step: 16,
                                                         defaultValue: 64
                                                     )
-                                                    SettingsStepperField(
-                                                        label: "Quantized Start",
-                                                        help: "Token offset to begin quantization",
-                                                        text: $tempQuantStart,
-                                                        range: 0 ... 1024,
-                                                        step: 64,
-                                                        defaultValue: 0
-                                                    )
+                                                    if !tempKVBits.isEmpty {
+                                                        SettingsStepperField(
+                                                            label: "Quantized Start",
+                                                            help: "Token offset to begin quantization",
+                                                            text: $tempQuantStart,
+                                                            range: 0 ... 1024,
+                                                            step: 64,
+                                                            defaultValue: 0
+                                                        )
+                                                    }
                                                     SettingsStepperField(
                                                         label: "Prefill Step",
                                                         help: "Tokens per prefill chunk",
@@ -495,6 +502,12 @@ struct ConfigurationView: View {
                                             Text("Persist KV cache to disk as safetensors. Enables instant resume across app restarts for previously seen prompts.")
                                                 .font(.system(size: 11))
                                                 .foregroundColor(theme.tertiaryText)
+
+                                            if tempEnableDiskCache && !tempEnableTurboQuant {
+                                                Text("Tip: Enable TurboQuant to reduce disk cache size ~5x (float16 caches are large).")
+                                                    .font(.system(size: 11))
+                                                    .foregroundColor(.orange)
+                                            }
 
                                             SettingsSliderField(
                                                 label: "Memory Cache Budget",
@@ -963,7 +976,20 @@ struct ConfigurationView: View {
             || previousServerCfg.genPrefillStepSize != configuration.genPrefillStepSize
             || previousServerCfg.modelEvictionPolicy != configuration.modelEvictionPolicy
 
+        // Detect if cache-affecting settings changed — these cause a full KV cache rebuild
+        let cacheSettingsChanged =
+            previousServerCfg.enableTurboQuant != configuration.enableTurboQuant
+            || previousServerCfg.enableDiskCache != configuration.enableDiskCache
+            || previousServerCfg.cacheMemoryPercent != configuration.cacheMemoryPercent
+
         ServerConfigurationStore.save(configuration)
+
+        if cacheSettingsChanged {
+            _ = ToastManager.shared.warning(
+                "Cache Settings Changed",
+                message: "Multi-turn conversation cache has been cleared. Next message will do a full prefill."
+            )
+        }
 
         let trimmedTemp = tempChatTemperature.trimmingCharacters(in: .whitespacesAndNewlines)
         let parsedTemp: Float? = {

@@ -94,7 +94,7 @@ actor VMLXServiceBridge: ToolCapableService {
         self.globalToolParser = serverCfg?.toolParserOverride
         self.globalReasoningParser = serverCfg?.reasoningParserOverride
 
-        await service.applyUserConfig(
+        let cacheRebuilt = await service.applyUserConfig(
             kvBits: cfg.kvBits,
             kvGroupSize: cfg.kvGroup,
             maxContextLength: cfg.maxKV,
@@ -103,6 +103,16 @@ actor VMLXServiceBridge: ToolCapableService {
             enableTurboQuant: serverCfg?.enableTurboQuant ?? false,
             cacheMemoryPercent: serverCfg?.cacheMemoryPercent
         )
+        if cacheRebuilt {
+            _vmlxLog("[Bridge] Cache settings changed — multi-turn cache cleared")
+            await MainActor.run {
+                NotificationCenter.default.post(
+                    name: .init("VMLXCacheRebuilt"),
+                    object: nil,
+                    userInfo: ["message": "Cache settings changed — conversation cache cleared"]
+                )
+            }
+        }
     }
 
     /// Ensure the requested model is loaded before inference.
