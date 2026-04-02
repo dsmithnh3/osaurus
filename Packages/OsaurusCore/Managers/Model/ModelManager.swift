@@ -799,158 +799,180 @@ final class ModelManager: NSObject, ObservableObject {
 // MARK: - Dynamic model discovery (Hugging Face)
 
 extension ModelManager {
-    /// Fully curated models with descriptions we control. Order matters.
+    /// JANG quantized models from https://huggingface.co/collections/jangq/jang-quantized-gguf-for-mlx
+    /// These are the recommended models optimized for MLX on Apple Silicon.
     fileprivate static let curatedSuggestedModels: [MLXModel] = [
-        // MARK: Top Picks
+        // MARK: Top Picks — Best balance of speed and quality
 
         MLXModel(
-            id: "LiquidAI/LFM2.5-1.2B-Thinking-MLX-8bit",
-            name: friendlyName(from: "LiquidAI/LFM2.5-1.2B-Thinking-MLX-8bit"),
-            description: "Reasoning model with chain-of-thought. 128K context, runs on any Mac.",
-            downloadURL: "https://huggingface.co/LiquidAI/LFM2.5-1.2B-Thinking-MLX-8bit",
+            id: "JANGQ-AI/Qwen3.5-35B-A3B-JANG_4K",
+            name: "Qwen3.5 35B-A3B (JANG 4K)",
+            description: "Best all-rounder. 35B MoE, only 3B active. ~74 tok/s. Fits 16GB.",
+            downloadURL: "https://huggingface.co/JANGQ-AI/Qwen3.5-35B-A3B-JANG_4K",
             isTopSuggestion: true,
-            downloadSizeBytes: 1_240_000_000
+            downloadSizeBytes: 5_000_000_000
         ),
 
         MLXModel(
-            id: "mlx-community/Qwen3-VL-4B-Instruct-8bit",
-            name: friendlyName(from: "mlx-community/Qwen3-VL-4B-Instruct-8bit"),
-            description: "See and understand images. Best vision model for most users.",
-            downloadURL: "https://huggingface.co/mlx-community/Qwen3-VL-4B-Instruct-8bit",
+            id: "JANGQ-AI/Qwen3.5-122B-A10B-JANG_2S",
+            name: "Qwen3.5 122B-A10B (JANG 2S)",
+            description: "Premium quality. 122B MoE, 10B active. ~48 tok/s. Needs 24GB+.",
+            downloadURL: "https://huggingface.co/JANGQ-AI/Qwen3.5-122B-A10B-JANG_2S",
             isTopSuggestion: true,
-            downloadSizeBytes: 8_500_000_000
+            downloadSizeBytes: 11_000_000_000
         ),
 
         MLXModel(
-            id: "LiquidAI/LFM2-24B-A2B-MLX-8bit",
-            name: friendlyName(from: "LiquidAI/LFM2-24B-A2B-MLX-8bit"),
-            description: "Liquid AI's 24B MoE model. Only ~2B active params per token. 128K context.",
-            downloadURL: "https://huggingface.co/LiquidAI/LFM2-24B-A2B-MLX-8bit",
+            id: "JANGQ-AI/Nemotron-Cascade-2-30B-A3B-JANG_2L",
+            name: "Nemotron Cascade 30B-A3B (JANG 2L)",
+            description: "Fastest MoE. Hybrid SSM+MoE, 3B active. ~143 tok/s. Fits 16GB.",
+            downloadURL: "https://huggingface.co/JANGQ-AI/Nemotron-Cascade-2-30B-A3B-JANG_2L",
             isTopSuggestion: true,
-            downloadSizeBytes: 23_600_000_000
+            downloadSizeBytes: 3_000_000_000
         ),
 
-        // MARK: Coding Models
+        // MARK: MoE Models — Large models with small active parameter counts
 
         MLXModel(
-            id: "lmstudio-community/qwen3-coder-30b-a3b-instruct-mlx-4bit",
-            name: friendlyName(from: "lmstudio-community/qwen3-coder-30b-a3b-instruct-mlx-4bit"),
-            description: "Elite coding assistant. Excels at complex programming tasks. Needs 32GB+ RAM.",
-            downloadURL:
-                "https://huggingface.co/lmstudio-community/qwen3-coder-30b-a3b-instruct-mlx-4bit"
-        ),
-
-        // MARK: Large Models
-
-        MLXModel(
-            id: "mlx-community/Qwen3-235B-A22B-4bit",
-            name: friendlyName(from: "mlx-community/Qwen3-235B-A22B-4bit"),
-            description: "Massive MoE model with frontier-level intelligence. Requires 64GB+ RAM.",
-            downloadURL: "https://huggingface.co/mlx-community/Qwen3-235B-A22B-4bit"
+            id: "JANGQ-AI/Qwen3.5-397B-A17B-JANG_2L",
+            name: "Qwen3.5 397B-A17B (JANG 2L)",
+            description: "Frontier-class. 397B MoE, 17B active. 2-bit. Needs 64GB+.",
+            downloadURL: "https://huggingface.co/JANGQ-AI/Qwen3.5-397B-A17B-JANG_2L",
+            downloadSizeBytes: 54_000_000_000
         ),
 
         MLXModel(
-            id: "mlx-community/Qwen3-Next-80B-A3B-Thinking-4bit",
-            name: friendlyName(from: "mlx-community/Qwen3-Next-80B-A3B-Thinking-4bit"),
-            description: "Advanced reasoning with thinking capability. Great for complex problems.",
-            downloadURL: "https://huggingface.co/mlx-community/Qwen3-Next-80B-A3B-Thinking-4bit"
+            id: "JANGQ-AI/Qwen3.5-397B-A17B-JANG_1L",
+            name: "Qwen3.5 397B-A17B (JANG 1L)",
+            description: "Ultra-compressed frontier. 1-bit quantization. Needs 48GB+.",
+            downloadURL: "https://huggingface.co/JANGQ-AI/Qwen3.5-397B-A17B-JANG_1L",
+            downloadSizeBytes: 34_000_000_000
         ),
 
         MLXModel(
-            id: "lmstudio-community/gpt-oss-20b-MLX-8bit",
-            name: friendlyName(from: "lmstudio-community/gpt-oss-20b-MLX-8bit"),
-            description: "OpenAI's open-source release. Strong all-around performance.",
-            downloadURL: "https://huggingface.co/lmstudio-community/gpt-oss-20b-MLX-8bit"
+            id: "JANGQ-AI/Qwen3.5-122B-A10B-JANG_4K",
+            name: "Qwen3.5 122B-A10B (JANG 4K)",
+            description: "High-quality 122B. 4-bit K-quant for better accuracy. Needs 32GB+.",
+            downloadURL: "https://huggingface.co/JANGQ-AI/Qwen3.5-122B-A10B-JANG_4K",
+            downloadSizeBytes: 18_000_000_000
         ),
 
         MLXModel(
-            id: "lmstudio-community/gpt-oss-120b-MLX-8bit",
-            name: friendlyName(from: "lmstudio-community/gpt-oss-120b-MLX-8bit"),
-            description: "OpenAI's largest open model. Premium quality, requires 64GB+ unified memory.",
-            downloadURL: "https://huggingface.co/lmstudio-community/gpt-oss-120b-MLX-8bit"
-        ),
-
-        // MARK: Vision Language Models (VLM)
-
-        MLXModel(
-            id: "mlx-community/Ministral-3-8B-Instruct-2512-4bit",
-            name: friendlyName(from: "mlx-community/Ministral-3-8B-Instruct-2512-4bit"),
-            description: "Mistral's compact vision model. Multilingual support across 11 languages.",
-            downloadURL: "https://huggingface.co/mlx-community/Ministral-3-8B-Instruct-2512-4bit"
+            id: "JANGQ-AI/Qwen3.5-122B-A10B-JANG_3L",
+            name: "Qwen3.5 122B-A10B (JANG 3L)",
+            description: "Balanced 122B. 3-bit for quality/size tradeoff. Needs 24GB+.",
+            downloadURL: "https://huggingface.co/JANGQ-AI/Qwen3.5-122B-A10B-JANG_3L",
+            downloadSizeBytes: 14_000_000_000
         ),
 
         MLXModel(
-            id: "mlx-community/LFM2-VL-3B-5bit",
-            name: friendlyName(from: "mlx-community/LFM2-VL-3B-5bit"),
-            description: "Liquid AI's compact vision model. 3B params with 10 language support.",
-            downloadURL: "https://huggingface.co/mlx-community/LFM2-VL-3B-5bit"
+            id: "JANGQ-AI/Qwen3.5-35B-A3B-JANG_2S",
+            name: "Qwen3.5 35B-A3B (JANG 2S)",
+            description: "Compact 35B MoE. 2-bit, smaller download. Fits 16GB.",
+            downloadURL: "https://huggingface.co/JANGQ-AI/Qwen3.5-35B-A3B-JANG_2S",
+            downloadSizeBytes: 3_000_000_000
         ),
 
         MLXModel(
-            id: "mlx-community/Qwen3.5-27B-4bit",
-            name: friendlyName(from: "mlx-community/Qwen3.5-27B-4bit"),
-            description: "Largest Qwen3.5 vision model. Top-tier multimodal reasoning.",
-            downloadURL: "https://huggingface.co/mlx-community/Qwen3.5-27B-4bit",
-            downloadSizeBytes: 16_100_000_000
+            id: "JANGQ-AI/MiniMax-M2.5-JANG_2L",
+            name: "MiniMax M2.5 (JANG 2L)",
+            description: "MiniMax MoE. 256 experts, strong multilingual. 2-bit. Needs 32GB+.",
+            downloadURL: "https://huggingface.co/JANGQ-AI/MiniMax-M2.5-JANG_2L",
+            downloadSizeBytes: 19_000_000_000
         ),
 
         MLXModel(
-            id: "mlx-community/Qwen3.5-9B-MLX-4bit",
-            name: friendlyName(from: "mlx-community/Qwen3.5-9B-MLX-4bit"),
-            description: "Most capable Qwen3.5 vision model. Strong multimodal understanding.",
-            downloadURL: "https://huggingface.co/mlx-community/Qwen3.5-9B-MLX-4bit",
-            downloadSizeBytes: 5_950_000_000
+            id: "JANGQ-AI/MiniMax-M2.5-JANG_3M",
+            name: "MiniMax M2.5 (JANG 3M)",
+            description: "MiniMax MoE. 3-bit mixed quantization. Needs 36GB+.",
+            downloadURL: "https://huggingface.co/JANGQ-AI/MiniMax-M2.5-JANG_3M"
         ),
 
         MLXModel(
-            id: "mlx-community/Qwen3.5-4B-MLX-4bit",
-            name: friendlyName(from: "mlx-community/Qwen3.5-4B-MLX-4bit"),
-            description: "Balanced Qwen3.5 vision model. Good multimodal capabilities with modest resources.",
-            downloadURL: "https://huggingface.co/mlx-community/Qwen3.5-4B-MLX-4bit",
-            downloadSizeBytes: 3_030_000_000
+            id: "JANGQ-AI/MiniMax-M2.5-JANG_3L",
+            name: "MiniMax M2.5 (JANG 3L)",
+            description: "MiniMax MoE. 3-bit large. Best MiniMax quality. Needs 48GB+.",
+            downloadURL: "https://huggingface.co/JANGQ-AI/MiniMax-M2.5-JANG_3L",
+            downloadSizeBytes: 26_000_000_000
+        ),
+
+        // MARK: Mistral 4 — MLA attention + MoE
+
+        MLXModel(
+            id: "JANGQ-AI/Mistral-Small-4-119B-A6B-JANG_2L",
+            name: "Mistral Small 4 119B-A6B (JANG 2L)",
+            description: "Mistral 4 with MLA+MoE. ~66 tok/s. 2-bit. Needs 24GB+.",
+            downloadURL: "https://huggingface.co/JANGQ-AI/Mistral-Small-4-119B-A6B-JANG_2L",
+            downloadSizeBytes: 12_000_000_000
         ),
 
         MLXModel(
-            id: "mlx-community/Qwen3.5-2B-MLX-4bit",
-            name: friendlyName(from: "mlx-community/Qwen3.5-2B-MLX-4bit"),
-            description: "Lightweight Qwen3.5 vision model. Fast and runs on any Mac.",
-            downloadURL: "https://huggingface.co/mlx-community/Qwen3.5-2B-MLX-4bit",
-            downloadSizeBytes: 1_720_000_000
+            id: "JANGQ-AI/Mistral-Small-4-119B-A6B-JANG_4M",
+            name: "Mistral Small 4 119B-A6B (JANG 4M)",
+            description: "Mistral 4. 4-bit mixed quant for higher quality. Needs 36GB+.",
+            downloadURL: "https://huggingface.co/JANGQ-AI/Mistral-Small-4-119B-A6B-JANG_4M",
+            downloadSizeBytes: 19_000_000_000
         ),
 
         MLXModel(
-            id: "mlx-community/Qwen3.5-0.8B-MLX-4bit",
-            name: friendlyName(from: "mlx-community/Qwen3.5-0.8B-MLX-4bit"),
-            description: "Ultra-compact Qwen3.5 vision model. Smallest footprint, runs anywhere.",
-            downloadURL: "https://huggingface.co/mlx-community/Qwen3.5-0.8B-MLX-4bit",
-            downloadSizeBytes: 625_000_000
+            id: "JANGQ-AI/Mistral-Small-4-119B-A6B-JANG_6M",
+            name: "Mistral Small 4 119B-A6B (JANG 6M)",
+            description: "Mistral 4. 6-bit for best quality. Needs 48GB+.",
+            downloadURL: "https://huggingface.co/JANGQ-AI/Mistral-Small-4-119B-A6B-JANG_6M",
+            downloadSizeBytes: 27_000_000_000
         ),
 
-        // MARK: Compact Models
+        // MARK: Nemotron — Hybrid SSM+MoE
 
         MLXModel(
-            id: "LiquidAI/LFM2.5-1.2B-Instruct-MLX-8bit",
-            name: friendlyName(from: "LiquidAI/LFM2.5-1.2B-Instruct-MLX-8bit"),
-            description: "Liquid AI's efficient 1.2B model. 128K context with 10 language support.",
-            downloadURL: "https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-MLX-8bit"
-        ),
-
-        MLXModel(
-            id: "mlx-community/GLM-4.7-Flash-4bit",
-            name: friendlyName(from: "mlx-community/GLM-4.7-Flash-4bit"),
-            description: "Fast and lightweight MoE model. Great for quick responses.",
-            downloadURL: "https://huggingface.co/mlx-community/GLM-4.7-Flash-4bit",
-            downloadSizeBytes: 16_900_000_000
+            id: "JANGQ-AI/Nemotron-Cascade-2-30B-A3B-JANG_4M",
+            name: "Nemotron Cascade 30B-A3B (JANG 4M)",
+            description: "Nemotron hybrid SSM+MoE. 4-bit for higher quality. Fits 16GB.",
+            downloadURL: "https://huggingface.co/JANGQ-AI/Nemotron-Cascade-2-30B-A3B-JANG_4M",
+            downloadSizeBytes: 5_000_000_000
         ),
 
         MLXModel(
-            id: "mlx-community/Nanbeige4.1-3B-8bit",
-            name: friendlyName(from: "mlx-community/Nanbeige4.1-3B-8bit"),
-            description: "Compact 3B model with English and Chinese support. Runs on any Mac.",
-            downloadURL: "https://huggingface.co/mlx-community/Nanbeige4.1-3B-8bit",
-            downloadSizeBytes: 4_180_000_000
+            id: "JANGQ-AI/Nemotron-3-Super-120B-A12B-JANG_2L",
+            name: "Nemotron 3 Super 120B-A12B (JANG 2L)",
+            description: "Large Nemotron. 120B hybrid, 12B active. 2-bit. Needs 24GB+.",
+            downloadURL: "https://huggingface.co/JANGQ-AI/Nemotron-3-Super-120B-A12B-JANG_2L",
+            downloadSizeBytes: 13_000_000_000
         ),
 
+        MLXModel(
+            id: "JANGQ-AI/Nemotron-3-Super-120B-A12B-JANG_4M",
+            name: "Nemotron 3 Super 120B-A12B (JANG 4M)",
+            description: "Large Nemotron. 4-bit mixed quant. Best Nemotron quality. Needs 36GB+.",
+            downloadURL: "https://huggingface.co/JANGQ-AI/Nemotron-3-Super-120B-A12B-JANG_4M",
+            downloadSizeBytes: 18_000_000_000
+        ),
+
+        // MARK: Dense Models — Qwen3.5 dense variants
+
+        MLXModel(
+            id: "JANGQ-AI/Qwen3.5-27B-JANG_4S",
+            name: "Qwen3.5 27B (JANG 4S)",
+            description: "Dense 27B. Strong reasoning, no MoE overhead. Needs 16GB+.",
+            downloadURL: "https://huggingface.co/JANGQ-AI/Qwen3.5-27B-JANG_4S",
+            downloadSizeBytes: 5_000_000_000
+        ),
+
+        MLXModel(
+            id: "JANGQ-AI/Qwen3.5-9B-JANG_4S",
+            name: "Qwen3.5 9B (JANG 4S)",
+            description: "Compact dense 9B. Fast and capable. Runs on any Mac.",
+            downloadURL: "https://huggingface.co/JANGQ-AI/Qwen3.5-9B-JANG_4S",
+            downloadSizeBytes: 2_000_000_000
+        ),
+
+        MLXModel(
+            id: "JANGQ-AI/Qwen3.5-4B-JANG_4S",
+            name: "Qwen3.5 4B (JANG 4S)",
+            description: "Lightweight dense 4B. ~147 tok/s. Runs on any Mac.",
+            downloadURL: "https://huggingface.co/JANGQ-AI/Qwen3.5-4B-JANG_4S",
+            downloadSizeBytes: 1_000_000_000
+        ),
     ]
 
     nonisolated fileprivate static func friendlyName(from repoId: String) -> String {

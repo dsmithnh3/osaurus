@@ -1044,7 +1044,6 @@ public actor VMLXRuntimeActor {
                             _vmlxLog2("[Gen] Prefill: forward returned (logits shape: \(prefillLogits.shape)), calling MLX.eval on cache")
                             MLX.eval(cache)
                             _vmlxLog2("[Gen] Prefill chunk \(pos)..<\(chunkEnd) forward+eval OK")
-                            Memory.clearCache()
                             pos = chunkEnd
                             if needSSMSnapshot && prefillSSMSnapshot == nil && pos == boundaryAdvance {
                                 _captureBoundarySnapshotIfNeeded("post-prefill")
@@ -1063,6 +1062,11 @@ public actor VMLXRuntimeActor {
                         _chunkedPrefill(0, totalPrefillTokens - 1)
                         _vmlxLog2("[Gen] Chunked prefill done")
                     }
+                    // Clear Metal cache once after all prefill (not per-chunk).
+                    // MoE prefill generates many temporaries (routing tensors, expert
+                    // masks, sorted indices) — clearing per-chunk forces expensive
+                    // dealloc/realloc cycles.
+                    Memory.clearCache()
 
                     // Final token → logits for first generated token
                     let _prefillStart = CFAbsoluteTimeGetCurrent()
@@ -1104,21 +1108,45 @@ public actor VMLXRuntimeActor {
                     // - StreamingDeltaProcessor parses <think>/</ think> tags
                     // VMLXRuntimeActor just passes raw token text through.
 
-                    // Kick off first token eval — submit cache state arrays alongside
-                    // the token so GPU can pipeline KV/SSM state writes with token eval.
-                    // Python vLLM-MLX: asyncSubmit(sampled, logprobs, *cache_states).
+                    // Pre-compute cache state array references once — avoids O(num_layers)
+                    // Swift allocations per decode step. MLXArray references stay valid as
+                    // cache objects mutate in-place (matching Python's pattern).
                     var nextY: MLXArray? = nil
-                    var _cacheStateArrays: [MLXArray] {
+                    let _cacheStateArrays: [MLXArray] = {
                         var arrays: [MLXArray] = []
                         for c in cache { arrays.append(contentsOf: c.innerState()) }
                         return arrays
-                    }
+                    }()
                     asyncEval([y] + _cacheStateArrays)
 
+                    // Compiled forward pass for non-hybrid models (matches Python VMLX --jit).
+                    // Wraps the entire model.__call__ with compile(shapeless:true), fusing
+                    // hundreds of Metal kernel dispatches into a single compiled graph.
+                    // MoE models benefit enormously: 36 layers × ~20 ops = 720 dispatches per
+                    // token become a single graph replay.
+                    //
+                    // Hybrid SSM models (Qwen3.5 GatedDeltaNet) crash during graph tracing —
+                    // MLX can't trace through mixed VMLXMambaCache + KV cache state updates.
+                    // Pure attention+MoE models (Gemma4, Mistral4, MiniMax, Qwen3.5-MoE) work.
+                    let _compiledForward: ((@Sendable (MLXArray) -> MLXArray))?
+                    if !container.isHybrid {
+                        let nativeModel = container.nativeModel
+                        let modelModule = nativeModel as Module
+                        let cacheOutputs: [any Updatable] = cache.map { $0 as any Updatable }
+                        _compiledForward = compile(
+                            inputs: [modelModule],
+                            outputs: cacheOutputs,
+                            shapeless: true
+                        ) { (tokens: MLXArray) -> MLXArray in
+                            nativeModel(tokens, cache: cache)
+                        }
+                        _vmlxLog2("[Gen] Compiled forward pass enabled (non-hybrid model)")
+                    } else {
+                        _compiledForward = nil
+                        _vmlxLog2("[Gen] Compiled forward pass DISABLED (hybrid SSM model)")
+                    }
+
                     // Repetition penalty state: track generated tokens to penalize repeats.
-                    // Without this, models degenerate into repetition loops on long generations.
-                    // The penalty is cheap (element-wise ops on logits, O(vocab_size)) — unlike
-                    // top-p which requires sorting (removed from hot loop for being 2.5x slower).
                     let repPenalty = samplingParams.repetitionPenalty
                     let applyRepPenalty = repPenalty != 1.0
                     var generatedTokenIds: [Int] = []
@@ -1127,14 +1155,6 @@ public actor VMLXRuntimeActor {
                     // Decode parameters for the hot loop
                     let isGreedy = samplingParams.isGreedy
                     let temp = samplingParams.temperature
-
-                    // compile(shapeless:true) for the full step crashes during graph tracing
-                    // on hybrid SSM models (Qwen3.5 GatedDeltaNet). The crash occurs even
-                    // without custom Metal kernels or nested compiles — likely an MLX framework
-                    // limitation with Updatable cache state tracking for hybrid cache arrays
-                    // (mixed VMLXMambaCache + TurboQuantKVCache).
-                    // TODO: File MLX issue, test with pure-attention models, try compile on
-                    // attention-only subset.
 
                     let _genStart = CFAbsoluteTimeGetCurrent()
                     var _steadyStart: Double = 0
@@ -1146,7 +1166,12 @@ public actor VMLXRuntimeActor {
                         // Double-buffered: build graph for NEXT token while GPU evaluates CURRENT.
                         let _stepStart = CFAbsoluteTimeGetCurrent()
                         if _step < maxTokens - 1 {
-                            let stepLogits = container.forward(y.reshaped(1, 1), cache: cache)
+                            let stepLogits: MLXArray
+                            if let cf = _compiledForward {
+                                stepLogits = cf(y.reshaped(1, 1))
+                            } else {
+                                stepLogits = container.forward(y.reshaped(1, 1), cache: cache)
+                            }
                             var logits = stepLogits[0, -1]
 
                             if applyRepPenalty && !generatedTokenIds.isEmpty {
@@ -1157,13 +1182,10 @@ public actor VMLXRuntimeActor {
                             if isGreedy {
                                 nextY = logits.argMax()
                             } else if temp > 0 {
-                                // Compiled sampler: fused temp scaling + categorical in single GPU kernel
                                 nextY = compiledCategoricalSample(logits, MLXArray(temp))
                             } else {
                                 nextY = MLXRandom.categorical(logits.expandedDimensions(axis: 0))
                             }
-                            // Submit next token + all cache state arrays for GPU pipelining.
-                            // This lets the GPU write KV updates concurrently with CPU token decode.
                             asyncEval([nextY!] + _cacheStateArrays)
                         }
 

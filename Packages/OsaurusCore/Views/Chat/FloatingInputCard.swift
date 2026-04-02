@@ -1180,6 +1180,8 @@ extension FloatingInputCard {
             }
         }
         .contextMenu {
+            // Only show "Unload Model" when a model is actually loaded.
+            // No menu items = no context menu on right-click.
             if let unloadTarget {
                 Button(role: .destructive) {
                     Task {
@@ -1194,12 +1196,6 @@ extension FloatingInputCard {
                 } label: {
                     Label("Unload Model", systemImage: "eject")
                 }
-            } else if selectedModel != nil {
-                // Model selected but not loaded — show disabled unload
-                Button(action: {}) {
-                    Label("No Model Loaded", systemImage: "info.circle")
-                }
-                .disabled(true)
             }
         }
         .popover(isPresented: $showModelPicker, arrowEdge: .top) {

@@ -42,6 +42,12 @@ let vmlxCompiledSwiGLU: @Sendable (MLXArray, MLXArray) -> MLXArray = compile(sha
     silu(gate) * x
 }
 
+/// Fused GELU(gate) * up kernel for Gemma4 MoE activation.
+let vmlxCompiledGeGLU: @Sendable (MLXArray, MLXArray) -> MLXArray = compile(shapeless: true) {
+    (gate: MLXArray, x: MLXArray) -> MLXArray in
+    geluApproximate(gate) * x
+}
+
 public class VMLXSwitchGLU: Module {
     @ModuleInfo(key: "gate_proj") var gateProj: VMLXSwitchLinear
     @ModuleInfo(key: "up_proj") var upProj: VMLXSwitchLinear
@@ -52,11 +58,13 @@ public class VMLXSwitchGLU: Module {
     let numExperts: Int
     let activation: (MLXArray) -> MLXArray
     let isSilu: Bool
+    let isGelu: Bool
 
     public init(
         inputDims: Int, hiddenDims: Int, numExperts: Int,
         activation: @escaping (MLXArray) -> MLXArray = MLXNN.silu,
         isSilu: Bool = true,
+        isGelu: Bool = false,
         bias: Bool = false
     ) {
         self.inputDims = inputDims
@@ -64,6 +72,7 @@ public class VMLXSwitchGLU: Module {
         self.numExperts = numExperts
         self.activation = activation
         self.isSilu = isSilu
+        self.isGelu = isGelu
 
         self._gateProj.wrappedValue = VMLXSwitchLinear(
             inputDims: inputDims, outputDims: hiddenDims, numExperts: numExperts, bias: bias)
@@ -91,6 +100,8 @@ public class VMLXSwitchGLU: Module {
         let activated: MLXArray
         if isSilu {
             activated = vmlxCompiledSwiGLU(xGate, xUp)
+        } else if isGelu {
+            activated = vmlxCompiledGeGLU(xGate, xUp)
         } else {
             activated = activation(xGate) * xUp
         }
@@ -165,8 +176,8 @@ public class VMLXQuantizedSwitchLinear: VMLXSwitchLinear, Quantized {
     @ModuleInfo(key: "scales") var scales: MLXArray
     @ModuleInfo(key: "biases") var biases: MLXArray?
 
-    public let groupSize: Int
-    public let bits: Int
+    public var groupSize: Int
+    public var bits: Int
     public let mode: QuantizationMode
 
     public init(

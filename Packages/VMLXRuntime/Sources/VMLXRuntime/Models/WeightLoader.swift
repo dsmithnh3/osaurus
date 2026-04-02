@@ -182,6 +182,30 @@ public func vmlxFixQuantizedBits(model: Module, defaultGroupSize: Int) {
             }
         }
 
+        // Handle VMLXQuantizedSwitchLinear (MoE expert weights).
+        // This is NOT a QuantizedLinear subclass — it inherits from VMLXSwitchLinear.
+        // Weight shape: [numExperts, outputDims, packedInputDims]
+        // Scales shape: [numExperts, outputDims, inputDims/groupSize]
+        if let qsl = module as? VMLXQuantizedSwitchLinear {
+            guard qsl.weight.ndim >= 2 else { continue }
+            let wCols = qsl.weight.dim(qsl.weight.ndim - 1)
+            let sCols = qsl.scales.dim(qsl.scales.ndim - 1)
+
+            for tryGS in [defaultGroupSize, 64, 128, 32, 256] {
+                let inDim = sCols * tryGS
+                guard inDim > 0, (wCols * 32) % inDim == 0 else { continue }
+                let tryBits = (wCols * 32) / inDim
+                guard [2, 3, 4, 5, 6, 8].contains(tryBits) else { continue }
+                if tryBits != qsl.bits || tryGS != qsl.groupSize {
+                    print("[FixBits] \(name): bits \(qsl.bits)→\(tryBits), gs \(qsl.groupSize)→\(tryGS) [SwitchLinear]")
+                    qsl.bits = tryBits
+                    qsl.groupSize = tryGS
+                }
+                break
+            }
+            continue  // Don't fall through to QuantizedLinear check
+        }
+
         // Handle QuantizedEmbedding
         if let qe = module as? QuantizedEmbedding {
             guard qe.weight.ndim >= 2 else { return }

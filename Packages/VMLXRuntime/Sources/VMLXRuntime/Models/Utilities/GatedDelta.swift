@@ -16,10 +16,10 @@ import MLXNN
 
 /// Gating decay: exp(-exp(A_log) * softplus(a + dt_bias)).
 /// Compiled with shapeless=true matching Python's @partial(mx.compile, shapeless=True).
-// NOTE: compile(shapeless:true) crashes on hybrid SSM models during decode.
-// Uncompiled until MLX framework fixes compile + custom kernel interaction.
-let computeGatedDeltaG: @Sendable (MLXArray, MLXArray, MLXArray) -> MLXArray = {
-    (aLog: MLXArray, a: MLXArray, dtBias: MLXArray) -> MLXArray in
+/// Pure math (no cache interaction) — safe for all models including hybrid SSM.
+let computeGatedDeltaG: @Sendable (MLXArray, MLXArray, MLXArray) -> MLXArray = compile(
+    shapeless: true
+) { (aLog: MLXArray, a: MLXArray, dtBias: MLXArray) -> MLXArray in
     let decay = exp(-exp(aLog.asType(.float32)) * softplus(a + dtBias))
     return decay.asType(a.dtype)
 }
