@@ -1,4 +1,5 @@
 import Foundation
+import Cmlx
 import MLX
 import MLXRandom
 import MLXNN
@@ -312,9 +313,23 @@ public actor VMLXRuntimeActor {
             activeModelName = container.name
         }
 
-        // Note: first 1-2 decode tokens after prefill are slower (~2s then ~0.4s)
-        // due to MLX Metal pipeline backlog from prefill. This is normal MLX behavior
-        // and happens in mlx-lm-server too. Subsequent tokens run at full speed (~25 tok/s).
+        // 6. Pin model weights to wired GPU-accessible memory.
+        // Without this, macOS may page model buffers to SSD between tokens,
+        // adding 10-15ms latency per token on large models.
+        // Matches Python VMLX: mx.set_wired_limit(max_recommended_working_set_size)
+        let maxWired = GPU.maxRecommendedWorkingSetBytes()
+        _vmlxLog2("[LoadModel] GPU maxRecommendedWorkingSetBytes = \(maxWired.map { "\($0 / (1024*1024))MB" } ?? "nil")")
+        let wiredBytes = maxWired ?? Int(ProcessInfo.processInfo.physicalMemory * 3 / 4)
+        if wiredBytes > 0 {
+            var previous: size_t = 0
+            mlx_set_wired_limit(&previous, size_t(wiredBytes))
+            _vmlxLog2("[LoadModel] Wired memory limit set to \(wiredBytes / (1024*1024))MB (previous: \(previous / (1024*1024))MB)")
+        }
+
+        // 7. Set Metal allocator cache limit to 25% of max working set (floor 512MB).
+        let cacheLimit = max(512 * 1024 * 1024, wiredBytes / 4)
+        Memory.cacheLimit = cacheLimit
+        _vmlxLog2("[LoadModel] Metal cache limit set to \(cacheLimit / (1024*1024))MB")
     }
 
     /// Load a model with an optional alias for multi-model routing.
@@ -388,7 +403,10 @@ public actor VMLXRuntimeActor {
         currentModelName = nil
         powerState = .deepSleep
 
-        // Force Metal memory cleanup AFTER all generation tasks have stopped
+        // Ensure all in-flight Metal commands complete before releasing memory.
+        // Without this, MLXService's background prefix-cache tasks or other GPU work
+        // could still be referencing buffers we're about to free.
+        Stream.gpu.synchronize()
         Memory.clearCache()
     }
 
@@ -1158,6 +1176,28 @@ public actor VMLXRuntimeActor {
                         }
 
                         generatedTokenCount += 1
+
+                        // Emit live stats periodically so the UI shows speed during streaming.
+                        // First emission at token 10 (after Metal warmup stabilizes), then every 20 tokens.
+                        // This is lightweight — just a struct yield, no GPU work.
+                        if _step == 10 || (_step > 10 && _step % 20 == 0) {
+                            let _now = CFAbsoluteTimeGetCurrent()
+                            let _steadyToks = _step - _warmupTokens
+                            let _steadyElapsed = _steadyStart > 0 ? _now - _steadyStart : _now - _genStart
+                            let _liveTPS = _steadyElapsed > 0 ? Double(max(1, _steadyToks)) / _steadyElapsed : 0
+                            let _prefillElapsed = max(0.001, (_genStart - requestStart))
+                            let _prefillToks = max(1, promptTokenCount - cachedTokenCount)
+                            continuation.yield(.usage(
+                                promptTokens: promptTokenCount,
+                                completionTokens: generatedTokenCount,
+                                cachedTokens: cachedTokenCount,
+                                ttft: ttftTime,
+                                prefillToksPerSec: Double(_prefillToks) / _prefillElapsed,
+                                decodeToksPerSec: _liveTPS,
+                                cacheDetail: cacheDetailStr,
+                                cacheBytes: 0  // Skip expensive cache estimate during hot loop
+                            ))
+                        }
 
                         // Check for EOS
                         if eosTokenIds.contains(currentToken) || stopTokenIds.contains(currentToken) {

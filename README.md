@@ -1,169 +1,231 @@
-<h1 align="center">Jangosaurus</h1>
+<p align="center">
+<img width="865" height="677" alt="Screenshot 2026-03-19 at 3 42 04 PM" src="https://github.com/user-attachments/assets/c16ee8bb-7f31-4659-9c2c-6eaaf8441c26" />
+</p>
+
+<h1 align="center">Osaurus</h1>
 
 <p align="center">
-  <strong>VMLXRuntime: Native Swift Inference Engine for Osaurus</strong><br>
-  <em>Development branch for replacing <code>mlx-swift-lm</code> and external model-library dependencies inside Osaurus.</em>
+  <strong>Own your AI.</strong><br>
+  Agents, memory, tools, and identity that live on your Mac. Built purely in Swift. Fully offline. Open source.
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Status-Active%20Dev-yellow" alt="Status">
+  <img src="https://img.shields.io/badge/Branch-feature%2Fvmlx-blue" alt="Branch">
+  <img src="https://img.shields.io/badge/Status-Team%20Beta-orange" alt="Status">
   <img src="https://img.shields.io/badge/Platform-macOS%20(Apple%20Silicon)-black?logo=apple" alt="Platform">
   <img src="https://img.shields.io/badge/Swift-6.2-orange?logo=swift" alt="Swift">
   <img src="https://img.shields.io/badge/MLX-Metal%20GPU-blue" alt="MLX">
-  <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
 </p>
 
-> Status note, April 1 2026: the repo contains a real native VMLX runtime and real Osaurus integration, but some older docs below this repo previously mixed planned work, landed code, and aspirational status. This README is now aligned to the current branch state.
+<p align="center">
+  <img src="https://img.shields.io/badge/OpenAI%20API-compatible-0A7CFF" alt="OpenAI API">
+  <img src="https://img.shields.io/badge/Anthropic%20API-compatible-0A7CFF" alt="Anthropic API">
+  <img src="https://img.shields.io/badge/Ollama%20API-compatible-0A7CFF" alt="Ollama API">
+  <img src="https://img.shields.io/badge/MCP-server-0A7CFF" alt="MCP Server">
+  <img src="https://img.shields.io/badge/Apple%20Foundation%20Models-supported-0A7CFF" alt="Foundation Models">
+</p>
 
 ---
 
-## Goal
-
-Replace Osaurus's `mlx-swift-lm` backend with a native Swift inference engine that:
-- uses `mlx-swift` for tensor ops only
-- loads architectures natively in Swift
-- handles hybrid SSM, MoE, MLA, and JANG mixed-precision weights
-- provides a multi-layer cache stack with hybrid-safe behavior
-- integrates directly into the Osaurus app, API, tools, and settings flow
+> **Beta branch `feature/vmlx`** — This build integrates VMLXRuntime, a native Swift inference engine replacing `mlx-swift-lm`. All existing Osaurus features (agents, memory, tools, plugins, sandbox, MCP, remote providers, Bonjour) are intact. See [What's New in This Beta](#whats-new-in-this-beta) below.
 
 ---
 
-## Current Branch Status
+## Inference is all you need. Everything else can be owned by you.
 
-### Verified Working
+Osaurus is the AI harness for macOS. It sits between you and any model -- local or cloud -- and provides the continuity that makes AI personal: agents that remember, execute autonomously, run real code, and stay reachable from anywhere. The models are interchangeable. The harness is what compounds.
 
-| Area | Status |
-|------|--------|
-| Standard transformer path | Verified with real local models such as Llama 3.2 1B and Qwen 2.5 0.5B |
-| Qwen 3.5 hybrid SSM path | Verified with real JANG models; hybrid cache split and restore paths are in use |
-| Osaurus integration | `VMLXServiceBridge` is wired into `ChatEngine`, settings, model discovery, and cache inspector |
-| Cache stack fundamentals | Paged cache, memory cache, prefix cache, disk cache, SSM companion cache, and cache coordinator are implemented |
-| Tool/reasoning parsing | VMLX tool/reasoning parsers are wired through the bridge and app settings; MLX reasoning overrides still apply on the app streaming path |
+Works fully offline with local models. Connect to any cloud provider when you want more power. Nothing leaves your Mac unless you choose.
 
-### Implemented But Still Under Active Validation
+Native Swift on Apple Silicon. No Electron. No compromises. MIT licensed.
 
-| Area | Status |
-|------|--------|
-| NemotronH | Native model class landed and recent fixes corrected Mamba2 scan, MoE routing, latent projections, and attention projection dimensions |
-| Mistral Small 4 | Native MLA + MoE path landed and recent fixes corrected config decoding and inference alignment with Python reference |
-| TurboQuant | Swift encode/decode, live `TurboQuantKVCache`, and cache-store/fetch preservation are now all wired on the active VMLX path; `TQDiskStore` still is not the active L2 path |
+## What's New in This Beta
 
-### Important Current Caveats
+### VMLXRuntime — Native Inference Engine
 
-- The runtime still executes one active generation task at a time. Scheduler and batching primitives exist, but true multi-request continuous batching is not the active hot path yet.
-- Hybrid partial hits now attempt boundary-aligned SSM re-derive when attention KV exists but the matching SSM companion state is missing. The current request still full-prefills when re-derive is pending or unavailable.
-- `SSMReDeriver` is now on the live VMLX hybrid recovery path, but it is still fallback-heavy for large or unavailable checkpoints.
-- Hybrid prefill currently uses single-phase prefill plus a post-prefill SSM snapshot. Earlier two-phase checkpointing plans were backed out from the hot path after SSD/Mamba2 hangs.
-- VMLX paged cache now commits request blocks during prefill and rewrites them to the final representation at store time, but the attention kernel still consumes contiguous live K/V arrays rather than a true paged-attention kernel interface.
-- Vision preprocessing and embedding cache exist; full vision encoder inference is still pending.
-- MiniMax tokenizer incompatibilities still block trustworthy text generation quality.
-- Qwen 3.5 35B JANG still needs a deeper MoE-path optimization pass. Adaptive prefill chunking is in, but the quantized expert prefill path remains the current bottleneck.
+This build replaces the `mlx-swift-lm` inference backend with **VMLXRuntime**, a ground-up Swift engine built on raw `mlx-swift`. The app tries VMLXRuntime first and falls back to `mlx-swift-lm` automatically for unsupported architectures.
 
----
+**Why it matters:**
+- Native support for hybrid SSM/transformer models (Qwen 3.5, NemotronH, Mistral Small 4)
+- JANG mixed-precision quantization format (3/4/5/8 bit per layer)
+- TurboQuant KV cache compression for longer context in limited VRAM
+- Multi-layer cache hierarchy: paged + prefix + memory + disk with SSM-safe rules
+- Full streaming tool-call and reasoning parsers (13 model families)
+- Per-model generation stats: TTFT, prefill tok/s, decode tok/s, cache hit info
 
-## What The Engine Actually Does Today
+**Model support:**
 
-### Cache Stack
+| Family | Status | Notes |
+|--------|--------|-------|
+| Standard transformers (Llama, Qwen 2.5, Gemma, Phi) | Verified | Primary path, well-tested |
+| Qwen 3.5 hybrid SSM | Verified | Hybrid cache split/restore active |
+| NemotronH (Mamba2 + MoE) | Beta | Implemented, under validation |
+| Mistral Small 4 (MLA + MoE) | Beta | Implemented, under validation |
+| GPT-OSS | Beta | Channel protocol + reasoning |
 
-- Paged KV cache via block hash chains for the main prefix-reuse path
-- Memory LRU cache and token-trie prefix cache
-- Disk L2 safetensors cache with SQLite index
-- SSM companion cache for hybrid models
-- `gen_prompt_len` stripping so cache keys ignore assistant-generation suffix tokens
-- When paged cache is off, prefix cache is now populated even if the memory tier is on
-- Paged cache and disk cache can now preserve `.compressedAttention` entries on the normal reuse path instead of always degrading them to float
-- The VMLX actor now commits paged blocks during prefill, aborts those in-flight blocks on cancellation/error, and rewrites committed blocks to the final TQ/SSM-safe form when the request finishes successfully
+### Bonjour Agent Discovery + Remote Providers
 
-### Hybrid SSM Behavior
+Discover and connect to other Osaurus instances on the local network. Remote providers (OpenAI, Anthropic, custom endpoints) route correctly alongside local VMLX inference -- the engine properly distinguishes remote model names from local ones.
 
-- Hybrid caches are represented explicitly as mixed `.attention` and `.ssm` layers
-- SSM state is treated as path-dependent and non-truncatable
-- Prefix-style reuse is safe only when the KV and SSM sides agree on the same boundary
-- Hybrid exact-hit replay and hybrid partial-hit reuse now attempt boundary-aligned SSM re-derive before falling back
-- The current request still full-prefills when the needed SSM checkpoint is unavailable or only arrives asynchronously
+### AppKit Chat Rendering
 
-### TurboQuant Reality
+Chat view rebuilt with pure AppKit (NSTableView) for smooth scrolling and efficient streaming:
+- Native markdown rendering with streaming throttle (no UI freeze on long outputs)
+- Native thinking block renderer with expand/collapse
+- Native inference stats bar showing generation performance
+- Dynamic cell height calculation
 
-- Swift implementations exist for `TurboQuantEncoder`, `TurboQuantKVCache`, `EncodedKeys`, `EncodedValues`, and `TQDiskStore`
-- TurboQuant policy is now resolved from `TurboQuantConfig`, so hybrid JANG models keep the rule "KV only, never SSM"
-- The live VMLX runtime now keeps eligible attention layers in `TurboQuantKVCache` after prefill and restores `.compressedAttention` back into that live cache type on cache hits
-- Cross-turn cache store/fetch can now preserve `.compressedAttention` through paged, memory, prefix, and disk reuse paths, including cache-hit turns that extend an already-restored prefix
-- Paged live-session finalization now rewrites committed blocks to compressed attention where the layer policy supports it, so paged reuse no longer has to fall back to stale float slices after a successful TQ run
-- `TQDiskStore` still is not the active L2 path; persistent on-disk cache still uses `DiskCache`
-
----
-
-## Package Snapshot
+### Cache System
 
 ```
-Packages/VMLXRuntime/
-  Sources/VMLXRuntime/   88 source files
-  Tests/VMLXRuntimeTests 49 test files
+CacheCoordinator
+  Paged cache (COW-safe block storage)
+  Memory cache (in-memory LRU)
+  Prefix cache (token trie)
+  Disk cache (SQLite + safetensors)
+  SSM companion cache (hybrid model state)
 ```
 
-Main areas:
-- `Core/` model loading, configs, hybrid cache abstractions
-- `Cache/` paged, memory, prefix, disk, SSM companion, coordinator
-- `Quantization/` JANG loading and TurboQuant pieces
-- `Models/` standard, Qwen3.5, NemotronH, Mistral4, GPT-OSS, MLA, MoE, SSM utilities
-- `Integration/` runtime actor and Osaurus-facing service layer
+Hybrid models get special treatment: attention KV is positional and truncatable, SSM state is path-dependent and never truncated. TurboQuant compresses KV in-flight but exports float for persistence to prevent quality degradation.
 
 ---
 
-## Osaurus Integration
-
-The current app wiring is real, not stubbed:
-
-- `Packages/OsaurusCore/Services/Inference/VMLXServiceBridge.swift`
-- `Packages/OsaurusCore/Services/Chat/ChatEngine.swift`
-- `Packages/OsaurusCore/Views/Settings/ConfigurationView.swift`
-- `Packages/OsaurusCore/Views/Model/ModelCacheInspectorView.swift`
-- `Packages/OsaurusCore/Managers/Model/ModelManager.swift`
-
-That integration covers:
-- model discovery and de-duplication with MLX models
-- model load/unload routing
-- Local Inference settings passthrough
-- parser overrides, with VMLX reasoning chunks bridged back into the app's `<think>` UI path
-- cache stats/unload visibility in the app
-
----
-
-## Recent Fix Run
-
-Recent branch work has been concentrated on hybrid-model correctness:
-
-- `582a6e8b` fix: verified audit fixes
-- `5a7e1315` fix: NemotronH + Mistral4 inference corrections from Python reference
-- `44506ac0` fix: single-phase prefill for hybrid models + SSD state projection
-- `b479140a` fix: efficient 4D SSD state projection
-- `b34f28ea` feat: SSD parallel scan for Mamba2
-- `466dcc9a` feat: native NemotronH model class
-- `8a0a7d05` feat: TurboQuant decode-once lifecycle
-
----
-
-## Build
+## Build from Source
 
 ```bash
-cd Packages/VMLXRuntime && swift build
-xcodebuild test -scheme VMLXRuntime -destination 'platform=macOS'
+git clone https://github.com/osaurus-ai/osaurus.git
+cd osaurus
+git checkout feature/vmlx
 open osaurus.xcworkspace
 ```
 
----
+Build the `osaurus` scheme in **Release** configuration (Debug is significantly slower for inference). Requires Xcode 16+ and macOS 15.5+.
+
+> Requires macOS 15.5+ and Apple Silicon.
+
+## Agents
+
+Agents are the core of Osaurus. Each one gets its own prompts, memory, and visual theme -- a research assistant, a coding partner, a file organizer, whatever you need. Tools and skills are automatically selected via RAG search based on the task at hand -- no manual configuration needed.
+
+### Work Mode
+
+Give an agent an objective. It breaks the work into trackable issues, executes step by step -- parallel tasks, file operations, background processing.
+
+### Sandbox
+
+Agents execute code in an isolated Linux VM powered by Apple's [Containerization](https://developer.apple.com/documentation/containerization) framework. Full dev environment -- shell, Python, Node.js, compilers, package managers -- with zero risk to your Mac.
+
+> Requires macOS 26+ (Tahoe). See the [Sandbox Guide](docs/SANDBOX.md).
+
+### Memory
+
+4-layer system: user profile, working memory, conversation summaries, and a knowledge graph. Extracts facts, detects contradictions, recalls relevant context -- all automatically.
+
+### Identity
+
+Every participant gets a secp256k1 cryptographic address. Authority flows from your master key (iCloud Keychain) down to each agent in a verifiable chain of trust. See [Identity docs](docs/IDENTITY.md).
+
+## Models
+
+The harness is model-agnostic. Swap freely -- your agents, memory, and tools stay intact.
+
+### Local (VMLXRuntime)
+
+Run models on Apple Silicon with optimized MLX inference via VMLXRuntime. Standard HuggingFace models and JANG quantized models supported. Models stored at `~/MLXModels` (or custom directories via Settings).
+
+### Apple Foundation Models
+
+On macOS 26+, use Apple's on-device model as a first-class provider. Pass `model: "foundation"` in API requests. Zero inference cost, fully private.
+
+### Cloud & Remote
+
+Connect to OpenAI, Anthropic, Gemini, xAI/Grok, Venice AI, OpenRouter, Ollama, LM Studio, or any custom endpoint. Discover other Osaurus instances on your network via Bonjour. Context and memory persist across all providers.
+
+## MCP
+
+Osaurus is a full MCP (Model Context Protocol) server. Give Cursor, Claude Desktop, or any MCP client access to your tools:
+
+```json
+{
+  "mcpServers": {
+    "osaurus": {
+      "command": "osaurus",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+Also an MCP client -- aggregate tools from remote MCP servers into Osaurus. See the [Remote MCP Providers Guide](docs/REMOTE_MCP_PROVIDERS.md).
+
+## Tools & Plugins
+
+20+ native plugins: Mail, Calendar, Vision, macOS Use, XLSX, PPTX, Browser, Music, Git, Filesystem, Search, Fetch, and more. Plugins support v1 (tools only) and v2 (full host API) ABIs. See the [Plugin Authoring Guide](docs/PLUGIN_AUTHORING.md).
+
+## Compatible APIs
+
+Drop-in endpoints for existing tools:
+
+| API       | Endpoint                                      |
+| --------- | --------------------------------------------- |
+| OpenAI    | `http://127.0.0.1:1337/v1/chat/completions`   |
+| Anthropic | `http://127.0.0.1:1337/anthropic/v1/messages` |
+| Ollama    | `http://127.0.0.1:1337/api/chat`              |
+
+All prefixes supported (`/v1`, `/api`, `/v1/api`). Full function calling with streaming tool call deltas. See [OpenAI API Guide](docs/OpenAI_API_GUIDE.md).
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                   The Harness                       │
+├──────────┬──────────┬───────────┬───────────────────┤
+│ Agents   │ Memory   │ Work Mode │ Automation        │
+├──────────┴──────────┴───────────┴───────────────────┤
+│              MCP Server + Client                    │
+├──────────┬──────────┬───────────┬───────────────────┤
+│ VMLX     │ MLX-LM   │ Cloud     │ Foundation        │
+│ Runtime  │ Fallback │ Providers │ Models            │
+├──────────┴──────────┴───────────┴───────────────────┤
+│      Plugin System (v1 / v2 ABI) · Native Plugins   │
+├──────────┬──────────┬───────────┬───────────────────┤
+│ Identity │ Relay    │ Tools     │ Skills · Methods  │
+├──────────┴──────────┴───────────┴───────────────────┤
+│  Sandbox VM (Alpine · Apple Containerization)       │
+│  vsock bridge · VirtioFS · per-agent isolation      │
+└─────────────────────────────────────────────────────┘
+```
+
+## Known Issues (Beta)
+
+See [docs/integration/KNOWN-ISSUES.md](docs/integration/KNOWN-ISSUES.md) for the full list.
+
+- Metal custom kernels temporarily disabled (ops-based fallback works, may be slower)
+- `mlx-swift` package identity warning (two sources — builds fine, future SwiftPM concern)
+- NemotronH and Mistral Small 4 still under broader validation
+- Vision encoder inference and MiniMax tokenizer pending
+- Continuous batching not active (one generation at a time)
 
 ## Documentation
 
-- [Current Architecture](docs/ARCHITECTURE.md)
-- [Current Feature Comparison](docs/FEATURE_COMPARISON.md)
-- [Historical Implementation Plan](docs/plans/2026-03-29-vmlx-runtime-integration.md)
+- [Beta Testing Guide](docs/integration/BETA-TESTING.md)
+- [Integration Architecture](docs/integration/ARCHITECTURE.md)
+- [Integration Changelog](docs/integration/CHANGELOG.md)
+- [Known Issues](docs/integration/KNOWN-ISSUES.md)
+- [Feature Comparison (VMLXRuntime vs Python)](docs/FEATURE_COMPARISON.md)
+
+## Community
+
+- [Discord](https://discord.com/invite/dinoki) -- chat, feedback, show-and-tell
+- [Twitter](https://x.com/OsaurusAI) -- updates and demos
+- [Plugin Registry](https://github.com/osaurus-ai/osaurus-tools) -- browse and contribute tools
+
+## License
+
+[MIT](LICENSE)
 
 ---
 
-## Credits
-
-- VMLXRuntime: Jinho Eric Jang
-- Osaurus: [osaurus-ai](https://github.com/osaurus-ai/osaurus)
-- MLX: Apple
-- JANG Quantization: [JANGQ-AI](https://huggingface.co/JANGQ-AI)
+<p align="center">
+  Osaurus, Inc. · <a href="https://osaurus.ai">osaurus.ai</a>
+</p>

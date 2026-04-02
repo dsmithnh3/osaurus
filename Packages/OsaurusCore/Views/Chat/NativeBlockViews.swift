@@ -4,6 +4,7 @@
 //
 //  Pure AppKit views for block types that avoid SwiftUI in table cells.
 //
+//    NativeInferenceStatsView      — compact generation stats bar (TTFT, tok/s, cache)
 //    NativeTypingIndicatorView     — bouncing CALayer dots + memory label
 //    NativePendingToolCallView     — pulsing dot + tool name + scrolling arg preview
 //    (NativeArtifactCardView lives in NativeArtifactCardView.swift)
@@ -11,6 +12,39 @@
 
 import AppKit
 import QuartzCore
+
+// MARK: - NativeInferenceStatsView
+
+/// Compact single-line bar showing generation performance metrics.
+/// Renders: TTFT | PP tok/s | TG tok/s | token count (cached) | KV size
+final class NativeInferenceStatsView: NSView {
+
+    private let label = NSTextField(labelWithString: "")
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        translatesAutoresizingMaskIntoConstraints = false
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.isSelectable = true
+        label.maximumNumberOfLines = 1
+        label.lineBreakMode = .byTruncatingTail
+        label.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        addSubview(label)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: leadingAnchor),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor),
+            label.topAnchor.constraint(equalTo: topAnchor, constant: 2),
+            label.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -2),
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    func configure(stats: GenerationStats, theme: any ThemeProtocol) {
+        label.stringValue = stats.summary
+        label.textColor = NSColor.secondaryLabelColor
+    }
+}
 
 // MARK: - NativeTypingIndicatorView
 

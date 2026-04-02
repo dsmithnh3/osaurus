@@ -16,7 +16,6 @@ actor ChatEngine: Sendable, ChatEngineProtocol {
 
     init(
         services: [ModelService] = [FoundationModelService(), VMLXServiceBridge(), MLXService()],
-        remoteServices: [ModelService] = [],
         installedModelsProvider: @escaping @Sendable () -> [String] = {
             // Merge VMLX models (JANG quants from well-known dirs) with MLX models (ModelManager)
             let vmlxModels = VMLXServiceBridge.getAvailableModels()
@@ -86,13 +85,35 @@ actor ChatEngine: Sendable, ChatEngineProtocol {
 
         // Fetch current remote services from MainActor at request time so routing always
         // reflects the latest connected Bonjour/remote agents without requiring a new engine.
-        let remoteServices = await MainActor.run { RemoteProviderManager.shared.connectedServices() }
-        debugLog("[ChatEngine] streamChat: remoteServices=\(remoteServices.count), routing model=\(request.model)")
+        let remoteServices: [ModelService] = await MainActor.run {
+            RemoteProviderManager.shared.connectedServices()
+        }
+        debugLog("[ChatEngine] streamChat: remoteServices=\(remoteServices.count), routing model=\(request.model ?? "nil")")
 
-        // Try services in priority order. If one fails (e.g., VMLX can't load
-        // a model that needs MLXService), fall back to the next service.
+        // Use the same routing logic as completeChat: remote providers first for
+        // explicit model requests (e.g. "openai/gpt-4"), then local services.
+        // This ensures streaming and non-streaming endpoints behave identically.
+        let route = ModelServiceRouter.resolve(
+            requestedModel: request.model,
+            services: services,
+            remoteServices: remoteServices
+        )
+
+        // Build an ordered list of services to try: routed service first, then all
+        // remaining services as fallback (e.g. VMLX can't load a model → MLXService).
+        var candidateServices: [ModelService] = []
+        if case .service(let primary, _) = route {
+            candidateServices.append(primary)
+        }
+        for svc in services where !candidateServices.contains(where: { $0.id == svc.id }) {
+            candidateServices.append(svc)
+        }
+        for svc in remoteServices where !candidateServices.contains(where: { $0.id == svc.id }) {
+            candidateServices.append(svc)
+        }
+
         var lastError: Error?
-        for service in services {
+        for service in candidateServices {
             guard service.isAvailable(), service.handles(requestedModel: request.model) else { continue }
 
             do {
@@ -136,18 +157,6 @@ actor ChatEngine: Sendable, ChatEngineProtocol {
                 lastError = error
                 continue
             }
-        }
-
-        // Also try remote services
-        for service in remoteServices {
-            guard service.isAvailable(), service.handles(requestedModel: request.model) else { continue }
-            // Remote services don't need fallback — just try once
-            let innerStream = try await service.streamDeltas(
-                messages: messages, parameters: params,
-                requestedModel: request.model, stopSequences: request.stop ?? [])
-            let source = self.inferenceSource
-            return wrapStreamWithLogging(innerStream, source: source, model: request.model ?? "default",
-                                         inputTokens: estimateInputTokens(messages), temperature: temperature, maxTokens: maxTokens)
         }
 
         if let err = lastError { throw err }

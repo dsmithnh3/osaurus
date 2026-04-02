@@ -71,6 +71,7 @@ public actor VMLXService: VMLXToolCapableService {
 
                 do {
                     for try await event in eventStream {
+                        if Task.isCancelled { break }
                         switch event {
                         case .tokens(let text):
                             closeThinkingIfNeeded()
@@ -78,12 +79,16 @@ public actor VMLXService: VMLXToolCapableService {
                                 continuation.yield(text)
                             }
                         case .thinking(let text):
-                            guard !text.isEmpty else { continue }
-                            if !isInsideThinking {
-                                continuation.yield("<think>")
-                                isInsideThinking = true
+                            // Open thinking block on first non-empty thinking event.
+                            // Empty events are skipped but do NOT close the block —
+                            // the model may emit empty thinking tokens between content.
+                            if !text.isEmpty {
+                                if !isInsideThinking {
+                                    continuation.yield("<think>")
+                                    isInsideThinking = true
+                                }
+                                continuation.yield(text)
                             }
-                            continuation.yield(text)
                         case .toolInvocation(let name, let args, _):
                             closeThinkingIfNeeded()
                             continuation.yield("\u{FFFE}tool:" + name)
@@ -103,9 +108,7 @@ public actor VMLXService: VMLXToolCapableService {
                     closeThinkingIfNeeded()
                     continuation.finish()
                 } catch {
-                    if isInsideThinking {
-                        continuation.yield("</think>")
-                    }
+                    closeThinkingIfNeeded()
                     continuation.finish(throwing: error)
                 }
             }
@@ -124,18 +127,37 @@ public actor VMLXService: VMLXToolCapableService {
 
     public nonisolated func handles(requestedModel: String?) -> Bool {
         guard let model = requestedModel else { return true }
-        let lower = model.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lower = trimmed.lowercased()
         if lower.isEmpty || lower == "local" || lower == "default" || lower == "vmlx" {
             return true
         }
-        // Reject obvious remote API models (provider/ prefix)
-        let remoteProviders = ["openai/", "anthropic/", "google/", "venice-ai/",
-                               "groq/", "together/", "fireworks/", "perplexity/",
-                               "deepinfra/", "anyscale/"]
-        if remoteProviders.contains(where: { lower.hasPrefix($0) }) {
+        // Reject remote provider models: any "provider/model" pattern where the prefix
+        // is NOT a filesystem path. Remote providers (OpenAI, Anthropic, Bonjour agents,
+        // custom providers) all use "prefix/model-name" format.
+        // Local models are either bare names ("Qwen3.5-9B") or absolute paths ("/Users/...").
+        if let slashIdx = trimmed.firstIndex(of: "/") {
+            let prefix = String(trimmed[trimmed.startIndex..<slashIdx])
+            // Absolute paths (start with /) or HuggingFace repo IDs (contain only
+            // alphanumeric, hyphens, underscores, dots — like "Qwen/Qwen3.5-9B-JANG")
+            // are local. Everything else with a slash is a remote provider prefix.
+            if trimmed.hasPrefix("/") || trimmed.hasPrefix("~") {
+                return true  // filesystem path
+            }
+            // HuggingFace-style org/repo: both parts are alphanumeric+hyphens+dots+underscores
+            let isHFStyle = prefix.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == "." }
+            let afterSlash = String(trimmed[trimmed.index(after: slashIdx)...])
+            let modelPartValid = afterSlash.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" || $0 == "." }
+            // If it looks like a HuggingFace repo (org/model-name), accept it — ModelLoader
+            // will determine if it's a supported architecture. If the prefix contains
+            // special chars or spaces, it's likely a remote provider name.
+            if isHFStyle && modelPartValid && !afterSlash.isEmpty {
+                return true
+            }
+            // Has a slash but doesn't look like a path or HF repo — reject as remote
             return false
         }
-        // Accept everything else — loader determines if architecture is supported
+        // No slash — bare model name, accept for local resolution
         return true
     }
 

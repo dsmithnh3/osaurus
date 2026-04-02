@@ -670,6 +670,7 @@ final class NativeMessageCellView: NSTableCellView {
     private var nativeTypingView: NativeTypingIndicatorView?
     private var nativeArtifactView: NativeArtifactCardView?
     private var nativePreflightView: NativePreflightCapabilitiesView?
+    private var nativeStatsView: NativeInferenceStatsView?
 
     /// inset stroke so rounded corners are not clipped by ancestor views
     private var userBubbleBorderLayer: CAShapeLayer?
@@ -809,9 +810,8 @@ final class NativeMessageCellView: NSTableCellView {
         case let .preflightCapabilities(items):
             configureAsPreflight(block: block, items: items, context: context, sameKind: sameKind)
 
-        default:
-            // last resort: no hosted fallback — render a compact unsupported-block placeholder
-            configureAsUnsupported(sameKind: sameKind)
+        case let .inferenceStats(stats):
+            configureAsInferenceStats(block: block, stats: stats, context: context, sameKind: sameKind)
         }
     }
 
@@ -1353,6 +1353,30 @@ final class NativeMessageCellView: NSTableCellView {
         context.onHeightMeasured?(h, block.id)
     }
 
+    // MARK: - Inference Stats
+
+    private func configureAsInferenceStats(
+        block: ContentBlock,
+        stats: GenerationStats,
+        context: CellRenderingContext,
+        sameKind: Bool
+    ) {
+        if !sameKind || nativeStatsView == nil {
+            removeAllContentViews()
+            let sv = NativeInferenceStatsView()
+            sv.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(sv)
+            NSLayoutConstraint.activate([
+                sv.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+                sv.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+                sv.topAnchor.constraint(equalTo: topAnchor, constant: 2),
+            ])
+            nativeStatsView = sv
+        }
+        nativeStatsView?.configure(stats: stats, theme: context.theme)
+        context.onHeightMeasured?(28, block.id)
+    }
+
     // MARK: - Unsupported (should never appear; zero-height placeholder)
 
     private func configureAsUnsupported(sameKind: Bool) {
@@ -1402,6 +1426,7 @@ final class NativeMessageCellView: NSTableCellView {
         nativeTypingView?.removeFromSuperview(); nativeTypingView = nil
         nativeArtifactView?.removeFromSuperview(); nativeArtifactView = nil
         nativePreflightView?.removeFromSuperview(); nativePreflightView = nil
+        nativeStatsView?.removeFromSuperview(); nativeStatsView = nil
         userMessageContainer?.removeFromSuperview(); userMessageContainer = nil
         userTextView = nil
         userInlineEditView = nil
@@ -1499,7 +1524,8 @@ private final class UserAttachmentThumbnailView: NSView {
 /// Lightweight discriminator used to detect kind changes without comparing full associated values.
 enum ContentBlockKindTag: Equatable {
     case header, paragraph, toolCallGroup, thinking, userMessage, pendingToolCall
-    case typingIndicator, groupSpacer, sharedArtifact, preflightCapabilities, other
+    case typingIndicator, groupSpacer, sharedArtifact, preflightCapabilities
+    case inferenceStats
 }
 
 extension ContentBlockKind {
@@ -1515,6 +1541,7 @@ extension ContentBlockKind {
         case .groupSpacer: return .groupSpacer
         case .sharedArtifact: return .sharedArtifact
         case .preflightCapabilities: return .preflightCapabilities
+        case .inferenceStats: return .inferenceStats
         }
     }
 }
@@ -1612,6 +1639,9 @@ enum NativeCellHeightEstimator {
                 h += CGFloat(lines) * 14 + 12
             }
             return h
+
+        case .inferenceStats:
+            return 28
         }
     }
 }
