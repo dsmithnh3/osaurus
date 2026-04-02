@@ -2,12 +2,11 @@ import Foundation
 import MLX
 import MLXRandom
 
-/// Compiled categorical sampler — fused temperature scaling + sampling.
-/// `compile(shapeless: true)` generates a single GPU kernel instead of
-/// separate division + categorical ops, avoiding intermediate allocations.
-// NOTE: compile(shapeless:true) crashes on first decode token for hybrid SSM
-// models (Qwen3.5 GatedDeltaNet). MLX compile can't trace through the mixed
-// cache state updates. Uncompiled until MLX framework fixes this.
+/// Categorical sampler with temperature scaling.
+/// NOTE: compile(shapeless:true) CRASHES with "RandomBits cannot infer output shapes"
+/// because MLXRandom.categorical uses random number generation internally and MLX's
+/// compile tracer cannot infer output shapes for random primitives.
+/// Uncompiled until MLX framework adds RandomBits shape inference support.
 public let compiledCategoricalSample: @Sendable (MLXArray, MLXArray) -> MLXArray = {
     (logits: MLXArray, temperature: MLXArray) -> MLXArray in
     let scaled = logits / temperature

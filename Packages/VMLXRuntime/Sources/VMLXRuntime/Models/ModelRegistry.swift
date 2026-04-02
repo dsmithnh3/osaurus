@@ -70,6 +70,9 @@ public struct VMLXModelRegistry {
     /// TODO: Audit which mlx-swift-lm types actually break under StandardTransformerModel
     /// and add them here to avoid silent garbage output.
     public static let mlxServiceOnlyTypes: Set<String> = [
+        "qwen3_vl",        // Qwen3 VL — needs vision encoder, not standard text-only path
+        "qwen2_vl",        // Qwen2 VL
+        "qwen2_5_vl",      // Qwen2.5 VL
     ]
 
     /// Model types that use FP8 quantization or other unsupported weight formats.
