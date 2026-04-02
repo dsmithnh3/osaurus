@@ -130,18 +130,12 @@ public final class VMLXModelContainer: @unchecked Sendable {
                 vHeadDim: model.detected.vHeadDim
             )
         } else {
-            // Non-JANG MLX models: default TQ config with sensible defaults.
-            // Includes MLA dimensions from config.json if available (Mistral4, DeepSeek).
-            var defaultTQ = TurboQuantConfig(layerPattern: detectedLayerPattern)
-            if let rank = model.detected.kvLoraRank, rank > 0 {
-                if let nope = model.detected.qkNopeHeadDim, let rope = model.detected.qkRopeHeadDim {
-                    defaultTQ.mlaKeyDim = nope + rope
-                }
-                if let vDim = model.detected.vHeadDim {
-                    defaultTQ.mlaValueDim = vDim
-                }
-            }
-            turboQuantConfig = defaultTQ
+            // Non-JANG models: TQ disabled by default.
+            // TQ adds compression overhead and blocks compile(shapeless:true).
+            // Standard MLX models (8-bit, 4-bit) already have good KV quality —
+            // TQ compression hurts speed without meaningful memory benefit.
+            // Users can still enable TQ manually in settings if needed.
+            turboQuantConfig = nil
         }
 
         return VMLXModelContainer(
