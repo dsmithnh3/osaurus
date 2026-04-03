@@ -405,6 +405,16 @@ final class ChatSession: ObservableObject {
         }
         isLoadingModel = false
 
+        // Load saved per-model options (parsers, thinking toggle) for the initial model.
+        // The Combine sink uses dropFirst() + isLoadingModel guard, so it doesn't fire here.
+        if let model = selectedModel {
+            if let persisted = ModelOptionsStore.shared.loadOptions(for: model) {
+                activeModelOptions = persisted
+            } else {
+                activeModelOptions = ModelProfileRegistry.defaults(for: model)
+            }
+        }
+
         rebuildVisibleBlocks()
     }
 
@@ -495,6 +505,15 @@ final class ChatSession: ObservableObject {
             }
         }
         isLoadingModel = false
+
+        // Load saved per-model options (parsers, thinking toggle) for the restored model
+        if let model = selectedModel {
+            if let persisted = ModelOptionsStore.shared.loadOptions(for: model) {
+                activeModelOptions = persisted
+            } else {
+                activeModelOptions = ModelProfileRegistry.defaults(for: model)
+            }
+        }
 
         turns = data.turns.map { ChatTurn(from: $0) }
         voiceInputState = .idle
