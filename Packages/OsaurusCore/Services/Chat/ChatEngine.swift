@@ -169,9 +169,6 @@ actor ChatEngine: Sendable, ChatEngineProtocol {
             var finishReason: InferenceLog.FinishReason = .stop
             var errorMsg: String? = nil
             var toolInvocation: (name: String, args: String)? = nil
-            var lastDeltaTime = startTime
-
-            print("[Osaurus][Stream] Starting stream wrapper for model: \(model)")
 
             do {
                 for try await delta in inner {
@@ -189,20 +186,6 @@ actor ChatEngine: Sendable, ChatEngineProtocol {
                     }
 
                     deltaCount += 1
-                    let now = Date()
-                    let timeSinceStart = now.timeIntervalSince(startTime)
-                    let timeSinceLastDelta = now.timeIntervalSince(lastDeltaTime)
-                    lastDeltaTime = now
-
-                    // Log every 50th delta or if there's a long gap (potential freeze indicator)
-                    if deltaCount % 50 == 1 || timeSinceLastDelta > 2.0 {
-                        print(
-                            "[Osaurus][Stream] Delta #\(deltaCount): +\(String(format: "%.2f", timeSinceStart))s total, gap=\(String(format: "%.3f", timeSinceLastDelta))s, len=\(delta.count)"
-                        )
-                    }
-
-                    // Estimate tokens: each delta chunk is roughly proportional to tokens
-                    // More accurate: count whitespace-separated words, or use tokenizer
                     outputTokenCount += max(1, delta.count / 4)
                     continuation.yield(delta)
                 }
