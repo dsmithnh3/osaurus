@@ -25,7 +25,7 @@ public struct ChartabilityService: Sendable {
         if ext == "csv" {
             let lines = content.components(separatedBy: .newlines)
                 .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
-            return lines.count >= 3 // Header + at least 2 data rows
+            return lines.count >= 3  // Header + at least 2 data rows
         } else if ext == "json" {
             // very basic JSON check: is it an array of objects or an object with arrays?
             let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -40,6 +40,7 @@ public struct ChartabilityService: Sendable {
         guard isChartable(attachment) else { return nil }
         guard case .document(let filename, _, _) = attachment.kind else { return nil }
 
-        return "The file '\(filename)' contains structured data that can be visualized as a chart (e.g., line, bar, or pie chart)."
+        return
+            "The file '\(filename)' contains structured data that can be visualized as a chart (e.g., line, bar, or pie chart)."
     }
 }

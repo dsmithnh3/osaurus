@@ -77,7 +77,11 @@ struct VisualizeDataTool: OsaurusTool {
             // return the JSON as the result. generateBlocks will look for this.
             return argumentsJSON
         } catch {
-            throw NSError(domain: "VisualizeDataTool", code: 2, userInfo: [NSLocalizedDescriptionKey: "Invalid ChartConfiguration: \(error.localizedDescription)"])
+            throw NSError(
+                domain: "VisualizeDataTool",
+                code: 2,
+                userInfo: [NSLocalizedDescriptionKey: "Invalid ChartConfiguration: \(error.localizedDescription)"]
+            )
         }
     }
 }

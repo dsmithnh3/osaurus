@@ -163,12 +163,16 @@ enum PreflightCapabilitySearch {
 
         for attachment in attachments {
             if ChartabilityService.shared.isChartable(attachment) {
-                if let skill: Skill = await MainActor.run(resultType: Skill?.self, body: {
-                    SkillManager.shared.skill(named: "Data Visualization")
-                }), skill.enabled {
+                if let skill: Skill = await MainActor.run(
+                    resultType: Skill?.self,
+                    body: {
+                        SkillManager.shared.skill(named: "Data Visualization")
+                    }
+                ), skill.enabled {
                     proactiveItems.append(.init(type: .skill, name: skill.name, description: skill.description))
                     proactiveContext += "\n\n## Proactive Insight: Visualizable Data Detected\n"
-                    proactiveContext += "The attachment '\(attachment.id)' appears to contain data suitable for visualization.\n"
+                    proactiveContext +=
+                        "The attachment '\(attachment.id)' appears to contain data suitable for visualization.\n"
                     proactiveContext += "### Skill: \(skill.name)\n"
                     proactiveContext += skill.instructions + "\n"
                     proactiveTools.append("visualize_data")
@@ -181,10 +185,12 @@ enum PreflightCapabilitySearch {
         }
 
         // If query is empty but we have proactive items, we can still proceed
-        let searchQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let searchQuery =
+            query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? "" : (await extractSearchTerms(from: query) ?? "")
 
-        let hits = searchQuery.isEmpty
+        let hits =
+            searchQuery.isEmpty
             ? CapabilitySearchResults(methods: [], tools: [], skills: [])
             : await CapabilitySearch.search(query: searchQuery, topK: mode.topKValues)
 

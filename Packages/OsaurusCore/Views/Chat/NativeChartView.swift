@@ -32,7 +32,7 @@ final class NativeChartView: NSView {
             aaChartView.leadingAnchor.constraint(equalTo: leadingAnchor),
             aaChartView.trailingAnchor.constraint(equalTo: trailingAnchor),
             aaChartView.topAnchor.constraint(equalTo: topAnchor),
-            aaChartView.bottomAnchor.constraint(equalTo: bottomAnchor)
+            aaChartView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
     }
 
@@ -62,7 +62,7 @@ final class NativeChartView: NSView {
             // style titles and labels
             let textColor = theme.primaryText.toHexString()
             let labelStyle = AAStyle().color(textColor).fontSize(11)
-            
+
             aaChartModel.titleStyle(AAStyle().color(textColor).fontSize(16).fontWeight(.bold))
             aaChartModel.subtitleStyle(AAStyle().color(theme.secondaryText.toHexString()).fontSize(12))
             aaChartModel.xAxisLabelsStyle(labelStyle)

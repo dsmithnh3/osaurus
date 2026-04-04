@@ -46,7 +46,7 @@ let package = Package(
                 .product(name: "SwiftMath", package: "SwiftMath"),
                 .product(name: "Containerization", package: "containerization"),
                 .product(name: "ContainerizationExtras", package: "containerization"),
-                .product(name: "AAInfographics", package: "AAChartKit-Swift")
+                .product(name: "AAInfographics", package: "AAChartKit-Swift"),
             ],
             path: ".",
             exclude: ["Tests"]
