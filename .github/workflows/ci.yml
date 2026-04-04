@@ -31,12 +31,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: Packages/OsaurusCore/.build
-          key: spm-core-${{ runner.os }}-${{ hashFiles('Packages/OsaurusCore/Package.swift') }}
+          key: spm-core-${{ runner.os }}-${{ hashFiles('Packages/OsaurusCore/Package.swift', 'Packages/OsaurusCore/Package.resolved') }}
           restore-keys: spm-core-${{ runner.os }}-
 
       - name: Test OsaurusCore
         run: >-
           swift test --package-path Packages/OsaurusCore
+          --force-resolved-versions
           --skip KVCacheStoreTests
           --skip MLXGenerationEngineTests
 
@@ -55,11 +56,11 @@ jobs:
         uses: actions/cache@v4
         with:
           path: Packages/OsaurusCLI/.build
-          key: spm-cli-${{ runner.os }}-${{ hashFiles('Packages/OsaurusCLI/Package.swift') }}
+          key: spm-cli-${{ runner.os }}-${{ hashFiles('Packages/OsaurusCLI/Package.swift', 'Packages/OsaurusCLI/Package.resolved') }}
           restore-keys: spm-cli-${{ runner.os }}-
 
       - name: Test OsaurusCLI
-        run: swift test --package-path Packages/OsaurusCLI
+        run: swift test --package-path Packages/OsaurusCLI --force-resolved-versions
 
   swiftlint:
     runs-on: macos-latest

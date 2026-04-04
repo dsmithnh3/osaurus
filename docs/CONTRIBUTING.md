@@ -120,6 +120,25 @@ The core library (`Packages/OsaurusCore/`) follows a layered architecture. Each 
 - Add doc comments for non-obvious logic; avoid redundant comments
 - Handle errors explicitly and avoid swallowing exceptions
 
+### Dependencies
+
+`Packages/OsaurusCore/Package.resolved` is the single source of truth for
+pinned dependency versions. It is committed to git and used by CI.
+
+Xcode generates its own workspace-level resolved file locally, but that file
+is gitignored. After adding, removing, or updating a dependency in Xcode,
+run:
+
+```
+make resolve
+```
+
+This re-resolves the package-level lockfile so it reflects your changes.
+Commit the updated `Packages/OsaurusCore/Package.resolved` with your PR.
+
+CI runs with `--force-resolved-versions`, so it will fail if the resolved
+file is out of date relative to `Package.swift`.
+
 ### Testing
 
 - Add or update tests in `Packages/OsaurusCore/Tests/` where reasonable

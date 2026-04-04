@@ -8,7 +8,7 @@ CONFIG := Release
 PROJECT := App/osaurus.xcodeproj
 DERIVED := build/DerivedData
 
-.PHONY: help cli app install-cli serve status test clean bench-setup bench-ingest bench-ingest-chunks bench-run bench
+.PHONY: help cli app install-cli serve status test resolve clean bench-setup bench-ingest bench-ingest-chunks bench-run bench
 
 help:
 	@echo "Targets:"
@@ -23,6 +23,7 @@ help:
 	@echo "  bench-run           Run LOCOMO benchmark only (skip ingestion)"
 	@echo "  bench               Full ingest + run LOCOMO benchmark"
 	@echo "  test           Run OsaurusCore package tests"
+	@echo "  resolve        Re-resolve SPM dependencies (run after changing deps in Xcode)"
 	@echo "  clean          Remove DerivedData build output"
 
 cli:
@@ -58,6 +59,13 @@ status:
 test:
 	@echo "Running OsaurusCore tests…"
 	swift test --package-path Packages/OsaurusCore
+
+resolve:
+	@echo "Resolving OsaurusCore dependencies…"
+	swift package resolve --package-path Packages/OsaurusCore
+	@echo "Resolving OsaurusCLI dependencies…"
+	swift package resolve --package-path Packages/OsaurusCLI
+	@echo "Done. Commit Packages/OsaurusCore/Package.resolved if it changed."
 
 ## ── LOCOMO Benchmark ──────────────────────────────────────────────
 
