@@ -108,10 +108,14 @@ public actor MemoryContextAssembler {
             MemoryLogger.service.warning("Context assembly: failed to load user edits: \(error)")
         }
 
-        // 2. User Profile (never trimmed)
+        // 2. User Profile (trimmed to profileMaxTokens budget)
         do {
             if let profile = try db.loadUserProfile() {
-                sections.append("## User Profile\n\(profile.content)")
+                let maxChars = config.profileMaxTokens * Self.charsPerToken
+                let content = profile.content.count > maxChars
+                    ? String(profile.content.prefix(maxChars))
+                    : profile.content
+                sections.append("## User Profile\n\(content)")
             }
         } catch {
             MemoryLogger.service.warning("Context assembly: failed to load user profile: \(error)")

@@ -114,9 +114,12 @@ public enum SystemPromptBuilder {
         if trimmed.isEmpty || trimmed == "default" || trimmed == "foundation" {
             return true
         }
-        if trimmed.contains("/") {
-            return false
+        // Check installed models — covers both short names
+        // and full HuggingFace IDs ("mlx-community/LFM2-VL-3B-5bit").
+        if ModelManager.findInstalledModel(named: trimmed) != nil {
+            return true
         }
-        return ModelManager.findInstalledModel(named: trimmed) != nil
+        // If it contains "/" and wasn't found locally, it's a remote model.
+        return false
     }
 }

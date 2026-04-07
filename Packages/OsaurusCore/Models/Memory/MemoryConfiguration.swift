@@ -117,6 +117,19 @@ public struct MemoryConfiguration: Codable, Equatable, Sendable {
         self.verificationJaccardDedupThreshold = verificationJaccardDedupThreshold
     }
 
+    /// Returns a copy with reduced token budgets for local MLX models.
+    /// Caps total memory context to ~1,250 tokens to
+    /// reduce prefill time while preserving the most relevant context.
+    public func scaledForLocalModel() -> MemoryConfiguration {
+        var c = self
+        c.profileMaxTokens = min(c.profileMaxTokens, 500)
+        c.workingMemoryBudgetTokens = min(c.workingMemoryBudgetTokens, 300)
+        c.summaryBudgetTokens = min(c.summaryBudgetTokens, 300)
+        c.chunkBudgetTokens = min(c.chunkBudgetTokens, 0)
+        c.graphBudgetTokens = min(c.graphBudgetTokens, 100)
+        return c
+    }
+
     /// Returns a copy with all values clamped to valid ranges.
     public func validated() -> MemoryConfiguration {
         var c = self

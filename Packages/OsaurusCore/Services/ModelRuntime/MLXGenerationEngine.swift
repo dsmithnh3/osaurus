@@ -134,6 +134,7 @@ struct MLXGenerationEngine {
         }
 
         let result: ResultBox = try await container.perform { (context: MLXLMCommon.ModelContext) in
+            var ttftELap = CFAbsoluteTimeGetCurrent()
             let chat = preprocessImages(in: buildChat())
             let toolsSpec = buildToolsSpec()
             let parameters = ModelRuntime.makeGenerateParameters(
@@ -169,6 +170,7 @@ struct MLXGenerationEngine {
                     userInfo: [NSLocalizedDescriptionKey: "Chat template error: \(detail)"]
                 )
             }
+            debugLog("[TTFT] engine tokenization: \(Int((CFAbsoluteTimeGetCurrent() - ttftELap) * 1000))ms")
 
             var contextWithEOS = context
             let existing = context.configuration.extraEOSTokens
@@ -188,6 +190,7 @@ struct MLXGenerationEngine {
             }
             var cache: [any KVCache]
             var effectiveInput = fullLMInput
+            ttftELap = CFAbsoluteTimeGetCurrent()
 
             if let existingCache = existingCache, let cachedTokens = cachedTokens, fullLMInput.image == nil,
                 fullLMInput.video == nil
@@ -262,6 +265,8 @@ struct MLXGenerationEngine {
                 )
             }
 
+            debugLog("[TTFT] engine cacheReuseLogic: \(Int((CFAbsoluteTimeGetCurrent() - ttftELap) * 1000))ms")
+            ttftELap = CFAbsoluteTimeGetCurrent()
             // ── Two-phase prefill ──────────────────────────────────────────────────────
             //
             // Problem: hybrid models like Qwen3.5 have MambaCache layers (isTrimmable=false).
@@ -496,6 +501,7 @@ struct MLXGenerationEngine {
                 }
                 genContinuation.onTermination = { @Sendable _ in genTask.cancel() }
 
+                debugLog("[TTFT] engine twoPhase prefill total: \(Int((CFAbsoluteTimeGetCurrent() - ttftELap) * 1000))ms")
                 engineLog.info("prepareAndGenerate: twoPhase stream created, returning")
 
                 let toolCallFormat = contextWithEOS.configuration.toolCallFormat ?? .json
@@ -523,6 +529,7 @@ struct MLXGenerationEngine {
                     parameters: parameters
                 )
             }
+            debugLog("[TTFT] engine singlePhase prefill (TokenIterator): \(Int((CFAbsoluteTimeGetCurrent() - ttftELap) * 1000))ms effectiveTokens=\(effectiveInput.text.tokens.dim(0))")
             let postPrefillOffset = effectiveCacheOffset(cache)
             debugLog(
                 "[MLXGenerationEngine] post-prefill effectiveCacheOffset=\(postPrefillOffset) cacheCount=\(cache.count) cacheTypes=\(cache.prefix(4).map { type(of: $0) })"

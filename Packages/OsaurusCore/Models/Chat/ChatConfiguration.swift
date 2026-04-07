@@ -78,6 +78,13 @@ public struct ChatConfiguration: Codable, Equatable, Sendable {
     /// when osaurus is acting as a plain LLM backend for an external agent (e.g. Claude via API).
     public var disableTools: Bool
 
+    // MARK: - Local Model Settings
+    /// When true (default), local MLX models get a minimal prompt: just the
+    /// user's message and sandbox tools (if enabled). Memory, preflight search,
+    /// and capability discovery tools are skipped to maximize speed. Set to false
+    /// to give local models the full context — same as remote models.
+    public var shouldLimitLocalModelContext: Bool
+
     // MARK: - Clipboard Settings
     /// When true, Osaurus will monitor the clipboard for new text content to offer as context.
     public var enableClipboardMonitoring: Bool
@@ -100,6 +107,7 @@ public struct ChatConfiguration: Codable, Equatable, Sendable {
         defaultAutonomousExec: AutonomousExecConfig? = nil,
         preflightSearchMode: PreflightSearchMode? = nil,
         disableTools: Bool = false,
+        shouldLimitLocalModelContext: Bool = true,
         enableClipboardMonitoring: Bool = true
     ) {
         self.hotkey = hotkey
@@ -119,6 +127,7 @@ public struct ChatConfiguration: Codable, Equatable, Sendable {
         self.defaultAutonomousExec = defaultAutonomousExec
         self.preflightSearchMode = preflightSearchMode
         self.disableTools = disableTools
+        self.shouldLimitLocalModelContext = shouldLimitLocalModelContext
         self.enableClipboardMonitoring = enableClipboardMonitoring
     }
 
@@ -147,6 +156,7 @@ public struct ChatConfiguration: Codable, Equatable, Sendable {
             forKey: .preflightSearchMode
         )
         disableTools = try container.decodeIfPresent(Bool.self, forKey: .disableTools) ?? false
+        shouldLimitLocalModelContext = try container.decodeIfPresent(Bool.self, forKey: .shouldLimitLocalModelContext) ?? true
         enableClipboardMonitoring = try container.decodeIfPresent(Bool.self, forKey: .enableClipboardMonitoring) ?? true
     }
 

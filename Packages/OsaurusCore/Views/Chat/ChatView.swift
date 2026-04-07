@@ -773,8 +773,8 @@ final class ChatSession: ObservableObject {
     }
 
     /// Build tool specifications: always-loaded set for chat mode.
-    func buildToolSpecs(executionMode: WorkExecutionMode, excludeCapabilityTools: Bool = false) -> [Tool] {
-        ToolRegistry.shared.alwaysLoadedSpecs(mode: executionMode, excludeCapabilityTools: excludeCapabilityTools)
+    func buildToolSpecs(executionMode: WorkExecutionMode, excludeCapabilityTools: Bool = false, excludeLocalModelTools: Bool = false) -> [Tool] {
+        ToolRegistry.shared.alwaysLoadedSpecs(mode: executionMode, excludeCapabilityTools: excludeCapabilityTools, excludeLocalModelTools: excludeLocalModelTools)
     }
 
     func send(_ text: String, attachments: [Attachment] = []) {
@@ -837,44 +837,62 @@ final class ChatSession: ObservableObject {
             // user-only while isStreaming is true and the table early-returns without assistant rows.
             rebuildVisibleBlocks()
             do {
+                let ttftT0 = CFAbsoluteTimeGetCurrent()
                 let engine = chatEngineFactory()
                 let chatCfg = ChatConfigurationStore.load()
 
                 // MARK: - Capability Setup
                 let effectiveAgentId = agentId ?? Agent.defaultId
+                var ttftLap = CFAbsoluteTimeGetCurrent()
                 let executionMode = await prepareChatExecutionMode(agentId: effectiveAgentId)
+                debugLog("[TTFT] prepareChatExecutionMode: \(Int((CFAbsoluteTimeGetCurrent() - ttftLap) * 1000))ms")
                 guard isRunActive(runId) else { return }
+
+                let isCompact = SystemPromptBuilder.isLocalModel(selectedModel)
+                let minimalLocalContext = isCompact && chatCfg.shouldLimitLocalModelContext
 
                 let baseSystemPrompt = SystemPromptBuilder.effectiveBasePrompt(
                     AgentManager.shared.effectiveSystemPrompt(for: effectiveAgentId)
                 )
 
-                let memoryConfig = MemoryConfigurationStore.load()
-                let memoryContext = await MemoryContextAssembler.assembleContext(
-                    agentId: effectiveAgentId.uuidString,
-                    config: memoryConfig
-                )
+                // For local models in minimal mode, skip memory entirely.
+                let memoryContext: String
+                if minimalLocalContext {
+                    memoryContext = ""
+                    debugLog("[TTFT] MemoryContext: skipped (minimalLocalContext)")
+                } else {
+                    let memoryConfig = MemoryConfigurationStore.load()
+                    ttftLap = CFAbsoluteTimeGetCurrent()
+                    memoryContext = await MemoryContextAssembler.assembleContext(
+                        agentId: effectiveAgentId.uuidString,
+                        config: memoryConfig
+                    )
+                    debugLog("[TTFT] MemoryContextAssembler: \(Int((CFAbsoluteTimeGetCurrent() - ttftLap) * 1000))ms")
+                }
                 guard isRunActive(runId) else { return }
                 updateMemoryTokens(fromContext: memoryContext)
 
                 // Pre-flight RAG: search capabilities based on user's message.
-                // Skipped when disableTools is set or when the agent uses manual tool selection.
+                // Skipped for local models in minimal mode, when disableTools is set,
+                // or when the agent uses manual tool selection.
                 let toolsDisabled = chatCfg.disableTools
                 let toolMode = AgentManager.shared.effectiveToolSelectionMode(for: effectiveAgentId)
                 let preflight: PreflightResult
-                if !toolsDisabled && toolMode == .auto {
+                if !minimalLocalContext && !toolsDisabled && toolMode == .auto {
                     let preflightMode = chatCfg.preflightSearchMode ?? .balanced
-                    preflight = await PreflightCapabilitySearch.search(query: trimmed, mode: preflightMode)
+                    ttftLap = CFAbsoluteTimeGetCurrent()
+                    preflight = await PreflightCapabilitySearch.search(query: trimmed, mode: preflightMode, isLocalModel: isCompact)
+                    debugLog("[TTFT] PreflightCapabilitySearch.search(mode=\(preflightMode.rawValue)): \(Int((CFAbsoluteTimeGetCurrent() - ttftLap) * 1000))ms items=\(preflight.items.count) tools=\(preflight.toolSpecs.count)")
                 } else {
                     preflight = PreflightResult(toolSpecs: [], contextSnippet: "", items: [])
                 }
+                debugLog("[TTFT] Phase1 contextAssembly total: \(Int((CFAbsoluteTimeGetCurrent() - ttftT0) * 1000))ms")
                 guard isRunActive(runId) else { return }
 
                 if !preflight.items.isEmpty {
                     assistantTurn.preflightCapabilities = preflight.items
                 }
 
-                let isCompact = SystemPromptBuilder.isLocalModel(selectedModel)
                 var sys = buildSystemPrompt(
                     base: baseSystemPrompt,
                     agentId: effectiveAgentId,
@@ -886,12 +904,15 @@ final class ChatSession: ObservableObject {
                     sys += "\n\n" + preflight.contextSnippet
                 }
 
-                sys = SystemPromptBuilder.prependMemoryContext(memoryContext, to: sys)
+                if !memoryContext.isEmpty {
+                    sys = SystemPromptBuilder.prependMemoryContext(memoryContext, to: sys)
+                }
                 let isManualTools = toolMode == .manual
+                let excludeLocalTools = minimalLocalContext
                 var toolSpecs =
                     toolsDisabled
                     ? []
-                    : buildToolSpecs(executionMode: executionMode, excludeCapabilityTools: isManualTools)
+                    : buildToolSpecs(executionMode: executionMode, excludeCapabilityTools: isManualTools, excludeLocalModelTools: excludeLocalTools)
 
                 if !toolsDisabled {
                     if isManualTools {
@@ -916,6 +937,7 @@ final class ChatSession: ObservableObject {
                     sys += "\n\n" + section
                 }
 
+                debugLog("[TTFT] prompt breakdown: sysChars=\(sys.count) sysTokensEst=\(sys.count/4) toolCount=\(toolSpecs.count) toolTokensEst=\(ToolRegistry.shared.totalEstimatedTokens(for: toolSpecs)) memoryTokens=\(_memoryContextTokens) turns=\(turns.count) isCompact=\(isCompact) excludeLocalTools=\(excludeLocalTools)")
                 budgetTracker.snapshot(
                     systemPromptChars: sys.count,
                     memoryTokens: _memoryContextTokens,
@@ -1034,7 +1056,10 @@ final class ChatSession: ObservableObject {
                             self?.rebuildVisibleBlocks()
                         }
 
+                        let ttftEngineStart = CFAbsoluteTimeGetCurrent()
                         let stream = try await engine.streamChat(request: req)
+                        debugLog("[TTFT] engine.streamChat returned: \(Int((CFAbsoluteTimeGetCurrent() - ttftEngineStart) * 1000))ms")
+                        debugLog("[TTFT] Phase1+Phase2 total (send to stream ready): \(Int((CFAbsoluteTimeGetCurrent() - ttftT0) * 1000))ms")
                         debugLog("send: got stream, entering delta loop")
                         for try await delta in stream {
                             if !isRunActive(runId) {
@@ -1061,7 +1086,10 @@ final class ChatSession: ObservableObject {
                                 continue
                             }
                             if !delta.isEmpty {
-                                if firstDeltaTime == nil { firstDeltaTime = Date() }
+                                if firstDeltaTime == nil {
+                                    firstDeltaTime = Date()
+                                    debugLog("[TTFT] FIRST TOKEN: \(Int((CFAbsoluteTimeGetCurrent() - ttftT0) * 1000))ms total from send()")
+                                }
                                 uiDeltaCount += 1
                                 processor.receiveDelta(delta)
                             }

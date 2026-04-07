@@ -454,11 +454,15 @@ actor ModelRuntime {
         modelId: String,
         modelName: String
     ) async throws -> AsyncThrowingStream<ModelRuntimeEvent, Error> {
+        let ttftRT0 = CFAbsoluteTimeGetCurrent()
+        var ttftRLap = ttftRT0
         _ = await activeGenerationTask?.value
+        debugLog("[TTFT] runtime awaitActiveGeneration: \(Int((CFAbsoluteTimeGetCurrent() - ttftRLap) * 1000))ms")
         if Task.isCancelled { throw CancellationError() }
 
         // Cancel and await any background prefix-cache tasks for this model so
         // we never have two concurrent Metal/MLX operations on the same container.
+        ttftRLap = CFAbsoluteTimeGetCurrent()
         let modelPrefix = "\(modelName):"
         let stalePrefixTasks = prefixCacheTasks.filter { $0.key.hasPrefix(modelPrefix) }
         for (key, task) in stalePrefixTasks {
@@ -466,13 +470,18 @@ actor ModelRuntime {
             _ = await task.value
             prefixCacheTasks.removeValue(forKey: key)
         }
+        if !stalePrefixTasks.isEmpty {
+            debugLog("[TTFT] runtime cancelPrefixCacheTasks(\(stalePrefixTasks.count)): \(Int((CFAbsoluteTimeGetCurrent() - ttftRLap) * 1000))ms")
+        }
         if Task.isCancelled { throw CancellationError() }
 
         genLog.info("generateEventStream: start model=\(modelName, privacy: .public)")
 
         let effectiveStopSequences = stopSequences
         let cfg = await getConfig()
+        ttftRLap = CFAbsoluteTimeGetCurrent()
         let holder = try await loadContainer(id: modelId, name: modelName)
+        debugLog("[TTFT] runtime loadContainer: \(Int((CFAbsoluteTimeGetCurrent() - ttftRLap) * 1000))ms model=\(modelName)")
 
         let wiredPolicy = MLXLMCommon.WiredSumPolicy()
         let wiredTicket = wiredPolicy.ticket(
@@ -525,7 +534,9 @@ actor ModelRuntime {
 
         // Acquire exclusive Metal access after all throwing setup is complete.
         // This ensures the gate is never left locked by a loadContainer failure.
+        ttftRLap = CFAbsoluteTimeGetCurrent()
         await MetalGate.shared.enterGeneration()
+        debugLog("[TTFT] runtime MetalGate.enterGeneration: \(Int((CFAbsoluteTimeGetCurrent() - ttftRLap) * 1000))ms")
         if Task.isCancelled {
             await MetalGate.shared.exitGeneration()
             throw CancellationError()
@@ -535,6 +546,7 @@ actor ModelRuntime {
         // The UI shows a spinner; once the first generated token arrives prefillDidFinish() clears it.
         InferenceProgressManager.shared.prefillWillStartAsync(tokenCount: 0)
 
+        ttftRLap = CFAbsoluteTimeGetCurrent()
         do {
             let genResult = try await MLXGenerationEngine.prepareAndGenerate(
                 container: holder.container,
@@ -591,6 +603,7 @@ actor ModelRuntime {
                 throw error
             }
         }
+        debugLog("[TTFT] runtime prepareAndGenerate: \(Int((CFAbsoluteTimeGetCurrent() - ttftRLap) * 1000))ms promptTokens=\(newTokens.count)")
         genLog.info("generateEventStream: stream created tokenCount=\(newTokens.count, privacy: .public)")
         // Prefill is now complete; update the display with the actual token count while
         // generation is warming up (the first token clears the indicator).
@@ -616,6 +629,7 @@ actor ModelRuntime {
         // Two-phase path: use the stable-boundary snapshot from prepareAndGenerate (keyed by
         // stableTokens, before gen-prefix). This ensures the next turn's common-prefix check
         // hits exactly at cacheOffset, with toTrim == 0, even for MambaCache models.
+        ttftRLap = CFAbsoluteTimeGetCurrent()
         if let sid = sessionId {
             let (snapCacheToStore, snapTokensToStore): ([any KVCache], [Int])
             if let override = snapshotCacheOverride {
@@ -643,6 +657,8 @@ actor ModelRuntime {
                 "pre-gen snapshot stored session=\(sid.prefix(8), privacy: .public) tokens=\(snapTokensToStore.count, privacy: .public) offset=\(snapshotOffset, privacy: .public)"
             )
         }
+        debugLog("[TTFT] runtime cacheSnapshot+eval: \(Int((CFAbsoluteTimeGetCurrent() - ttftRLap) * 1000))ms")
+        debugLog("[TTFT] runtime generateEventStream total: \(Int((CFAbsoluteTimeGetCurrent() - ttftRT0) * 1000))ms")
 
         // Thread the tokenizer into StreamAccumulator so it can decode token IDs to text.
         let capturedToolsSpec = buildTools()

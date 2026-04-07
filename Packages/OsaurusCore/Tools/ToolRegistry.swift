@@ -549,6 +549,14 @@ final class ToolRegistry: ObservableObject {
         "capabilities_search", "capabilities_load", "methods_save", "methods_report",
     ]
 
+    /// Tools excluded for local models — capability discovery and memory search
+    /// tools add token overhead and cause inefficient tool-call loops on small models.
+    static let localModelExcludedToolNames: Set<String> =
+        capabilityToolNames.union([
+            "search_working_memory", "search_conversations",
+            "search_summaries", "search_graph",
+        ])
+
     /// Always-loaded tool specs: built-in + runtime-managed tools.
     /// These are always included when registered — mode exclusions handle
     /// which runtime tools are relevant. Plugin/MCP/sandbox-plugin tools
@@ -557,7 +565,10 @@ final class ToolRegistry: ObservableObject {
     /// When `excludeCapabilityTools` is true (manual tool selection mode),
     /// dynamic discovery tools are stripped so the model only sees
     /// the user's explicitly chosen tools.
-    func alwaysLoadedSpecs(mode: WorkExecutionMode, excludeCapabilityTools: Bool = false) -> [Tool] {
+    ///
+    /// When `excludeLocalModelTools` is true, capability discovery and memory
+    /// search tools are stripped to reduce prompt size for local MLX models.
+    func alwaysLoadedSpecs(mode: WorkExecutionMode, excludeCapabilityTools: Bool = false, excludeLocalModelTools: Bool = false) -> [Tool] {
         let builtInNames = Set(builtInToolNames)
         let runtimeNames = runtimeManagedToolNames
         let excluded = excludedToolNames(for: mode)
@@ -568,6 +579,7 @@ final class ToolRegistry: ObservableObject {
             }
             .filter { !excluded.contains($0.name) }
             .filter { !excludeCapabilityTools || !Self.capabilityToolNames.contains($0.name) }
+            .filter { !excludeLocalModelTools || !Self.localModelExcludedToolNames.contains($0.name) }
             .sorted { $0.name < $1.name }
             .map { $0.asOpenAITool() }
     }

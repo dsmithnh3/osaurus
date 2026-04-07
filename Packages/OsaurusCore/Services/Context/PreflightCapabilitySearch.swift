@@ -130,6 +130,7 @@ enum PreflightCapabilitySearch {
     /// skip the search entirely since raw queries produce too many false positives.
     private static func extractSearchTerms(from query: String) async -> String? {
         do {
+            let t0 = CFAbsoluteTimeGetCurrent()
             let response = try await CoreModelService.shared.generate(
                 prompt: query,
                 systemPrompt: searchTermExtractionPrompt,
@@ -137,6 +138,7 @@ enum PreflightCapabilitySearch {
                 maxTokens: 128,
                 timeout: extractionTimeoutSeconds
             )
+            debugLog("[TTFT] preflight extractSearchTerms (CoreModelService.generate): \(Int((CFAbsoluteTimeGetCurrent() - t0) * 1000))ms")
             let terms = response.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !terms.isEmpty else { return nil }
             logger.info("Pre-flight extracted search terms: \(terms)")
@@ -147,20 +149,36 @@ enum PreflightCapabilitySearch {
         }
     }
 
-    static func search(query: String, mode: PreflightSearchMode = .balanced) async -> PreflightResult {
+    static func search(query: String, mode: PreflightSearchMode = .balanced, isLocalModel: Bool = false) async -> PreflightResult {
         let empty = PreflightResult(toolSpecs: [], contextSnippet: "", items: [])
 
         guard mode != .off else { return empty }
         guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return empty
         }
+
+        // Skip preflight for short queries — LLM extraction produces
+        // low-quality terms for brief inputs, wasting latency.
+        let wordCount = query.split(whereSeparator: \.isWhitespace).count
+        let minWords = isLocalModel ? 6 : 4
+        guard wordCount >= minWords else {
+            debugLog("[TTFT] preflight skipped: query too short (\(wordCount) words, min \(minWords))")
+            return empty
+        }
+
         guard let searchQuery = await extractSearchTerms(from: query) else {
             return empty
         }
 
+        let ragT0 = CFAbsoluteTimeGetCurrent()
         let hits = await CapabilitySearch.search(query: searchQuery, topK: mode.topKValues)
+        debugLog("[TTFT] preflight RAG search (methods+tools+skills): \(Int((CFAbsoluteTimeGetCurrent() - ragT0) * 1000))ms methods=\(hits.methods.count) tools=\(hits.tools.count) skills=\(hits.skills.count)")
 
         if hits.isEmpty {
+            // For local models, skip Plugin Creator injection — the full instructions
+            // add instane amount of tokens to prefill. The model can discover plugin creation
+            // via capabilities_search at runtime if needed.
+            guard !isLocalModel else { return empty }
             guard await CapabilitySearch.canCreatePlugins() else { return empty }
             let skill = await MainActor.run {
                 SkillManager.shared.skill(named: "Sandbox Plugin Creator")
