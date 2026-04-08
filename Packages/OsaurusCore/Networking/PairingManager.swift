@@ -65,7 +65,7 @@ public final class PairingManager: ObservableObject {
 
     private static let relayBase = "https://agent.osaurus.ai"
     private static let pollInterval: TimeInterval = 2.0
-    private static let pollTimeout: TimeInterval = 290.0 // just under 5-minute TTL
+    private static let pollTimeout: TimeInterval = 290.0  // just under 5-minute TTL
 
     private init() {}
 
@@ -88,7 +88,7 @@ public final class PairingManager: ObservableObject {
 
         let data = try await post(path: "/pair/initiate", body: body)
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let code = json["code"] as? String
+            let code = json["code"] as? String
         else { throw PairingError.networkError("Unexpected response") }
 
         return code
@@ -106,15 +106,15 @@ public final class PairingManager: ObservableObject {
 
             let data = try await get(path: "/pair/\(code)/result")
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let status = json["status"] as? String
+                let status = json["status"] as? String
             else { throw PairingError.networkError("Unexpected response") }
 
             switch status {
             case "approved":
                 guard let remoteAddress = json["approverAddress"] as? String,
-                      let confirmCode = json["confirmCode"] as? String,
-                      let sigHex = json["approverSignature"] as? String,
-                      let timestamp = json["approverTimestamp"] as? Int
+                    let confirmCode = json["confirmCode"] as? String,
+                    let sigHex = json["approverSignature"] as? String,
+                    let timestamp = json["approverTimestamp"] as? Int
                 else { throw PairingError.networkError("Incomplete approval payload") }
 
                 try verifyApproverSignature(
@@ -148,7 +148,7 @@ public final class PairingManager: ObservableObject {
 
         let data = try await get(path: "/pair/\(code)")
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let initiatorAddress = json["initiatorAddress"] as? String
+            let initiatorAddress = json["initiatorAddress"] as? String
         else { throw PairingError.codeNotFound }
 
         return PairingInfo(initiatorAddress: initiatorAddress)
@@ -166,7 +166,7 @@ public final class PairingManager: ObservableObject {
 
         let context = OsaurusIdentityContext.biometric()
         var masterKey = try MasterKey.getPrivateKey(context: context)
-        defer { masterKey.resetBytes(in: masterKey.startIndex..<masterKey.endIndex) }
+        defer { masterKey.resetBytes(in: masterKey.startIndex ..< masterKey.endIndex) }
 
         let pairingAddress = try PairingKey.deriveAddress(masterKey: masterKey)
         let confirmCode = generateConfirmCode()
@@ -186,7 +186,7 @@ public final class PairingManager: ObservableObject {
 
         let data = try await post(path: "/pair/approve", body: body)
         guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let returnedInitiator = json["initiatorAddress"] as? String
+            let returnedInitiator = json["initiatorAddress"] as? String
         else { throw PairingError.networkError("Unexpected response") }
 
         return PairingResult(
@@ -223,7 +223,7 @@ public final class PairingManager: ObservableObject {
     }
 
     private func generateConfirmCode() -> String {
-        let n = Int.random(in: 0..<10_000)
+        let n = Int.random(in: 0 ..< 10_000)
         return String(format: "%04d", n)
     }
 
@@ -265,7 +265,7 @@ public final class PairingManager: ObservableObject {
             throw PairingError.networkError("No HTTP response")
         }
         switch http.statusCode {
-        case 200..<300: return data
+        case 200 ..< 300: return data
         case 404: throw PairingError.codeNotFound
         case 409: throw PairingError.alreadyApproved
         default:

@@ -23,7 +23,7 @@ struct PairingKey {
 
     static func signEIP191(_ message: String, masterKey: Data) throws -> Data {
         var key = derive(masterKey: masterKey)
-        defer { key.resetBytes(in: key.startIndex..<key.endIndex) }
+        defer { key.resetBytes(in: key.startIndex ..< key.endIndex) }
         return try signEIP191Message(message, privateKey: key)
     }
 }
