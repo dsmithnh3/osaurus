@@ -1,0 +1,213 @@
+//
+//  PairingManager.swift
+//  osaurus
+//
+//  Brokers identity exchange between two Osaurus clients via the relay server
+//  using a 4-digit pair code.
+//
+//  Flow — Initiator:
+//    1. initiatePairing(agentIndex:agentAddress:) → code (show to user)
+//    2. pollForApproval(code:localAddress:) → PairingResult (blocks until approved)
+//
+//  Flow — Approver:
+//    1. fetchPairingInfo(code:) → PairingInfo (show initiator address)
+//    2. approvePairing(code:agentIndex:agentAddress:initiatorAddress:) → PairingResult
+//
+
+import Foundation
+import LocalAuthentication
+
+// MARK: - Public Types
+
+public struct PairingInfo: Sendable {
+    public let initiatorAddress: OsaurusID
+}
+
+public struct PairingResult: Sendable {
+    public let localAddress: OsaurusID
+    public let remoteAddress: OsaurusID
+}
+
+public enum PairingError: LocalizedError, Sendable {
+    case invalidCode
+    case codeNotFound
+    case alreadyApproved
+    case networkError(String)
+    case timeout
+    case identityRequired
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidCode: return "Invalid pair code"
+        case .codeNotFound: return "Pair code not found or expired"
+        case .alreadyApproved: return "This pair code has already been used"
+        case .networkError(let msg): return "Network error: \(msg)"
+        case .timeout: return "Pairing timed out — code expired"
+        case .identityRequired: return "Identity not set up"
+        }
+    }
+}
+
+// MARK: - PairingManager
+
+@MainActor
+public final class PairingManager: ObservableObject {
+    public static let shared = PairingManager()
+
+    private static let relayBase = "https://agent.osaurus.ai"
+    private static let pollInterval: TimeInterval = 2.0
+    private static let pollTimeout: TimeInterval = 290.0 // just under 5-minute TTL
+
+    private init() {}
+
+    // MARK: - Initiator: Start
+
+    /// Sign and submit a pairing initiation. Returns the 4-digit code to display.
+    public func initiatePairing(agentIndex: UInt32, agentAddress: OsaurusID) async throws -> String {
+        guard let masterKey = obtainMasterKey() else { throw PairingError.identityRequired }
+
+        let timestamp = Int(Date().timeIntervalSince1970)
+        let message = "osaurus-pair:initiate:\(agentAddress):\(timestamp)"
+        let childKey = AgentKey.derive(masterKey: masterKey, index: agentIndex)
+        let sig = try signEIP191Message(message, privateKey: childKey)
+
+        let body: [String: Any] = [
+            "agentAddress": agentAddress,
+            "timestamp": timestamp,
+            "signature": "0x" + sig.hexEncodedString,
+        ]
+
+        let data = try await post(path: "/pair/initiate", body: body)
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let code = json["code"] as? String
+        else { throw PairingError.networkError("Unexpected response") }
+
+        return code
+    }
+
+    // MARK: - Initiator: Poll
+
+    /// Poll the relay until the approver confirms. Blocks up to ~5 minutes.
+    public func pollForApproval(code: String, localAddress: OsaurusID) async throws -> PairingResult {
+        let deadline = Date().addingTimeInterval(Self.pollTimeout)
+        while Date() < deadline {
+            try await Task.sleep(for: .seconds(Self.pollInterval))
+            if Task.isCancelled { throw PairingError.timeout }
+
+            let data = try await get(path: "/pair/\(code)/result")
+            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let status = json["status"] as? String
+            else { throw PairingError.networkError("Unexpected response") }
+
+            switch status {
+            case "approved":
+                guard let remoteAddress = json["approverAddress"] as? String else {
+                    throw PairingError.networkError("Missing approver address")
+                }
+                return PairingResult(localAddress: localAddress, remoteAddress: remoteAddress)
+            case "pending":
+                continue
+            default:
+                throw PairingError.codeNotFound
+            }
+        }
+        throw PairingError.timeout
+    }
+
+    // MARK: - Approver: Fetch
+
+    /// Look up who is waiting at the given code, without committing to approval yet.
+    public func fetchPairingInfo(code: String) async throws -> PairingInfo {
+        guard isValidCode(code) else { throw PairingError.invalidCode }
+
+        let data = try await get(path: "/pair/\(code)")
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let initiatorAddress = json["initiatorAddress"] as? String
+        else { throw PairingError.codeNotFound }
+
+        return PairingInfo(initiatorAddress: initiatorAddress)
+    }
+
+    // MARK: - Approver: Confirm
+
+    /// Sign and submit approval using the master key. Returns the completed pairing result.
+    public func approvePairing(
+        code: String,
+        initiatorAddress: OsaurusID
+    ) async throws -> PairingResult {
+        guard isValidCode(code) else { throw PairingError.invalidCode }
+
+        let context = OsaurusIdentityContext.biometric()
+        var masterKey = try MasterKey.getPrivateKey(context: context)
+        defer { masterKey.resetBytes(in: masterKey.startIndex..<masterKey.endIndex) }
+
+        let pairingAddress = try PairingKey.deriveAddress(masterKey: masterKey)
+
+        let timestamp = Int(Date().timeIntervalSince1970)
+        let message = "osaurus-pair:approve:\(code):\(initiatorAddress):\(pairingAddress):\(timestamp)"
+        let sig = try PairingKey.signEIP191(message, masterKey: masterKey)
+
+        let body: [String: Any] = [
+            "code": code,
+            "pairingAddress": pairingAddress,
+            "timestamp": timestamp,
+            "signature": "0x" + sig.hexEncodedString,
+        ]
+
+        let data = try await post(path: "/pair/approve", body: body)
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let returnedInitiator = json["initiatorAddress"] as? String
+        else { throw PairingError.networkError("Unexpected response") }
+
+        return PairingResult(localAddress: pairingAddress, remoteAddress: returnedInitiator)
+    }
+
+    // MARK: - Helpers
+
+    private func isValidCode(_ code: String) -> Bool {
+        code.count == 4 && code.allSatisfy(\.isNumber)
+    }
+
+    private func obtainMasterKey() -> Data? {
+        let context = OsaurusIdentityContext.biometric()
+        return try? MasterKey.getPrivateKey(context: context)
+    }
+
+    private func post(path: String, body: [String: Any]) async throws -> Data {
+        guard let url = URL(string: Self.relayBase + path) else {
+            throw PairingError.networkError("Invalid URL")
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        return try await execute(request)
+    }
+
+    private func get(path: String) async throws -> Data {
+        guard let url = URL(string: Self.relayBase + path) else {
+            throw PairingError.networkError("Invalid URL")
+        }
+        return try await execute(URLRequest(url: url))
+    }
+
+    private func execute(_ request: URLRequest) async throws -> Data {
+        let (data, response): (Data, URLResponse)
+        do {
+            (data, response) = try await URLSession.shared.data(for: request)
+        } catch {
+            throw PairingError.networkError(error.localizedDescription)
+        }
+        guard let http = response as? HTTPURLResponse else {
+            throw PairingError.networkError("No HTTP response")
+        }
+        switch http.statusCode {
+        case 200..<300: return data
+        case 404: throw PairingError.codeNotFound
+        case 409: throw PairingError.alreadyApproved
+        default:
+            let msg = String(data: data, encoding: .utf8) ?? "HTTP \(http.statusCode)"
+            throw PairingError.networkError(msg)
+        }
+    }
+}
