@@ -12,16 +12,65 @@ struct ProjectHomeView: View {
     let project: Project
     @ObservedObject var windowState: ChatWindowState
 
+    @StateObject private var inputSession: ChatSession
+
     @Environment(\.theme) private var theme
 
+    init(project: Project, windowState: ChatWindowState) {
+        self.project = project
+        self._windowState = ObservedObject(wrappedValue: windowState)
+        self._inputSession = StateObject(wrappedValue: ChatSession())
+    }
+
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                headerSection
-                outputsSection
-                recentsSection
+        ZStack(alignment: .bottom) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    headerSection
+                    outputsSection
+                    recentsSection
+                }
+                .padding(20)
+                .padding(.bottom, 100)
             }
-            .padding(20)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            FloatingInputCard(
+                text: $inputSession.input,
+                selectedModel: $inputSession.selectedModel,
+                pendingAttachments: $inputSession.pendingAttachments,
+                isContinuousVoiceMode: $inputSession.isContinuousVoiceMode,
+                voiceInputState: $inputSession.voiceInputState,
+                showVoiceOverlay: $inputSession.showVoiceOverlay,
+                pickerItems: inputSession.pickerItems,
+                activeModelOptions: $inputSession.activeModelOptions,
+                isStreaming: inputSession.isStreaming,
+                supportsImages: false,
+                estimatedContextTokens: 0,
+                onSend: { manualText in
+                    let message = manualText ?? inputSession.input
+                    let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !trimmed.isEmpty else { return }
+                    // Create a new project-scoped chat, switch to chat mode
+                    windowState.startNewChat()
+                    windowState.session.input = trimmed
+                    windowState.switchMode(to: .chat)
+                    windowState.pushNavigation(NavigationEntry(mode: .chat, projectId: project.id))
+                    windowState.session.sendCurrent()
+                    inputSession.input = ""
+                },
+                onStop: {},
+                agentId: windowState.agentId,
+                windowId: windowState.windowId,
+                onClearChat: { inputSession.reset() },
+                onSkillSelected: { skillId in
+                    inputSession.pendingOneOffSkillId = skillId
+                },
+                pendingSkillId: $inputSession.pendingOneOffSkillId
+            )
+            .frame(maxWidth: 800)
+            .frame(maxWidth: .infinity)
+            .padding(.bottom, 12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.trailing, windowState.showProjectInspector ? 300 : 0)
