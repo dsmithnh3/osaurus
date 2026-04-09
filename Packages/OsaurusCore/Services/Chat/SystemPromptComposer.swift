@@ -47,22 +47,35 @@ public struct SystemPromptComposer: Sendable {
         append(.static(id: "base", label: "Base Prompt", content: effective))
     }
 
-    public mutating func appendMemory(agentId: String, query: String? = nil) async {
+    public mutating func appendMemory(agentId: String, query: String? = nil, projectId: String? = nil) async {
         let config = MemoryConfigurationStore.load()
         let context: String
         if let query, !query.isEmpty {
             context = await MemoryContextAssembler.assembleContext(
                 agentId: agentId,
                 config: config,
-                query: query
+                query: query,
+                projectId: projectId
             )
         } else {
             context = await MemoryContextAssembler.assembleContext(
                 agentId: agentId,
-                config: config
+                config: config,
+                projectId: projectId
             )
         }
         append(.dynamic(id: "memory", label: "Memory", content: context))
+    }
+
+    /// Append project context (instructions + .md files from project folder).
+    public mutating func appendProjectContext(projectId: UUID?) async {
+        guard let projectId else { return }
+        guard let context = await ProjectManager.shared.projectContext(for: projectId) else { return }
+        append(.dynamic(id: "project", label: "Project Context", content: """
+        <project-context>
+        \(context)
+        </project-context>
+        """))
     }
 
     // MARK: - High-Level API
@@ -96,7 +109,12 @@ public struct SystemPromptComposer: Sendable {
         toolsDisabled: Bool
     ) async -> ComposedContext {
         var comp = composer
-        await comp.appendMemory(agentId: agentId.uuidString)
+        // Inject active project context
+        let activeProjectId = ProjectManager.shared.activeProjectId
+        await comp.appendProjectContext(projectId: activeProjectId)
+
+        // Inject memory (project-scoped if active)
+        await comp.appendMemory(agentId: agentId.uuidString, projectId: activeProjectId?.uuidString)
 
         let toolMode = AgentManager.shared.effectiveToolSelectionMode(for: agentId)
         let preflight: PreflightResult
