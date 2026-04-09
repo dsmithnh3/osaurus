@@ -71,6 +71,11 @@ public enum OsaurusPaths {
         root().appendingPathComponent("agents", isDirectory: true)
     }
 
+    /// Projects directory
+    public static func projects() -> URL {
+        root().appendingPathComponent("projects", isDirectory: true)
+    }
+
     /// Themes directory
     public static func themes() -> URL {
         root().appendingPathComponent("themes", isDirectory: true)
@@ -233,6 +238,10 @@ public enum OsaurusPaths {
 
     public static func agentFile(for id: UUID) -> URL {
         agents().appendingPathComponent("\(id.uuidString).json")
+    }
+
+    public static func projectFile(for id: UUID) -> URL {
+        projects().appendingPathComponent("\(id.uuidString).json")
     }
 
     public static func themeFile(for id: UUID) -> URL {
