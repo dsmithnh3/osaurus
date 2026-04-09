@@ -425,7 +425,8 @@ When inside a project, the main content becomes a 3-panel layout:
 
 **Chat input:**
 
-- Reuses existing `FloatingInputCard`
+- Reuses existing `FloatingInputCard` — must pass all current init params including slash-command support (`onClearChat`, `onSkillSelected`, `pendingSkillId`) added in v0.16.9 (#822)
+- Slash commands work naturally in the project input (skills, templates, and actions all apply)
 - Sending a message creates a new Chat session or Work task scoped to the project, then navigates into it (pushes to navigation stack, switches mode)
 
 **Outputs section:**
