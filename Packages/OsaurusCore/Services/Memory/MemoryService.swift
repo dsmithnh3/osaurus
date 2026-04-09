@@ -35,7 +35,8 @@ public actor MemoryService {
         assistantMessage: String?,
         agentId: String,
         conversationId: String,
-        sessionDate: String? = nil
+        sessionDate: String? = nil,
+        projectId: String? = nil
     ) async {
         do {
             try db.insertPendingSignal(

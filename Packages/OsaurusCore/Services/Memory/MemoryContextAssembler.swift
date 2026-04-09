@@ -38,10 +38,55 @@ public actor MemoryContextAssembler {
         await shared.assembleContextWithQuery(agentId: agentId, config: config, query: query)
     }
 
+    /// Assemble context scoped to a specific project.
+    public static func assembleContext(
+        agentId: String,
+        config: MemoryConfiguration,
+        projectId: String?
+    ) async -> String {
+        await shared.assembleContextCached(agentId: agentId, config: config, projectId: projectId)
+    }
+
+    /// Assemble context with query-aware retrieval, scoped to a project.
+    public static func assembleContext(
+        agentId: String,
+        config: MemoryConfiguration,
+        query: String,
+        projectId: String?
+    ) async -> String {
+        await shared.assembleContextWithQuery(agentId: agentId, config: config, query: query, projectId: projectId)
+    }
+
     private func assembleContextWithQuery(
         agentId: String,
         config: MemoryConfiguration,
         query: String
+    ) async -> String {
+        guard config.enabled else { return "" }
+
+        let baseContext = buildContext(agentId: agentId, config: config)
+
+        guard !query.isEmpty else { return baseContext }
+
+        let relevantSection = await buildQueryRelevantSection(
+            agentId: agentId,
+            query: query,
+            config: config,
+            existingContext: baseContext
+        )
+
+        if relevantSection.isEmpty {
+            return baseContext
+        }
+
+        return baseContext.isEmpty ? relevantSection : baseContext + "\n\n" + relevantSection
+    }
+
+    private func assembleContextWithQuery(
+        agentId: String,
+        config: MemoryConfiguration,
+        query: String,
+        projectId: String?
     ) async -> String {
         guard config.enabled else { return "" }
 
@@ -75,10 +120,24 @@ public actor MemoryContextAssembler {
         return context
     }
 
+    private func assembleContextCached(agentId: String, config: MemoryConfiguration, projectId: String?) -> String {
+        guard config.enabled else { return "" }
+
+        let cacheKey = "\(agentId):\(projectId ?? "global")"
+        if let cached = cache[cacheKey], Date().timeIntervalSince(cached.timestamp) < Self.cacheTTL {
+            return cached.context
+        }
+
+        let context = buildContext(agentId: agentId, config: config)
+        cache[cacheKey] = CacheEntry(context: context, timestamp: Date())
+        return context
+    }
+
     /// Invalidate cached context for a specific agent.
     public func invalidateCache(agentId: String? = nil) {
         if let agentId {
-            cache.removeValue(forKey: agentId)
+            // Remove all cache entries for this agent (any project)
+            cache = cache.filter { !$0.key.hasPrefix("\(agentId):") }
         } else {
             cache.removeAll()
         }
