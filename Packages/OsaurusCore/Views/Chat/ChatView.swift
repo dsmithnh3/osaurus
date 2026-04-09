@@ -1446,7 +1446,8 @@ struct ChatView: View {
                                 focusTrigger: focusTrigger,
                                 agentId: windowState.agentId,
                                 windowId: windowState.windowId,
-                                isCompact: windowState.showSidebar
+                                isCompact: windowState.showSidebar,
+                                onClearChat: { observedSession.reset() }
                             )
                         } else {
                             // No models empty state

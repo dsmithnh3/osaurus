@@ -52,6 +52,8 @@ struct FloatingInputCard: View {
     var cumulativeTokens: Int? = nil
     /// Compact mode (sidebar open) - hides secondary chip content
     var isCompact: Bool = false
+    /// Callback to clear the current chat session (triggered by /clear command).
+    var onClearChat: (() -> Void)? = nil
 
     init(
         text: Binding<String>,
@@ -79,7 +81,8 @@ struct FloatingInputCard: View {
         onResume: (() -> Void)? = nil,
         canResume: Bool = false,
         cumulativeTokens: Int? = nil,
-        isCompact: Bool = false
+        isCompact: Bool = false,
+        onClearChat: (() -> Void)? = nil
     ) {
         self._text = text
         self._selectedModel = selectedModel
@@ -107,6 +110,7 @@ struct FloatingInputCard: View {
         self.canResume = canResume
         self.cumulativeTokens = cumulativeTokens
         self.isCompact = isCompact
+        self.onClearChat = onClearChat
     }
 
     // Observe managers for reactive updates
@@ -115,6 +119,29 @@ struct FloatingInputCard: View {
     @ObservedObject private var sandboxState = SandboxManager.State.shared
     @ObservedObject private var clipboardService = ClipboardService.shared
     @ObservedObject private var appConfig = AppConfiguration.shared
+
+    // MARK: - Slash Command State
+
+    private var slashRegistry = SlashCommandRegistry.shared
+    @State private var slashSelectedIndex: Int = 0
+
+    /// Non-nil when the user is typing a slash command (e.g. "tr" for "/tr").
+    /// Nil once a space or newline is typed (command fully typed or dismissed).
+    private var activeSlashQuery: String? {
+        guard localText.hasPrefix("/") else { return nil }
+        let afterSlash = String(localText.dropFirst())
+        guard !afterSlash.contains(" ") && !afterSlash.contains("\n") else { return nil }
+        return afterSlash
+    }
+
+    private var slashFilteredCommands: [SlashCommand] {
+        guard let query = activeSlashQuery else { return [] }
+        return slashRegistry.filtered(query: query)
+    }
+
+    private var showSlashPopup: Bool {
+        activeSlashQuery != nil && !slashFilteredCommands.isEmpty
+    }
 
     // Local state for text input to prevent parent re-renders on every keystroke
     @State private var localText: String = ""
@@ -167,6 +194,9 @@ struct FloatingInputCard: View {
     private let maxImageSize: Int = 10 * 1024 * 1024  // 10MB limit
 
     private var canSend: Bool {
+        // While a slash command is being typed, the input is a command — not a sendable message
+        guard activeSlashQuery == nil else { return false }
+
         let hasText = !localText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let hasContent = hasText || !pendingAttachments.isEmpty
 
@@ -282,20 +312,39 @@ struct FloatingInputCard: View {
                     )
                 )
             } else {
-                inputCard
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 20)
-                    .onDrop(of: [UTType.image, UTType.fileURL], isTargeted: $isDragOver) { providers in
-                        handleFileDrop(providers)
-                    }
-                    .transition(
-                        .asymmetric(
-                            insertion: .opacity.combined(with: .scale(scale: 0.98)),
-                            removal: .opacity.combined(with: .scale(scale: 0.98))
+                VStack(spacing: 4) {
+                    // Slash command popup — appears above the input card
+                    if showSlashPopup {
+                        SlashCommandPopup(
+                            commands: slashFilteredCommands,
+                            selectedIndex: $slashSelectedIndex,
+                            onSelect: applySlashCommand
                         )
+                        .padding(.horizontal, 20)
+                        .transition(
+                            .asymmetric(
+                                insertion: .opacity.combined(with: .scale(scale: 0.98, anchor: .bottom)),
+                                removal: .opacity.combined(with: .scale(scale: 0.98, anchor: .bottom))
+                            )
+                        )
+                    }
+
+                    inputCard
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 20)
+                        .onDrop(of: [UTType.image, UTType.fileURL], isTargeted: $isDragOver) { providers in
+                            handleFileDrop(providers)
+                        }
+                }
+                .transition(
+                    .asymmetric(
+                        insertion: .opacity.combined(with: .scale(scale: 0.98)),
+                        removal: .opacity.combined(with: .scale(scale: 0.98))
                     )
+                )
             }
         }
+        .animation(.spring(response: 0.25, dampingFraction: 0.85), value: showSlashPopup)
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: showVoiceOverlay)
     }
 
@@ -406,6 +455,10 @@ struct FloatingInputCard: View {
                 if newValue != localText {
                     localText = newValue
                 }
+            }
+            .onChange(of: localText) { _, _ in
+                // Reset popup selection whenever the typed query changes
+                slashSelectedIndex = 0
             }
             .onChange(of: focusTrigger) { _, _ in
                 isFocused = true
@@ -894,6 +947,42 @@ extension FloatingInputCard {
         text = localText
         onSendNow?()
         localText = ""
+    }
+
+    // MARK: - Slash Commands
+
+    private func applySlashCommand(_ command: SlashCommand) {
+        switch command.kind {
+        case .action:
+            localText = ""
+            text = ""
+            handleBuiltInSlashAction(command.name)
+        case .template:
+            let templateText = command.template ?? ""
+            localText = templateText
+            text = templateText
+            isFocused = true
+        }
+    }
+
+    private func handleBuiltInSlashAction(_ name: String) {
+        switch name {
+        case "clear":
+            if let clearChat = onClearChat {
+                clearChat()
+            } else {
+                ToastManager.shared.info("Clear Chat", message: "Pass an onClearChat handler to enable /clear")
+            }
+        case "model":
+            showModelPicker = true
+        case "help":
+            ToastManager.shared.info(
+                "Slash Commands",
+                message: "Type / to open commands. ↑↓ to navigate, ↵ to select, Esc to dismiss."
+            )
+        default:
+            break
+        }
     }
 
     // MARK: - Pending Attachments Preview (Inline)
@@ -1919,12 +2008,34 @@ extension FloatingInputCard {
             isFocused: $isFocused,
             maxHeight: maxHeight,
             onCommit: {
-                syncAndSend()
+                if showSlashPopup {
+                    let cmds = slashFilteredCommands
+                    if slashSelectedIndex < cmds.count {
+                        applySlashCommand(cmds[slashSelectedIndex])
+                    }
+                } else {
+                    syncAndSend()
+                }
             },
             onShiftCommit: isStreaming && onSendNow != nil
                 ? {
                     syncAndSendNow()
-                } : nil
+                } : nil,
+            onArrowUp: showSlashPopup ? {
+                slashSelectedIndex = max(0, slashSelectedIndex - 1)
+                return true
+            } : nil,
+            onArrowDown: showSlashPopup ? {
+                let maxIndex = slashFilteredCommands.count - 1
+                slashSelectedIndex = min(maxIndex, slashSelectedIndex + 1)
+                return true
+            } : nil,
+            onEscape: showSlashPopup ? {
+                // Dismiss popup by clearing the slash prefix
+                localText = ""
+                text = ""
+                return true
+            } : nil
         )
         .frame(maxHeight: maxHeight)
         .overlay(alignment: .topLeading) {
