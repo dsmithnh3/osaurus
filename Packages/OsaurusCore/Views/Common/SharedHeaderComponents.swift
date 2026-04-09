@@ -41,13 +41,11 @@ struct HeaderActionButton: View {
 
 // MARK: - Mode Toggle Button
 
-/// Segmented toggle for switching between Chat and Work modes with sliding indicator.
+/// Segmented toggle for switching between Chat, Work, and Projects modes with sliding indicator.
 struct ModeToggleButton: View {
-    enum Mode { case chat, work }
-
-    let currentMode: Mode
+    let currentMode: ChatMode
     var isDisabled: Bool = false
-    let action: (Mode) -> Void
+    let action: (ChatMode) -> Void
 
     @State private var isHovered = false
     @Environment(\.theme) private var theme
@@ -55,25 +53,22 @@ struct ModeToggleButton: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            segment(icon: "bubble.left.and.bubble.right", label: "Chat", mode: .chat, isSelected: currentMode == .chat)
-            segment(icon: "bolt.fill", label: "Work", mode: .work, isSelected: currentMode == .work)
+            segment(mode: .chat, isSelected: currentMode == .chat)
+            segment(mode: .work, isSelected: currentMode == .work)
+            segment(mode: .project, isSelected: currentMode == .project)
         }
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
         .opacity(isDisabled ? 0.4 : 1.0)
         .disabled(isDisabled)
-        .help(
-            isDisabled
-                ? "Set up a model to use Work mode"
-                : (currentMode == .chat ? "Switch to Work mode" : "Switch to Chat mode")
-        )
+        .help(isDisabled ? "Set up a model to use Work mode" : "Switch mode")
     }
 
     @ViewBuilder
-    private func segment(icon: String, label: String, mode: Mode, isSelected: Bool) -> some View {
+    private func segment(mode: ChatMode, isSelected: Bool) -> some View {
         HStack(spacing: 5) {
-            Image(systemName: icon).font(.system(size: 10, weight: .semibold))
-            Text(label).font(.system(size: 11, weight: .semibold))
+            Image(systemName: mode.icon).font(.system(size: 10, weight: .semibold))
+            Text(mode.displayName).font(.system(size: 11, weight: .semibold))
         }
         .fixedSize()
         .foregroundColor(isSelected ? theme.primaryText : theme.tertiaryText)

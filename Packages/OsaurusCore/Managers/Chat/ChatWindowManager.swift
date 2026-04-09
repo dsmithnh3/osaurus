@@ -719,21 +719,18 @@ private struct ChatToolbarSidebarView: View {
     }
 }
 
-/// Mode toggle (Chat/Work).
+/// Mode toggle (Chat/Work/Projects).
 private struct ChatToolbarModeToggleView: View {
     @ObservedObject var windowState: ChatWindowState
     @ObservedObject var session: ChatSession
 
-    private var isWorkMode: Bool { windowState.mode == .work }
-
     var body: some View {
         ModeToggleButton(
-            currentMode: isWorkMode ? .work : .chat,
-            isDisabled: !isWorkMode && !session.hasAnyModel,
+            currentMode: windowState.mode,
+            isDisabled: windowState.mode != .work && !session.hasAnyModel,
             action: { tappedMode in
-                let current: ModeToggleButton.Mode = isWorkMode ? .work : .chat
-                guard tappedMode != current else { return }
-                windowState.switchMode(to: tappedMode == .work ? .work : .chat)
+                guard tappedMode != windowState.mode else { return }
+                windowState.switchMode(to: tappedMode)
             }
         )
         .environment(\.theme, windowState.theme)
