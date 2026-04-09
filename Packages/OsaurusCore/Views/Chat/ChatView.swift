@@ -1563,8 +1563,8 @@ struct ChatView: View {
         .tint(theme.accentColor)
         .sheet(item: $pendingDiscoveredAgent) { agent in
             if agent.address != nil {
-                PairingSheet(agent: agent) { apiKey in
-                    connectToDiscoveredAgent(agent, token: apiKey)
+                PairingSheet(agent: agent) { apiKey, isPermanent in
+                    connectToDiscoveredAgent(agent, token: apiKey, isEphemeral: !isPermanent)
                     pendingDiscoveredAgent = nil
                 } onCancel: {
                     pendingDiscoveredAgent = nil
@@ -1582,7 +1582,7 @@ struct ChatView: View {
         }
     }
 
-    private func connectToDiscoveredAgent(_ agent: DiscoveredAgent, token: String) {
+    private func connectToDiscoveredAgent(_ agent: DiscoveredAgent, token: String, isEphemeral: Bool = true) {
         // Strip trailing dot from mDNS hostnames (e.g. "device.local." -> "device.local")
         let rawHost = agent.host ?? "localhost"
         let host = rawHost.hasSuffix(".") ? String(rawHost.dropLast()) : rawHost
@@ -1620,7 +1620,7 @@ struct ChatView: View {
                 remoteAgentId: agent.id
             )
             providerId = provider.id
-            manager.addProvider(provider, apiKey: token.isEmpty ? nil : token, isEphemeral: true)
+            manager.addProvider(provider, apiKey: token.isEmpty ? nil : token, isEphemeral: isEphemeral)
         }
 
         windowState.selectedDiscoveredAgent = agent
@@ -1906,7 +1906,7 @@ private struct BonjourTokenSheet: View {
 /// Performs cryptographic pairing instead of prompting for a manual server token.
 private struct PairingSheet: View {
     let agent: DiscoveredAgent
-    let onSuccess: (String) -> Void
+    let onSuccess: (String, Bool) -> Void  // (apiKey, isPermanent)
     let onCancel: () -> Void
 
     @State private var isPairing = false
@@ -1966,8 +1966,8 @@ private struct PairingSheet: View {
         defer { isPairing = false }
 
         do {
-            let apiKey = try await PairingClient.pair(with: agent)
-            onSuccess(apiKey)
+            let (apiKey, isPermanent) = try await PairingClient.pair(with: agent)
+            onSuccess(apiKey, isPermanent)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -1987,6 +1987,7 @@ private enum PairingClient {
     struct PairResponseBody: Codable {
         let agentAddress: String
         let apiKey: String
+        let isPermanent: Bool
     }
 
     enum PairingError: LocalizedError {
@@ -2007,7 +2008,7 @@ private enum PairingClient {
         }
     }
 
-    static func pair(with agent: DiscoveredAgent) async throws -> String {
+    static func pair(with agent: DiscoveredAgent) async throws -> (apiKey: String, isPermanent: Bool) {
         let context = LAContext()
         context.touchIDAuthenticationAllowableReuseDuration = 300
 
@@ -2054,7 +2055,7 @@ private enum PairingClient {
             throw PairingError.decodingFailed
         }
 
-        return decoded.apiKey
+        return (apiKey: decoded.apiKey, isPermanent: decoded.isPermanent)
     }
 }
 
