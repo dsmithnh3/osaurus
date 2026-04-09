@@ -93,6 +93,8 @@ public struct Watcher: Codable, Identifiable, Sendable, Equatable {
     public let createdAt: Date
     /// When the watcher was last modified
     public var updatedAt: Date
+    /// The project this watcher belongs to. nil = no project
+    public var projectId: UUID?
 
     public init(
         id: UUID = UUID(),
@@ -109,7 +111,8 @@ public struct Watcher: Codable, Identifiable, Sendable, Equatable {
         lastTriggeredAt: Date? = nil,
         lastChatSessionId: UUID? = nil,
         createdAt: Date = Date(),
-        updatedAt: Date = Date()
+        updatedAt: Date = Date(),
+        projectId: UUID? = nil
     ) {
         self.id = id
         self.name = name
@@ -126,6 +129,7 @@ public struct Watcher: Codable, Identifiable, Sendable, Equatable {
         self.lastChatSessionId = lastChatSessionId
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.projectId = projectId
     }
 
     // MARK: - Backward-Compatible Decoding
@@ -138,7 +142,7 @@ public struct Watcher: Codable, Identifiable, Sendable, Equatable {
         case responsiveness, settleSeconds
         case debounceSeconds  // legacy key for migration
         case lastTriggeredAt, lastChatSessionId
-        case createdAt, updatedAt
+        case createdAt, updatedAt, projectId
     }
 
     public init(from decoder: Decoder) throws {
@@ -169,6 +173,7 @@ public struct Watcher: Codable, Identifiable, Sendable, Equatable {
         lastChatSessionId = try container.decodeIfPresent(UUID.self, forKey: .lastChatSessionId)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        projectId = try container.decodeIfPresent(UUID.self, forKey: .projectId)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -188,6 +193,7 @@ public struct Watcher: Codable, Identifiable, Sendable, Equatable {
         try container.encodeIfPresent(lastChatSessionId, forKey: .lastChatSessionId)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encodeIfPresent(projectId, forKey: .projectId)
         // Note: debounceSeconds is NOT encoded -- it's a legacy read-only key
     }
 

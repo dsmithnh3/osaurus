@@ -397,6 +397,8 @@ public struct WorkTask: Identifiable, Codable, Sendable, Equatable {
     public let createdAt: Date
     /// When the task was last updated
     public var updatedAt: Date
+    /// The project this task belongs to. nil = no project
+    public var projectId: UUID?
 
     public init(
         id: String = UUID().uuidString,
@@ -405,7 +407,8 @@ public struct WorkTask: Identifiable, Codable, Sendable, Equatable {
         agentId: UUID? = nil,
         status: WorkTaskStatus = .active,
         createdAt: Date = Date(),
-        updatedAt: Date = Date()
+        updatedAt: Date = Date(),
+        projectId: UUID? = nil
     ) {
         self.id = id
         self.title = title
@@ -414,6 +417,7 @@ public struct WorkTask: Identifiable, Codable, Sendable, Equatable {
         self.status = status
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        self.projectId = projectId
     }
 
     /// Generates a title from the query

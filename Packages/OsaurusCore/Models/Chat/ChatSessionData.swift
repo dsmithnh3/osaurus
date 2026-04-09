@@ -17,6 +17,8 @@ public struct ChatSessionData: Codable, Identifiable, Sendable {
     public var turns: [ChatTurnData]
     /// The agent this session belongs to. nil = Default agent
     public var agentId: UUID?
+    /// The project this session belongs to. nil = no project
+    public var projectId: UUID?
 
     public init(
         id: UUID = UUID(),
@@ -25,7 +27,8 @@ public struct ChatSessionData: Codable, Identifiable, Sendable {
         updatedAt: Date = Date(),
         selectedModel: String? = nil,
         turns: [ChatTurnData] = [],
-        agentId: UUID? = nil
+        agentId: UUID? = nil,
+        projectId: UUID? = nil
     ) {
         self.id = id
         self.title = title
@@ -34,6 +37,7 @@ public struct ChatSessionData: Codable, Identifiable, Sendable {
         self.selectedModel = selectedModel
         self.turns = turns
         self.agentId = agentId
+        self.projectId = projectId
     }
 
     // Custom decoder for backward compatibility with old sessions
@@ -48,6 +52,7 @@ public struct ChatSessionData: Codable, Identifiable, Sendable {
         agentId =
             try container.decodeIfPresent(UUID.self, forKey: .agentId)
             ?? container.decodeIfPresent(UUID.self, forKey: .personaId)
+        projectId = try container.decodeIfPresent(UUID.self, forKey: .projectId)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -59,10 +64,11 @@ public struct ChatSessionData: Codable, Identifiable, Sendable {
         try container.encodeIfPresent(selectedModel, forKey: .selectedModel)
         try container.encode(turns, forKey: .turns)
         try container.encodeIfPresent(agentId, forKey: .agentId)
+        try container.encodeIfPresent(projectId, forKey: .projectId)
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, title, createdAt, updatedAt, selectedModel, turns, agentId
+        case id, title, createdAt, updatedAt, selectedModel, turns, agentId, projectId
         case personaId  // legacy key for migration
     }
 
