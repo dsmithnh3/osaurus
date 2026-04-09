@@ -134,12 +134,23 @@ struct FloatingInputCard: View {
     private var slashRegistry = SlashCommandRegistry.shared
     @State private var slashSelectedIndex: Int = 0
 
-    /// Non-nil when the user is typing a slash command (e.g. "tr" for "/tr").
-    /// Nil once a space or newline is typed (command fully typed or dismissed).
+    /// Non-nil when the cursor is inside a slash command token (e.g. "/tr" or "hello /tr").
+    /// The slash must be at the start of text or immediately after whitespace.
+    /// Nil once a space or newline follows the slash (command completed or dismissed).
     private var activeSlashQuery: String? {
-        guard localText.hasPrefix("/") else { return nil }
-        let afterSlash = String(localText.dropFirst())
+        // Find the last '/' in the text
+        guard let slashRange = localText.range(of: "/", options: .backwards) else { return nil }
+
+        // The slash must be at position 0 or preceded by whitespace
+        let before = localText[..<slashRange.lowerBound]
+        if !before.isEmpty {
+            guard let lastChar = before.last, lastChar.isWhitespace else { return nil }
+        }
+
+        // Everything after the slash must have no spaces/newlines (still typing the token)
+        let afterSlash = String(localText[slashRange.upperBound...])
         guard !afterSlash.contains(" ") && !afterSlash.contains("\n") else { return nil }
+
         return afterSlash
     }
 
@@ -203,8 +214,8 @@ struct FloatingInputCard: View {
     private let maxImageSize: Int = 10 * 1024 * 1024  // 10MB limit
 
     private var canSend: Bool {
-        // While a slash command is being typed, the input is a command — not a sendable message
-        guard activeSlashQuery == nil else { return false }
+        // While the slash command popup is visible, Enter selects a command — not sends
+        guard !showSlashPopup else { return false }
 
         let hasText = !localText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let hasContent = hasText || !pendingAttachments.isEmpty
@@ -353,7 +364,6 @@ struct FloatingInputCard: View {
                 )
             }
         }
-        .animation(.spring(response: 0.25, dampingFraction: 0.85), value: showSlashPopup)
         .animation(.spring(response: 0.3, dampingFraction: 0.85), value: showVoiceOverlay)
     }
 
@@ -968,21 +978,34 @@ extension FloatingInputCard {
 
     // MARK: - Slash Commands
 
+    /// Returns the text with the active slash token replaced by `replacement`.
+    private func replacingSlashToken(with replacement: String) -> String {
+        guard let slashRange = localText.range(of: "/", options: .backwards) else {
+            return replacement
+        }
+        let before = localText[..<slashRange.lowerBound]
+        // Strip trailing space added by the button if replacement is empty
+        let prefix = replacement.isEmpty ? before.trimmingCharacters(in: .whitespaces) : String(before)
+        return prefix + replacement
+    }
+
     private func applySlashCommand(_ command: SlashCommand) {
         switch command.kind {
         case .action:
-            localText = ""
-            text = ""
+            let newText = replacingSlashToken(with: "")
+            localText = newText
+            text = newText
             handleBuiltInSlashAction(command.name)
         case .template:
             let templateText = command.template ?? ""
-            localText = templateText
-            text = templateText
+            let newText = replacingSlashToken(with: templateText)
+            localText = newText
+            text = newText
             isFocused = true
         case .skill:
-            // Clear the /command token and activate the skill for the next message.
-            localText = ""
-            text = ""
+            let newText = replacingSlashToken(with: "")
+            localText = newText
+            text = newText
             isFocused = true
             onSkillSelected?(command.id)
         }
@@ -2137,6 +2160,7 @@ extension FloatingInputCard {
         HStack(spacing: 8) {
             HStack(spacing: 6) {
                 mediaButton
+                slashCommandButton
                 if isVoiceConfigured {
                     voiceInputButton
                         .disabled(isStreaming)
@@ -2216,6 +2240,20 @@ extension FloatingInputCard {
             help: "Attach file (image, PDF, text, etc.)",
             action: pickAttachment
         )
+    }
+
+    private var slashCommandButton: some View {
+        SlashCommandTriggerButton(isActive: showSlashPopup) {
+            guard !showSlashPopup else { return }
+            if localText.isEmpty {
+                localText = "/"
+            } else if localText.last?.isWhitespace == true {
+                localText += "/"
+            } else {
+                localText += " /"
+            }
+            isFocused = true
+        }
     }
 
     private var stopButton: some View {
@@ -3001,6 +3039,56 @@ private struct ModelOptionsSelectorView: View {
 // MARK: - Input Action Button
 
 /// Polished circular action button for input card (media, voice, etc.)
+private struct SlashCommandTriggerButton: View {
+    let isActive: Bool
+    let action: () -> Void
+
+    @State private var isHovered = false
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        Button(action: action) {
+            ZStack {
+                Circle()
+                    .fill(theme.tertiaryBackground.opacity(isHovered ? 0.95 : 0.8))
+
+                if isHovered {
+                    Circle()
+                        .fill(
+                            LinearGradient(
+                                colors: [theme.accentColor.opacity(0.1), Color.clear],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                }
+
+                Text("/")
+                    .font(.system(size: 16, weight: .medium, design: .monospaced))
+                    .foregroundColor(isActive ? theme.accentColor : (isHovered ? theme.accentColor : theme.secondaryText))
+            }
+            .frame(width: 32, height: 32)
+            .overlay(
+                Circle()
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [
+                                theme.glassEdgeLight.opacity(isHovered ? 0.25 : 0.15),
+                                theme.primaryBorder.opacity(isHovered ? 0.2 : 0.1),
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 0.5
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .help(Text("Browse slash commands", bundle: .module))
+        .onHover { isHovered = $0 }
+    }
+}
+
 private struct InputActionButton: View {
     let icon: String
     let help: String
