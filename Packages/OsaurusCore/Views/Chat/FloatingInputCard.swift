@@ -460,6 +460,14 @@ struct FloatingInputCard: View {
                 // Reset popup selection whenever the typed query changes
                 slashSelectedIndex = 0
             }
+            .onChange(of: showSlashPopup) { _, isVisible in
+                // Keep registry in sync so the global key monitor can suppress
+                // Escape from closing the window while the popup is open.
+                SlashCommandRegistry.shared.isPopupVisible = isVisible
+            }
+            .onDisappear {
+                SlashCommandRegistry.shared.isPopupVisible = false
+            }
             .onChange(of: focusTrigger) { _, _ in
                 isFocused = true
             }

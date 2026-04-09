@@ -17,6 +17,10 @@ public final class SlashCommandRegistry {
     /// User-defined custom commands loaded from disk.
     public private(set) var customCommands: [SlashCommand] = []
 
+    /// True while the slash command popup is visible in any chat window.
+    /// Used by the global key monitor in ChatView to suppress window-close on Escape.
+    public var isPopupVisible: Bool = false
+
     private init() {
         refresh()
     }

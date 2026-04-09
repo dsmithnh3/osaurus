@@ -1804,6 +1804,11 @@ struct ChatView: View {
                 // Session deallocated means the window is gone — pass through
                 guard let session else { return event }
 
+                // Stage 0: Slash command popup is open — let the text view delegate handle it
+                if SlashCommandRegistry.shared.isPopupVisible {
+                    return event
+                }
+
                 // Check if voice input is active AND overlay is visible
                 if SpeechService.shared.isRecording && session.showVoiceOverlay {
                     // Stage 1: Cancel voice input
