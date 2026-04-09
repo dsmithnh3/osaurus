@@ -54,6 +54,11 @@ struct FloatingInputCard: View {
     var isCompact: Bool = false
     /// Callback to clear the current chat session (triggered by /clear command).
     var onClearChat: (() -> Void)? = nil
+    /// Callback when the user selects a skill slash command. Passes the skill UUID so the
+    /// caller can inject that skill's instructions as one-off context for the next send.
+    var onSkillSelected: ((UUID) -> Void)? = nil
+    /// Binding to the session's pending one-off skill. Non-nil shows a dismissable skill chip.
+    @Binding var pendingSkillId: UUID?
 
     init(
         text: Binding<String>,
@@ -82,7 +87,9 @@ struct FloatingInputCard: View {
         canResume: Bool = false,
         cumulativeTokens: Int? = nil,
         isCompact: Bool = false,
-        onClearChat: (() -> Void)? = nil
+        onClearChat: (() -> Void)? = nil,
+        onSkillSelected: ((UUID) -> Void)? = nil,
+        pendingSkillId: Binding<UUID?> = .constant(nil)
     ) {
         self._text = text
         self._selectedModel = selectedModel
@@ -111,6 +118,8 @@ struct FloatingInputCard: View {
         self.cumulativeTokens = cumulativeTokens
         self.isCompact = isCompact
         self.onClearChat = onClearChat
+        self.onSkillSelected = onSkillSelected
+        self._pendingSkillId = pendingSkillId
     }
 
     // Observe managers for reactive updates
@@ -970,6 +979,12 @@ extension FloatingInputCard {
             localText = templateText
             text = templateText
             isFocused = true
+        case .skill:
+            // Clear the /command token and activate the skill for the next message.
+            localText = ""
+            text = ""
+            isFocused = true
+            onSkillSelected?(command.id)
         }
     }
 
@@ -990,6 +1005,48 @@ extension FloatingInputCard {
             )
         default:
             break
+        }
+    }
+
+    // MARK: - Pending Skill Chip
+
+    @ViewBuilder
+    private var pendingSkillChipView: some View {
+        if let skillId = pendingSkillId,
+           let skill = SkillManager.shared.skill(for: skillId)
+        {
+            HStack(spacing: 5) {
+                Image(systemName: "wand.and.stars")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(theme.accentColor)
+                Text(skill.name)
+                    .font(theme.font(size: 11, weight: .medium))
+                    .foregroundColor(theme.primaryText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Button {
+                    withAnimation(theme.springAnimation()) {
+                        pendingSkillId = nil
+                    }
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 7, weight: .bold))
+                        .foregroundColor(theme.secondaryText)
+                        .padding(3)
+                        .background(Circle().fill(theme.tertiaryBackground))
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(theme.accentColor.opacity(0.1))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(theme.accentColor.opacity(0.25), lineWidth: 0.5)
+            )
         }
     }
 
@@ -1839,15 +1896,20 @@ extension FloatingInputCard {
                     .padding(.top, 8)
             }
 
-            if !pendingAttachments.isEmpty {
-                inlinePendingAttachmentsPreview
-                    .padding(.horizontal, 12)
-                    .padding(.top, 10)
+            if !pendingAttachments.isEmpty || pendingSkillId != nil {
+                HStack(alignment: .center, spacing: 6) {
+                    pendingSkillChipView
+                    if !pendingAttachments.isEmpty {
+                        inlinePendingAttachmentsPreview
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
             }
 
             textInputArea
                 .padding(.horizontal, 12)
-                .padding(.top, pendingAttachments.isEmpty ? 10 : 6)
+                .padding(.top, (pendingAttachments.isEmpty && pendingSkillId == nil) ? 10 : 6)
                 .padding(.bottom, 6)
 
             buttonBar

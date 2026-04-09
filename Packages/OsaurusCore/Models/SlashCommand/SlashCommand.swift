@@ -14,6 +14,8 @@ public enum SlashCommandKind: String, Codable, Sendable {
     case action
     /// Replaces the /command token with a prompt template the user continues typing.
     case template
+    /// Activates a Skill for the next sent message (injects skill instructions into system context).
+    case skill
 }
 
 /// A slash command available in the chat input.

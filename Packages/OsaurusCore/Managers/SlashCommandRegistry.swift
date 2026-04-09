@@ -121,8 +121,7 @@ public final class SlashCommandRegistry {
                 name: slug,
                 description: desc,
                 icon: "wand.and.stars",
-                kind: .template,
-                template: "[\(skill.name)] ",
+                kind: .skill,
                 isBuiltIn: false
             ))
         }
