@@ -24,10 +24,7 @@ struct ProjectView: View {
                     windowState: windowState
                 )
             } else {
-                Text("Select a project")
-                    .font(.title2)
-                    .foregroundColor(theme.secondaryText)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                ProjectListView(windowState: windowState)
             }
 
             // Right inspector overlay
