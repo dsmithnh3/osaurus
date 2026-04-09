@@ -1288,8 +1288,15 @@ struct ChatView: View {
 
     var body: some View {
         Group {
-            // Switch between Chat and Work modes
-            if windowState.mode == .work, let workSession = windowState.workSession {
+            // Content routing by mode and sidebar state
+            if windowState.sidebarContentMode == .projects {
+                ProjectListView(windowState: windowState)
+            } else if windowState.sidebarContentMode == .scheduled {
+                // TODO: ScheduleListView filtered by active project
+                Text("Scheduled tasks")
+            } else if windowState.mode == .project, let projectSession = windowState.projectSession {
+                ProjectView(windowState: windowState, session: projectSession)
+            } else if windowState.mode == .work, let workSession = windowState.workSession {
                 WorkView(windowState: windowState, session: workSession)
             } else {
                 chatModeContent
