@@ -35,7 +35,7 @@ public final class WorkDatabase: @unchecked Sendable {
     public static let shared = WorkDatabase()
 
     /// Current schema version
-    private static let schemaVersion = 2
+    private static let schemaVersion = 5
 
     /// Database connection pointer
     private var db: OpaquePointer?
@@ -143,6 +143,10 @@ public final class WorkDatabase: @unchecked Sendable {
 
         if currentVersion < 4 {
             try migrateToV4()
+        }
+
+        if currentVersion < 5 {
+            try migrateToV5()
         }
     }
 
@@ -342,6 +346,21 @@ public final class WorkDatabase: @unchecked Sendable {
         )
 
         try setSchemaVersion(4)
+    }
+
+    /// V5: Add project_agents table for project-agent associations
+    private func migrateToV5() throws {
+        try executeRaw("""
+            CREATE TABLE IF NOT EXISTS project_agents (
+                project_id TEXT NOT NULL,
+                agent_id TEXT NOT NULL,
+                added_at TEXT NOT NULL DEFAULT (datetime('now')),
+                PRIMARY KEY (project_id, agent_id)
+            )
+        """)
+        try executeRaw("CREATE INDEX IF NOT EXISTS idx_project_agents_agent ON project_agents(agent_id)")
+        try setSchemaVersion(5)
+        print("[WorkDatabase] Migrated to v5: project_agents table")
     }
 
     // MARK: - Query Execution

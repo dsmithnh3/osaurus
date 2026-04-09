@@ -31,7 +31,7 @@ public enum MemoryDatabaseError: Error, LocalizedError {
 public final class MemoryDatabase: @unchecked Sendable {
     public static let shared = MemoryDatabase()
 
-    private static let schemaVersion = 3
+    private static let schemaVersion = 4
 
     private static let memoryEntryColumns = """
         id, agent_id, type, content, confidence, model, source_conversation_id, tags, status,
@@ -157,6 +157,7 @@ public final class MemoryDatabase: @unchecked Sendable {
         if currentVersion < 1 { try migrateToV1() }
         if currentVersion < 2 { try migrateToV2() }
         if currentVersion < 3 { try migrateToV3() }
+        if currentVersion < 4 { try migrateToV4() }
     }
 
     private func getSchemaVersion() throws -> Int {
@@ -486,6 +487,25 @@ public final class MemoryDatabase: @unchecked Sendable {
         )
         try setSchemaVersion(3)
         MemoryLogger.database.info("Migration to v3 completed")
+    }
+
+    /// V4: Add project_id column to memory tables for project-scoped memory
+    private func migrateToV4() throws {
+        MemoryLogger.database.info("Running migration to v4")
+
+        let tables = ["memory_entries", "conversation_summaries", "conversations", "entities", "relationships"]
+        for table in tables {
+            try executeRaw("ALTER TABLE \(table) ADD COLUMN project_id TEXT")
+        }
+        try executeRaw("CREATE INDEX IF NOT EXISTS idx_memory_entries_agent_project ON memory_entries(agent_id, project_id)")
+        try executeRaw("CREATE INDEX IF NOT EXISTS idx_summaries_agent_project ON conversation_summaries(agent_id, project_id)")
+        try executeRaw("CREATE INDEX IF NOT EXISTS idx_conversations_agent_project ON conversations(agent_id, project_id)")
+
+        try executeRaw(
+            "INSERT OR IGNORE INTO schema_version (version, description) VALUES (4, 'Add project_id columns for project-scoped memory')"
+        )
+        try setSchemaVersion(4)
+        MemoryLogger.database.info("Migration to v4 completed")
     }
 
     // MARK: - Query Execution
