@@ -622,6 +622,8 @@ private final class ChatToolbarDelegate: NSObject, NSToolbarDelegate {
     private static let modeToggleItem = NSToolbarItem.Identifier("ChatToolbar.modeToggle")
     private static let actionItem = NSToolbarItem.Identifier("ChatToolbar.action")
     private static let pinItem = NSToolbarItem.Identifier("ChatToolbar.pin")
+    private static let backItem = NSToolbarItem.Identifier("ChatToolbar.back")
+    private static let forwardItem = NSToolbarItem.Identifier("ChatToolbar.forward")
 
     private weak var windowState: ChatWindowState?
     private weak var session: ChatSession?
@@ -634,15 +636,15 @@ private final class ChatToolbarDelegate: NSObject, NSToolbarDelegate {
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         [
-            Self.sidebarItem, .flexibleSpace, Self.modeToggleItem, .flexibleSpace, Self.actionItem,
-            Self.pinItem,
+            Self.sidebarItem, Self.backItem, Self.forwardItem, .flexibleSpace, Self.modeToggleItem,
+            .flexibleSpace, Self.actionItem, Self.pinItem,
         ]
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         [
-            Self.sidebarItem, .flexibleSpace, Self.modeToggleItem, .flexibleSpace, Self.actionItem,
-            Self.pinItem,
+            Self.sidebarItem, Self.backItem, Self.forwardItem, .flexibleSpace, Self.modeToggleItem,
+            .flexibleSpace, Self.actionItem, Self.pinItem,
         ]
     }
 
@@ -680,6 +682,18 @@ private final class ChatToolbarDelegate: NSObject, NSToolbarDelegate {
                 identifier: itemIdentifier,
                 rootView:
                     ChatToolbarPinView(windowState: windowState)
+            )
+
+        case Self.backItem:
+            return makeHostingItem(
+                identifier: itemIdentifier,
+                rootView: ChatToolbarBackView(windowState: windowState)
+            )
+
+        case Self.forwardItem:
+            return makeHostingItem(
+                identifier: itemIdentifier,
+                rootView: ChatToolbarForwardView(windowState: windowState)
             )
 
         default:
@@ -769,6 +783,36 @@ private struct ChatToolbarPinView: View {
     var body: some View {
         PinButton(windowId: windowState.windowId)
             .environment(\.theme, windowState.theme)
+    }
+}
+
+/// Back navigation button.
+private struct ChatToolbarBackView: View {
+    @ObservedObject var windowState: ChatWindowState
+
+    var body: some View {
+        HeaderActionButton(
+            icon: "chevron.left",
+            help: "Back",
+            action: { windowState.goBack() }
+        )
+        .opacity(windowState.canGoBack ? 1.0 : 0.4)
+        .disabled(!windowState.canGoBack)
+    }
+}
+
+/// Forward navigation button.
+private struct ChatToolbarForwardView: View {
+    @ObservedObject var windowState: ChatWindowState
+
+    var body: some View {
+        HeaderActionButton(
+            icon: "chevron.right",
+            help: "Forward",
+            action: { windowState.goForward() }
+        )
+        .opacity(windowState.canGoForward ? 1.0 : 0.4)
+        .disabled(!windowState.canGoForward)
     }
 }
 
