@@ -18,6 +18,40 @@ struct WorkCloseConfirmation: Identifiable {
     let id = UUID()
 }
 
+/// Controls what the main content area displays based on sidebar nav selection.
+/// Orthogonal to ChatMode — ChatMode drives which engine is active,
+/// SidebarContentMode drives content panel routing.
+public enum SidebarContentMode: Sendable {
+    case chat
+    case projects
+    case scheduled
+}
+
+/// Lightweight state for the active project context. Plain struct stored as
+/// @Published on ChatWindowState (which is ObservableObject, not @Observable).
+public struct ProjectSession: Equatable, Sendable {
+    public var activeProjectId: UUID?
+    public var showInspector: Bool = true
+
+    public init(activeProjectId: UUID? = nil, showInspector: Bool = true) {
+        self.activeProjectId = activeProjectId
+        self.showInspector = showInspector
+    }
+}
+
+/// Entry in the navigation stack for back/forward support.
+public struct NavigationEntry: Equatable, Sendable {
+    public let mode: ChatMode
+    public let projectId: UUID?
+    public let sessionId: UUID?
+
+    public init(mode: ChatMode, projectId: UUID? = nil, sessionId: UUID? = nil) {
+        self.mode = mode
+        self.projectId = projectId
+        self.sessionId = sessionId
+    }
+}
+
 /// Per-window state container for ChatView - each window creates its own instance
 @MainActor
 final class ChatWindowState: ObservableObject {
@@ -52,6 +86,51 @@ final class ChatWindowState: ObservableObject {
 
     @Published private(set) var theme: ThemeProtocol
     @Published private(set) var cachedBackgroundImage: NSImage?
+
+    // MARK: - Project State
+
+    @Published var projectSession: ProjectSession?
+    @Published var sidebarContentMode: SidebarContentMode = .chat
+    @Published var showProjectInspector: Bool = true
+
+    // MARK: - Navigation Stack
+
+    @Published private(set) var navigationStack: [NavigationEntry] = []
+    @Published private(set) var navigationIndex: Int = -1
+
+    var canGoBack: Bool { navigationIndex > 0 }
+    var canGoForward: Bool { navigationIndex < navigationStack.count - 1 }
+
+    func pushNavigation(_ entry: NavigationEntry) {
+        // Truncate forward history
+        if navigationIndex < navigationStack.count - 1 {
+            navigationStack = Array(navigationStack.prefix(navigationIndex + 1))
+        }
+        navigationStack.append(entry)
+        navigationIndex = navigationStack.count - 1
+    }
+
+    func goBack() {
+        guard canGoBack else { return }
+        navigationIndex -= 1
+        let entry = navigationStack[navigationIndex]
+        restoreNavigationEntry(entry)
+    }
+
+    func goForward() {
+        guard canGoForward else { return }
+        navigationIndex += 1
+        let entry = navigationStack[navigationIndex]
+        restoreNavigationEntry(entry)
+    }
+
+    private func restoreNavigationEntry(_ entry: NavigationEntry) {
+        switchMode(to: entry.mode)
+        if let projectId = entry.projectId {
+            projectSession = ProjectSession(activeProjectId: projectId)
+            ProjectManager.shared.setActiveProject(projectId)
+        }
+    }
 
     // MARK: - Pre-computed View Values
 
@@ -185,19 +264,21 @@ final class ChatWindowState: ObservableObject {
         }
 
         mode = newMode
+        sidebarContentMode = .chat  // Reset sidebar content on mode change
 
-        // Handle work tool registration
-        if newMode == .work {
-            // Register work-specific tools
+        switch newMode {
+        case .work:
             WorkToolManager.shared.registerTools()
-
-            // Initialize work session if needed
             if workSession == nil {
                 workSession = WorkSession(agentId: agentId, windowState: self)
             }
             refreshWorkTasks()
-        } else {
-            // Unregister work-specific tools when leaving work mode
+        case .project:
+            WorkToolManager.shared.unregisterTools()
+            if projectSession == nil {
+                projectSession = ProjectSession()
+            }
+        case .chat:
             WorkToolManager.shared.unregisterTools()
         }
     }

@@ -38,6 +38,7 @@ public final class ExecutionContext: ObservableObject {
         switch mode {
         case .chat: chatSession.isStreaming
         case .work: workSession?.isExecuting ?? false
+        case .project: false
         }
     }
 
@@ -94,6 +95,8 @@ public final class ExecutionContext: ObservableObject {
             } catch {
                 print("[ExecutionContext] Work dispatch failed: \(error.localizedDescription)")
             }
+        case .project:
+            break
         }
     }
 
@@ -140,6 +143,7 @@ public final class ExecutionContext: ObservableObject {
         switch mode {
         case .chat: chatSession.stop()
         case .work: workSession?.cancelExecution()
+        case .project: break
         }
     }
 }

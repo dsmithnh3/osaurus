@@ -22,6 +22,7 @@ public final class TaskDispatcher {
         switch request.mode {
         case .work: return await btm.dispatchWork(request)
         case .chat: return await btm.dispatchChat(request)
+        case .project: return nil
         }
     }
 

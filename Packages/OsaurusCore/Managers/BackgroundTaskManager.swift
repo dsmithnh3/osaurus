@@ -202,6 +202,7 @@ public final class BackgroundTaskManager: ObservableObject {
         switch state.mode {
         case .work: state.session?.cancelExecution()
         case .chat: state.chatSession?.stop()
+        case .project: break
         }
 
         state.status = .cancelled
@@ -235,6 +236,8 @@ public final class BackgroundTaskManager: ObservableObject {
             }
         case .chat:
             state.chatSession?.stop()
+        case .project:
+            break
         }
     }
 

@@ -124,6 +124,8 @@ struct BackgroundTaskToastView: View {
             agentRunningContent
         case .chat:
             chatRunningContent
+        case .project:
+            chatRunningContent
         }
     }
 
