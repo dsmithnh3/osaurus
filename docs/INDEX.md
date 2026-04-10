@@ -53,8 +53,7 @@ Table of contents for Markdown guides in `docs/`. For **where code lives**, use 
 Personal fork notes (paths may vary upstream):
 
 - [Personal fork & local setup](personal_fork_local_documents/PERSONAL_FORK_AND_LOCAL_SETUP.md)
-- [Opal port roadmap](personal_fork_local_documents/OPAL_PORT_ROADMAP.md)
-- [Xcode preview catalog](personal_fork_local_documents/xcode-preview-catalog.md)
+- Optional local-only files (not linked—add and commit them if they should exist in every clone): `personal_fork_local_documents/OPAL_PORT_ROADMAP.md`, `personal_fork_local_documents/xcode-preview-catalog.md`
 
 ## Specs & plans
 
