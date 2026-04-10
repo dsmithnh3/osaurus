@@ -141,27 +141,100 @@ public final class ProjectManager {
     }
 
     /// Build the project context string for system prompt injection.
-    /// Includes project instructions and all .md files from the project folder.
+    /// Reads project instructions and discovered files within a character budget,
+    /// prioritized by tier and sorted by size within each tier.
     public func projectContext(for projectId: UUID) async -> String? {
         guard let project = projects.first(where: { $0.id == projectId }) else { return nil }
 
         var sections: [String] = []
+        var budgetRemaining = Self.projectContextBudgetChars
 
+        // 1. Project instructions (always first, always included)
         if let instructions = project.instructions, !instructions.isEmpty {
-            sections.append("## Project Instructions\n\n\(instructions)")
+            let section = "## Project Instructions\n\n\(instructions)"
+            sections.append(section)
+            budgetRemaining -= section.count
         }
 
-        // Scan .md files from project folder
-        if let folderPath = project.folderPath {
-            let folderURL = URL(fileURLWithPath: folderPath)
-            let mdFiles = discoverMarkdownFiles(in: folderURL)
-            for fileURL in mdFiles {
-                if let content = try? String(contentsOf: fileURL, encoding: .utf8) {
-                    let relativePath = fileURL.path.replacingOccurrences(of: folderPath, with: "")
-                    sections.append("## \(relativePath)\n\n\(content)")
+        // 2. Determine folder URL — prefer security-scoped bookmark
+        let folderURL: URL?
+        var startedBookmarkAccess = false
+        if let bookmarkData = project.folderBookmark {
+            var isStale = false
+            let url = try? URL(
+                resolvingBookmarkData: bookmarkData,
+                options: .withSecurityScope,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            )
+            if let url, !isStale {
+                // Only start access if not already accessing (avoids counter leak)
+                if !accessingBookmarks.contains(projectId) {
+                    startedBookmarkAccess = url.startAccessingSecurityScopedResource()
                 }
+                folderURL = url
+            } else {
+                folderURL = project.folderPath.map { URL(fileURLWithPath: $0) }
+            }
+        } else {
+            folderURL = project.folderPath.map { URL(fileURLWithPath: $0) }
+        }
+        // If we started bookmark access, ensure we stop it when done
+        defer {
+            if startedBookmarkAccess, let folderURL {
+                folderURL.stopAccessingSecurityScopedResource()
             }
         }
+
+        guard let folderURL, budgetRemaining > 0 else {
+            return sections.isEmpty ? nil : sections.joined(separator: "\n\n---\n\n")
+        }
+
+        // 3. Discover and sort files by priority tier, then size ascending
+        let discoveredFiles = Self.discoverProjectFiles(in: folderURL)
+        let root = folderURL.standardizedFileURL
+
+        struct RankedFile {
+            let url: URL
+            let tier: Int
+            let size: Int
+        }
+
+        let ranked: [RankedFile] = discoveredFiles.compactMap { url in
+            guard let tier = Self.priorityTier(for: url, relativeTo: root) else { return nil }
+            let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
+            return RankedFile(url: url, tier: tier, size: size)
+        }.sorted { a, b in
+            if a.tier != b.tier { return a.tier < b.tier }
+            return a.size < b.size
+        }
+
+        // 4. Read files within budget
+        // Use standardized path to match paths returned by discoverProjectFiles (which also standardizes)
+        let rootPath = folderURL.standardizedFileURL.path
+        for file in ranked {
+            guard budgetRemaining > Self.truncatedPreviewChars else { break }
+
+            guard let content = try? String(contentsOf: file.url, encoding: .utf8) else { continue }
+            // Use standardized path to strip the root prefix correctly (enumerator may return /private/... prefixed paths)
+            let relativePath = file.url.standardizedFileURL.path.replacingOccurrences(of: rootPath, with: "")
+                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+
+            if content.count <= budgetRemaining {
+                let section = "## \(relativePath)\n\n\(content)"
+                sections.append(section)
+                budgetRemaining -= section.count
+            } else {
+                // Truncate: include first N chars + footer
+                let preview = String(content.prefix(Self.truncatedPreviewChars))
+                let footer = "\n[truncated -- full file at \(relativePath)]"
+                let section = "## \(relativePath)\n\n\(preview)\(footer)"
+                sections.append(section)
+                budgetRemaining -= section.count
+            }
+        }
+
+        // 5. Bookmark access cleanup handled by defer above
 
         return sections.isEmpty ? nil : sections.joined(separator: "\n\n---\n\n")
     }

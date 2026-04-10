@@ -193,4 +193,139 @@ struct ProjectContextBudgetTests {
         let files = ProjectManager.discoverProjectFiles(in: tmp)
         #expect(files.isEmpty)
     }
+
+    // MARK: - Budget and Context Building
+
+    @Test("Priority ordering — tier 1 appears before tier 6")
+    @MainActor
+    func priorityOrdering() async throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let subDir = tmp.appendingPathComponent("docs")
+        try FileManager.default.createDirectory(at: subDir, withIntermediateDirectories: true)
+        try "deep content".write(to: subDir.appendingPathComponent("guide.md"), atomically: true, encoding: .utf8)
+        try "agent instructions".write(to: tmp.appendingPathComponent("CLAUDE.md"), atomically: true, encoding: .utf8)
+
+        let manager = ProjectManager.shared
+        let project = manager.createProject(
+            name: "Priority Test \(UUID().uuidString.prefix(8))",
+            folderPath: tmp.path
+        )
+        defer { manager.deleteProject(id: project.id) }
+
+        let context = await manager.projectContext(for: project.id)
+        guard let context else {
+            Issue.record("Expected non-nil context")
+            return
+        }
+
+        let claudeRange = context.range(of: "agent instructions")
+        let guideRange = context.range(of: "deep content")
+        #expect(claudeRange != nil)
+        #expect(guideRange != nil)
+        if let c = claudeRange?.lowerBound, let g = guideRange?.lowerBound {
+            #expect(c < g)
+        }
+    }
+
+    @Test("Budget truncation uses correct format")
+    @MainActor
+    func budgetTruncation() async throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let bigContent = String(repeating: "x", count: ProjectManager.projectContextBudgetChars + 1000)
+        try bigContent.write(to: tmp.appendingPathComponent("CLAUDE.md"), atomically: true, encoding: .utf8)
+
+        let manager = ProjectManager.shared
+        let project = manager.createProject(
+            name: "Truncation Test \(UUID().uuidString.prefix(8))",
+            folderPath: tmp.path
+        )
+        defer { manager.deleteProject(id: project.id) }
+
+        let context = await manager.projectContext(for: project.id)
+        guard let context else {
+            Issue.record("Expected non-nil context")
+            return
+        }
+
+        #expect(context.contains("[truncated -- full file at CLAUDE.md]"))
+        #expect(context.count <= ProjectManager.projectContextBudgetChars + 200)
+    }
+
+    @Test("Budget exhaustion — total stays under limit")
+    @MainActor
+    func budgetExhaustion() async throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        for i in 0..<50 {
+            let content = String(repeating: "content-\(i) ", count: 200)
+            try content.write(to: tmp.appendingPathComponent("file\(i).md"), atomically: true, encoding: .utf8)
+        }
+
+        let manager = ProjectManager.shared
+        let project = manager.createProject(
+            name: "Exhaustion Test \(UUID().uuidString.prefix(8))",
+            folderPath: tmp.path
+        )
+        defer { manager.deleteProject(id: project.id) }
+
+        let context = await manager.projectContext(for: project.id)
+        guard let context else {
+            Issue.record("Expected non-nil context")
+            return
+        }
+
+        #expect(context.count <= ProjectManager.projectContextBudgetChars + 5000)
+    }
+
+    @Test("Single CLAUDE.md reads in full without truncation")
+    @MainActor
+    func singleClaudeMdFullRead() async throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let content = "These are my project instructions.\nLine two."
+        try content.write(to: tmp.appendingPathComponent("CLAUDE.md"), atomically: true, encoding: .utf8)
+
+        let manager = ProjectManager.shared
+        let project = manager.createProject(
+            name: "Single File \(UUID().uuidString.prefix(8))",
+            folderPath: tmp.path
+        )
+        defer { manager.deleteProject(id: project.id) }
+
+        let context = await manager.projectContext(for: project.id)
+        #expect(context?.contains("These are my project instructions.") == true)
+        #expect(context?.contains("[truncated") != true)
+    }
+
+    @Test("Instructions still included alongside file context")
+    @MainActor
+    func instructionsPlusFiles() async throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        try "file content".write(to: tmp.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+
+        let manager = ProjectManager.shared
+        let project = manager.createProject(
+            name: "Both Test \(UUID().uuidString.prefix(8))",
+            folderPath: tmp.path,
+            instructions: "Custom project instructions"
+        )
+        defer { manager.deleteProject(id: project.id) }
+
+        let context = await manager.projectContext(for: project.id)
+        #expect(context?.contains("Custom project instructions") == true)
+        #expect(context?.contains("file content") == true)
+    }
 }
