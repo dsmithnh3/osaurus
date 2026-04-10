@@ -333,7 +333,6 @@ struct AppSidebar: View {
                             TaskRow(
                                 task: task,
                                 isSelected: windowState.workSession?.currentTask?.id == task.id,
-                                isHovered: false,
                                 onSelect: {
                                     windowState.projectSession?.subMode = .work
                                     if windowState.workSession == nil {

@@ -89,7 +89,8 @@ struct ProjectView: View {
             value: windowState.showProjectInspector
         )
         .animation(theme.springAnimation(responseMultiplier: 0.9), value: windowState.showSidebar)
-        // Sub-mode work tool registration + work session creation
+        // Sub-mode work tool registration + work session creation.
+        // Works because `session` is a value type re-passed on each @Published change.
         .onChange(of: session.subMode) { old, new in
             if new == .work {
                 WorkToolManager.shared.registerTools()

@@ -11,11 +11,11 @@ import SwiftUI
 struct TaskRow: View {
     let task: WorkTask
     let isSelected: Bool
-    let isHovered: Bool
     let onSelect: () -> Void
     let onDelete: () -> Void
 
     @Environment(\.theme) private var theme: ThemeProtocol
+    @State private var isHovered = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -53,6 +53,11 @@ struct TaskRow: View {
         .contentShape(RoundedRectangle(cornerRadius: SidebarStyle.rowCornerRadius, style: .continuous))
         .onTapGesture {
             onSelect()
+        }
+        .onHover { hovering in
+            withAnimation(theme.springAnimation(responseMultiplier: 0.8)) {
+                isHovered = hovering
+            }
         }
         .contextMenu {
             Button(role: .destructive) {

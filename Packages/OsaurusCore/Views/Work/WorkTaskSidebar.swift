@@ -16,7 +16,6 @@ struct WorkTaskSidebar: View {
 
     @Environment(\.theme) private var theme: ThemeProtocol
     @State private var searchQuery: String = ""
-    @State private var hoveredTaskId: String?
     @FocusState private var isSearchFocused: Bool
 
     var body: some View {
@@ -104,15 +103,9 @@ struct WorkTaskSidebar: View {
                     TaskRow(
                         task: task,
                         isSelected: task.id == currentTaskId,
-                        isHovered: task.id == hoveredTaskId,
                         onSelect: { onSelect(task) },
                         onDelete: { onDelete(task.id) }
                     )
-                    .onHover { hovering in
-                        withAnimation(theme.springAnimation(responseMultiplier: 0.8)) {
-                            hoveredTaskId = hovering ? task.id : nil
-                        }
-                    }
                 }
             }
             .padding(.vertical, 8)
