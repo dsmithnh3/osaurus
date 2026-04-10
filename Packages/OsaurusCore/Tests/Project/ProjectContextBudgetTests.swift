@@ -126,4 +126,71 @@ struct ProjectContextBudgetTests {
         let tier = ProjectManager.priorityTier(for: file, relativeTo: root)
         #expect(tier == nil)
     }
+
+    // MARK: - File Discovery
+
+    @Test("Discovery excludes memory/ directory")
+    func discoveryExcludesMemory() throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        try "root doc".write(to: tmp.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        let memoryDir = tmp.appendingPathComponent("memory")
+        try FileManager.default.createDirectory(at: memoryDir, withIntermediateDirectories: true)
+        try "memory file".write(to: memoryDir.appendingPathComponent("notes.md"), atomically: true, encoding: .utf8)
+
+        let files = ProjectManager.discoverProjectFiles(in: tmp)
+        let names = files.map { $0.lastPathComponent }
+        #expect(names.contains("README.md"))
+        #expect(!names.contains("notes.md"))
+    }
+
+    @Test("Discovery respects depth limit")
+    func discoveryRespectsDepthLimit() throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        try "root".write(to: tmp.appendingPathComponent("root.md"), atomically: true, encoding: .utf8)
+        let d3 = tmp.appendingPathComponent("a/b/c")
+        try FileManager.default.createDirectory(at: d3, withIntermediateDirectories: true)
+        try "depth3".write(to: d3.appendingPathComponent("deep.md"), atomically: true, encoding: .utf8)
+        let d4 = tmp.appendingPathComponent("a/b/c/d")
+        try FileManager.default.createDirectory(at: d4, withIntermediateDirectories: true)
+        try "depth4".write(to: d4.appendingPathComponent("tooDeep.md"), atomically: true, encoding: .utf8)
+
+        let files = ProjectManager.discoverProjectFiles(in: tmp)
+        let names = files.map { $0.lastPathComponent }
+        #expect(names.contains("root.md"))
+        #expect(names.contains("deep.md"))
+        #expect(!names.contains("tooDeep.md"))
+    }
+
+    @Test("Discovery includes yaml in root and config/")
+    func discoveryIncludesYaml() throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        try "root yaml".write(to: tmp.appendingPathComponent("workspace.yaml"), atomically: true, encoding: .utf8)
+        let configDir = tmp.appendingPathComponent("config")
+        try FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
+        try "config yaml".write(to: configDir.appendingPathComponent("project.yaml"), atomically: true, encoding: .utf8)
+
+        let files = ProjectManager.discoverProjectFiles(in: tmp)
+        let names = files.map { $0.lastPathComponent }
+        #expect(names.contains("workspace.yaml"))
+        #expect(names.contains("project.yaml"))
+    }
+
+    @Test("Empty folder returns empty array")
+    func emptyFolderReturnsEmpty() throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let files = ProjectManager.discoverProjectFiles(in: tmp)
+        #expect(files.isEmpty)
+    }
 }

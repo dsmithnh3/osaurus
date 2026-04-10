@@ -166,22 +166,47 @@ public final class ProjectManager {
         return sections.isEmpty ? nil : sections.joined(separator: "\n\n---\n\n")
     }
 
-    /// Discover all .md files recursively in a directory.
-    public func discoverMarkdownFiles(in directory: URL) -> [URL] {
+    /// Discover project files (.md and .yaml) with exclusion patterns and depth limit.
+    /// Returns file URLs that pass exclusion and depth filters.
+    nonisolated static func discoverProjectFiles(in directory: URL) -> [URL] {
         let fm = FileManager.default
+        let root = directory.standardizedFileURL
+        let rootComponents = root.pathComponents
+
         guard let enumerator = fm.enumerator(
-            at: directory,
+            at: root,
             includingPropertiesForKeys: [.isRegularFileKey],
             options: [.skipsHiddenFiles]
         ) else { return [] }
 
         var results: [URL] = []
         for case let fileURL as URL in enumerator {
-            if fileURL.pathExtension.lowercased() == "md" {
+            let stdURL = fileURL.standardizedFileURL
+            let fileComponents = stdURL.pathComponents
+            let relativeComponents = Array(fileComponents.dropFirst(rootComponents.count))
+
+            // Check exclusion patterns against relative path
+            let excluded = excludePatterns.contains { pattern in
+                let dir = pattern.hasSuffix("/") ? String(pattern.dropLast()) : pattern
+                return relativeComponents.contains(where: { $0.caseInsensitiveCompare(dir) == .orderedSame })
+            }
+            if excluded {
+                enumerator.skipDescendants()
+                continue
+            }
+
+            // Check if file has a supported extension and valid tier
+            if priorityTier(for: stdURL, relativeTo: root) != nil {
                 results.append(fileURL)
             }
         }
-        return results.sorted { $0.path < $1.path }
+        return results
+    }
+
+    /// Discover all .md files recursively in a directory.
+    @available(*, deprecated, renamed: "discoverProjectFiles(in:)")
+    public func discoverMarkdownFiles(in directory: URL) -> [URL] {
+        Self.discoverProjectFiles(in: directory).filter { $0.pathExtension.lowercased() == "md" }
     }
 
     // MARK: - Security-Scoped Bookmark Lifecycle
