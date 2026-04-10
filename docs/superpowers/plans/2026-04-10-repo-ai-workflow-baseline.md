@@ -39,9 +39,9 @@
 
 - Create: `docs/DEVELOPER_MAP.md`
 
-- [ ] **Step 1:** Add title and one sentence pointing to `CLAUDE.md` as canonical build/test/layers.
-- [ ] **Step 2:** Document workspace top-level: `App/`, `Packages/OsaurusCore/`, `Packages/OsaurusCLI/`, `Packages/OsaurusRepository/`, `osaurus.xcworkspace` (single short section).
-- [ ] **Step 3:** Add **“If you change … start here”** table or bullet list mapping themes to **directories** (primary) and deep docs:
+- [x] **Step 1:** Add title and one sentence pointing to `CLAUDE.md` as canonical build/test/layers.
+- [x] **Step 2:** Document workspace top-level: `App/`, `Packages/OsaurusCore/`, `Packages/OsaurusCLI/`, `Packages/OsaurusRepository/`, `osaurus.xcworkspace` (single short section).
+- [x] **Step 3:** Add **“If you change … start here”** table or bullet list mapping themes to **directories** (primary) and deep docs:
 
   | Theme            | Start in                                                                               | Deep doc                                                                                             |
   | ---------------- | -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
@@ -55,9 +55,9 @@
 
   Adjust paths if the tree differs; **prefer directories** over type lists.
 
-- [ ] **Step 4:** Link **`docs/agent-stubs/`** (“one screen per subsystem”) and **`docs/INDEX.md`**.
-- [ ] **Step 5:** Link fork-only deep setup: [PERSONAL_FORK_AND_LOCAL_SETUP.md](personal_fork_local_documents/PERSONAL_FORK_AND_LOCAL_SETUP.md) (under `personal_fork_local_documents/`).
-- [ ] **Step 6:** Keep file within spec soft budget (~200 lines); split content only by moving detail into stubs, not by growing the map indefinitely.
+- [x] **Step 4:** Link **`docs/agent-stubs/`** (“one screen per subsystem”) and **`docs/INDEX.md`**.
+- [x] **Step 5:** Link fork-only deep setup: [PERSONAL_FORK_AND_LOCAL_SETUP.md](personal_fork_local_documents/PERSONAL_FORK_AND_LOCAL_SETUP.md) (under `personal_fork_local_documents/`).
+- [x] **Step 6:** Keep file within spec soft budget (~200 lines); split content only by moving detail into stubs, not by growing the map indefinitely.
 
 ---
 
@@ -67,8 +67,8 @@
 
 - Create: `docs/INDEX.md`
 
-- [ ] **Step 1:** Title + one line: purpose (table of contents for repo `docs/`).
-- [ ] **Step 2:** Group **by theme**, **alphabetical within group**. Suggested groups (edit if needed):
+- [x] **Step 1:** Title + one line: purpose (table of contents for repo `docs/`).
+- [x] **Step 2:** Group **by theme**, **alphabetical within group**. Suggested groups (edit if needed):
   - **Core product & features:** ACCESSIBILITY.md, FEATURES.md, MEMORY.md, SKILLS.md, THEMES.md, VOICE_INPUT.md, WATCHERS.md, WORK.md
   - **Security & identity:** IDENTITY.md, SECURITY.md
   - **Sandbox & execution:** SANDBOX.md
@@ -79,8 +79,8 @@
   - **Developer navigation (this effort):** DEVELOPER_MAP.md — agent-stubs/ (link to folder or first stub)
   - **Fork-local** (short): PERSONAL_FORK_AND_LOCAL_SETUP.md, OPAL_PORT_ROADMAP.md, xcode-preview-catalog.md — all under `personal_fork_local_documents/`
 
-- [ ] **Step 3:** One line per file (title or description). Use relative links, e.g. `[MEMORY](MEMORY.md)`.
-- [ ] **Step 4:** Omit duplicating `superpowers/specs/` and `superpowers/plans/` from the main product index **or** add a final **Specs & plans** group with one line linking the `superpowers/` folder for maintainers.
+- [x] **Step 3:** One line per file (title or description). Use relative links, e.g. `[MEMORY](MEMORY.md)`.
+- [x] **Step 4:** Omit duplicating `superpowers/specs/` and `superpowers/plans/` from the main product index **or** add a final **Specs & plans** group with one line linking the `superpowers/` folder for maintainers.
 
 ---
 
@@ -113,9 +113,9 @@ For **each** file, use the same skeleton (≤ ~80 lines per spec):
 - **identity.md** — `Identity/`; [IDENTITY.md](../IDENTITY.md).
 - **plugins.md** — plugin managers / `Services/Plugin/`; [PLUGIN_AUTHORING.md](../PLUGIN_AUTHORING.md).
 
-- [ ] **Step 1:** Create directory `docs/agent-stubs/`.
-- [ ] **Step 2:** Write `memory.md` … through `plugins.md` using skeleton above.
-- [ ] **Step 3:** Spot-check all relative links from `docs/agent-stubs/` (../ to sibling docs).
+- [x] **Step 1:** Create directory `docs/agent-stubs/`.
+- [x] **Step 2:** Write `memory.md` … through `plugins.md` using skeleton above.
+- [x] **Step 3:** Spot-check all relative links from `docs/agent-stubs/` (../ to sibling docs).
 
 ---
 
@@ -125,11 +125,11 @@ For **each** file, use the same skeleton (≤ ~80 lines per spec):
 
 - Modify: `AGENTS.md`
 
-- [ ] **Step 1:** After “Learned User Preferences”, add a **Navigation** (or **Repo orientation**) bullet block:
+- [x] **Step 1:** After “Learned User Preferences”, add a **Navigation** (or **Repo orientation**) bullet block:
   - Default path: `AGENTS.md` → `docs/DEVELOPER_MAP.md` → `docs/agent-stubs/<topic>.md` → feature doc → code.
   - Table of contents: `docs/INDEX.md`.
-- [ ] **Step 2:** Keep total file short; no pasted architecture tables.
-- [ ] **Step 3:** Confirm verification bullets still point only to `CLAUDE.md` for commands.
+- [x] **Step 2:** Keep total file short; no pasted architecture tables.
+- [x] **Step 3:** Confirm verification bullets still point only to `CLAUDE.md` for commands.
 
 ---
 
@@ -139,8 +139,8 @@ For **each** file, use the same skeleton (≤ ~80 lines per spec):
 
 - Modify: `docs/CONTRIBUTING.md`
 
-- [ ] **Step 1:** In “Getting started” or “Architecture guide”, add **one paragraph** only: point to `docs/DEVELOPER_MAP.md` and `docs/INDEX.md` for orientation and AI-assisted navigation.
-- [ ] **Step 2:** Do not duplicate `CLAUDE.md` build instructions.
+- [x] **Step 1:** In “Getting started” or “Architecture guide”, add **one paragraph** only: point to `docs/DEVELOPER_MAP.md` and `docs/INDEX.md` for orientation and AI-assisted navigation.
+- [x] **Step 2:** Do not duplicate `CLAUDE.md` build instructions.
 
 ---
 
@@ -150,8 +150,8 @@ For **each** file, use the same skeleton (≤ ~80 lines per spec):
 
 - Modify: `README.md`
 
-- [ ] **Step 1:** After the first substantive heading/introduction block (e.g. after the “Inference is all you need” section or near “Development”), add **one line**: link to `docs/DEVELOPER_MAP.md` for contributors navigating the repo. Keep HTML + Markdown mix consistent with existing README style.
-- [ ] **Step 2:** If a README edit is too noisy, **skip** this task (spec: optional).
+- [x] **Step 1:** After the first substantive heading/introduction block (e.g. after the “Inference is all you need” section or near “Development”), add **one line**: link to `docs/DEVELOPER_MAP.md` for contributors navigating the repo. Keep HTML + Markdown mix consistent with existing README style.
+- [x] **Step 2:** If a README edit is too noisy, **skip** this task (spec: optional).
 
 ---
 
@@ -161,16 +161,16 @@ For **each** file, use the same skeleton (≤ ~80 lines per spec):
 
 - All of the above
 
-- [ ] **Step 1:** From repo root, open `docs/DEVELOPER_MAP.md` and click/preview every internal link.
-- [ ] **Step 2:** From `docs/INDEX.md`, verify each linked file exists (paths correct for `personal_fork_local_documents/`).
-- [ ] **Step 3:** No `swift-format` requirement for Markdown; if any Swift is touched (should not be), run `swift-format` per `CLAUDE.md`.
+- [x] **Step 1:** From repo root, open `docs/DEVELOPER_MAP.md` and click/preview every internal link.
+- [x] **Step 2:** From `docs/INDEX.md`, verify each linked file exists (paths correct for `personal_fork_local_documents/`).
+- [x] **Step 3:** No `swift-format` requirement for Markdown; if any Swift is touched (should not be), run `swift-format` per `CLAUDE.md`.
 
 ---
 
 ### Task 8: Commit
 
-- [ ] **Step 1:** `git add` new/modified doc files (and `AGENTS.md`, optional README/CONTRIBUTING).
-- [ ] **Step 2:** Commit with Conventional Commits, e.g. `docs: add developer map, index, and agent stubs`.
+- [x] **Step 1:** `git add` new/modified doc files (and `AGENTS.md`, optional README/CONTRIBUTING).
+- [x] **Step 2:** Commit with Conventional Commits, e.g. `docs: add developer map, index, and agent stubs`.
 
 ---
 
