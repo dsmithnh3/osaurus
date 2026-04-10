@@ -18,14 +18,14 @@ A 32,000-character budget (~8,000 tokens) caps total project context. Files are 
 
 #### Priority Tiers
 
-| Priority | Files | Rationale |
-|----------|-------|-----------|
-| 1 (highest) | `CLAUDE.md`, `AGENTS.md`, `GEMINI.md` | AI agent instructions |
-| 2 | `TASKS.md`, `README.md` | Active work tracking + project overview |
-| 3 | `active-projects.md` | Multi-project workspace index |
-| 4 | `*.yaml` in root or `config/` only | Structured metadata (workspace.yaml, project.yaml) |
-| 5 | Other root-level `.md` files | Remaining top-level docs |
-| 6 | Deeper `.md` files (depth <= 3) | Sub-project docs, capped by depth |
+| Priority    | Files                                                   | Rationale                                          |
+| ----------- | ------------------------------------------------------- | -------------------------------------------------- |
+| 1 (highest) | `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`                   | AI agent instructions                              |
+| 2           | `TASKS.md`, `README.md`                                 | Active work tracking + project overview            |
+| 3           | `active-projects.md`                                    | Multi-project workspace index                      |
+| 4           | `*.yaml` in project root or direct `config/` child only | Structured metadata (workspace.yaml, project.yaml) |
+| 5           | Other root-level `.md` files                            | Remaining top-level docs                           |
+| 6           | Deeper `.md` files (depth <= 3)                         | Sub-project docs, capped by depth                  |
 
 All tier 1-3 matching is **case-insensitive** (e.g., `tasks.md` matches tier 2 just like `TASKS.md`). No fuzzy/similarity matching is used -- the tiered catch-all design (tiers 5-6) naturally handles naming variations.
 
@@ -49,16 +49,21 @@ Directories excluded from discovery entirely:
 
 #### Discovery Depth Limit
 
-`FileManager.enumerator` limited to depth 3. This prevents crawling deeply nested sub-project template folders.
+`FileManager.enumerator` has no built-in depth parameter. Depth is computed as the number of path components relative to the project root URL. For example, if the project root is `/Users/dan/CIMCO/`, then `README.md` is depth 0, `sub/notes.md` is depth 1, and `sub/deep/nested/file.md` is depth 3.
+
+Maximum discovery depth is 3. Files at depth 4+ are excluded. This prevents crawling deeply nested sub-project template folders. Implementation: compare `fileURL.pathComponents.count - rootURL.pathComponents.count` against `maxDiscoveryDepth`.
 
 ### Security-Scoped Bookmark Fix
 
+`ProjectManager` already calls `startAccessingBookmark(for:)` when a project becomes active, which internally calls `url.startAccessingSecurityScopedResource()` and tracks the URL in `accessingBookmarks`. Calling it again would leak the access counter.
+
 `projectContext(for:)` will:
 
-1. Resolve the bookmark via existing `startAccessingBookmark(for:)` method
-2. Call `url.startAccessingSecurityScopedResource()` before file enumeration
-3. Call `url.stopAccessingSecurityScopedResource()` in a `defer` block
-4. Fall back to `folderPath` string only if no bookmark exists (non-sandboxed builds)
+1. Check if the project's bookmark URL is already in `accessingBookmarks` (it should be if the project is active)
+2. If not yet accessing (e.g., called before project activation), call `startAccessingBookmark(for:)` and track that we need to stop
+3. Use the resolved bookmark URL for file enumeration instead of the plain `folderPath` string
+4. Only call `stopAccessingSecurityScopedResource()` if we started access in step 2 (via `defer`)
+5. Fall back to `folderPath` string only if no bookmark exists (non-sandboxed builds)
 
 ### Constants
 
@@ -77,20 +82,23 @@ private static let priorityFileNames: [(tier: Int, names: [String])] = [
     (2, ["tasks.md", "readme.md"]),
     (3, ["active-projects.md"]),
 ]
-// Tier 4: *.yaml in root or config/ -- matched by pattern
-// Tier 5: other root-level .md
-// Tier 6: deeper .md files (depth <= 3)
+// Tier 4: *.yaml in project root or direct config/ child -- matched by pattern
+// Tier 5: other root-level .md (depth 0)
+// Tier 6: deeper .md files (depth 1-3)
 ```
 
 ### Implementation Scope
 
 **Files modified:**
+
 - `Packages/OsaurusCore/Managers/ProjectManager.swift` -- rewrite `projectContext(for:)` internals, update `discoverMarkdownFiles(in:)` to `discoverProjectFiles(in:excludePatterns:maxDepth:)`
 
 **Files created:**
+
 - `Packages/OsaurusCore/Tests/Project/ProjectContextBudgetTests.swift`
 
 **No changes to:**
+
 - `SystemPromptComposer` (still calls `projectContext(for:)` returning `String`)
 - Memory system, models, database, or any other files
 - Public API surface
@@ -100,7 +108,7 @@ private static let priorityFileNames: [(tier: Int, names: [String])] = [
 Using temp directories with mock `.md`/`.yaml` files:
 
 1. Priority ordering -- tier 1 files appear before tier 6
-2. Budget truncation -- files beyond budget get 500-char preview
+2. Budget truncation -- files beyond budget get 500-char preview with exact format `\n[truncated -- full file at {path}]`
 3. Budget exhaustion -- total output stays under 32,000 chars
 4. Exclusion patterns -- `memory/*.md` files not included
 5. Case-insensitive matching -- `claude.md` gets tier 1 priority
