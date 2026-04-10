@@ -216,9 +216,15 @@ public final class ProjectManager {
             guard budgetRemaining > Self.truncatedPreviewChars else { break }
 
             guard let content = try? String(contentsOf: file.url, encoding: .utf8) else { continue }
-            // Use standardized path to strip the root prefix correctly (enumerator may return /private/... prefixed paths)
-            let relativePath = file.url.standardizedFileURL.path.replacingOccurrences(of: rootPath, with: "")
-                .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            // Use standardized path to strip the root prefix safely
+            let filePath = file.url.standardizedFileURL.path
+            let relativePath: String
+            if filePath.hasPrefix(rootPath) {
+                relativePath = String(filePath.dropFirst(rootPath.count))
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            } else {
+                relativePath = file.url.lastPathComponent
+            }
 
             if content.count <= budgetRemaining {
                 let section = "## \(relativePath)\n\n\(content)"
