@@ -208,11 +208,32 @@ struct AppSidebar: View {
 
     // MARK: - Recents Section
 
+    /// Sessions filtered by active project (if in project mode) and search query.
+    private var visibleSessions: [ChatSessionData] {
+        var sessions = windowState.filteredSessions
+
+        // Project-scope: show only sessions belonging to this project
+        if windowState.mode == .project,
+           let projectId = windowState.projectSession?.activeProjectId {
+            sessions = sessions.filter { $0.projectId == projectId }
+        }
+
+        // Search filter
+        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !query.isEmpty {
+            sessions = sessions.filter {
+                $0.title.localizedCaseInsensitiveContains(query)
+            }
+        }
+
+        return sessions
+    }
+
     private var recentsSection: some View {
         CollapsibleSection("Recents", isExpanded: $isRecentsExpanded) {
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: 2) {
-                    ForEach(windowState.filteredSessions) { sessionData in
+                    ForEach(visibleSessions) { sessionData in
                         RecentRow(sessionData: sessionData, windowState: windowState)
                     }
                 }

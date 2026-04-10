@@ -43,6 +43,8 @@ final class ChatSession: ObservableObject {
     @Published var title: String = "New Chat"
     var createdAt: Date = Date()
     var updatedAt: Date = Date()
+    /// Project this session belongs to — set when created from within a project.
+    var projectId: UUID?
 
     /// Tracks if session has unsaved content changes
     private var isDirty: Bool = false
@@ -383,6 +385,7 @@ final class ChatSession: ObservableObject {
         showVoiceOverlay = false
         // Clear session identity for new chat
         sessionId = nil
+        projectId = nil
         title = "New Chat"
         createdAt = Date()
         updatedAt = Date()
@@ -436,7 +439,8 @@ final class ChatSession: ObservableObject {
             updatedAt: updatedAt,
             selectedModel: selectedModel,
             turns: turnData,
-            agentId: agentId
+            agentId: agentId,
+            projectId: projectId ?? ProjectManager.shared.activeProjectId
         )
     }
 
@@ -477,6 +481,7 @@ final class ChatSession: ObservableObject {
         createdAt = data.createdAt
         updatedAt = data.updatedAt
         agentId = data.agentId
+        projectId = data.projectId
 
         // Restore saved model if available, otherwise use configured default
         // Don't auto-persist when loading - this is restoring existing state

@@ -87,11 +87,19 @@ struct ProjectHomeView: View {
                             ))
                             windowState.session.sendCurrent()
                         case .work:
-                            windowState.projectSession?.inlineWorkTaskId = UUID()
+                            // Create WorkSession if needed and register tools
+                            if windowState.workSession == nil {
+                                windowState.workSession = WorkSession(agentId: windowState.agentId, windowState: windowState)
+                            }
+                            WorkToolManager.shared.registerTools()
+                            windowState.workSession?.input = trimmed
+                            let taskId = UUID()
+                            windowState.projectSession?.inlineWorkTaskId = taskId
                             windowState.pushNavigation(NavigationEntry(
                                 mode: .project, projectId: project.id,
-                                workTaskId: windowState.projectSession?.inlineWorkTaskId
+                                workTaskId: taskId
                             ))
+                            Task { await windowState.workSession?.handleUserInput() }
                         }
                         inputSession.input = ""
                     },

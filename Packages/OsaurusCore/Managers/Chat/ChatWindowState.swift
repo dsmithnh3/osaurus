@@ -145,7 +145,14 @@ final class ChatWindowState: ObservableObject {
                 }
                 refreshWorkTasks()
             case .project:
-                WorkToolManager.shared.unregisterTools()
+                if entry.workTaskId != nil {
+                    WorkToolManager.shared.registerTools()
+                    if workSession == nil {
+                        workSession = WorkSession(agentId: agentId, windowState: self)
+                    }
+                } else {
+                    WorkToolManager.shared.unregisterTools()
+                }
             case .chat:
                 WorkToolManager.shared.unregisterTools()
             }
