@@ -58,15 +58,15 @@ User overrides take the highest priority in context assembly and are never overw
 
 Structured memory entries extracted from every conversation turn. Each entry has a type, confidence score, tags, and temporal validity.
 
-| Entry Type | Description | Example |
-|------------|-------------|---------|
-| **Fact** | Factual information | "User works at Acme Corp as a backend engineer" |
-| **Preference** | Likes, dislikes, and preferences | "Prefers Swift over Objective-C" |
-| **Decision** | Decisions made during conversations | "Decided to use PostgreSQL for the new project" |
-| **Correction** | Corrections to previous information | "Actually uses Python 3.12, not 3.11" |
-| **Commitment** | Promises, plans, or intentions | "Plans to migrate to Kubernetes next quarter" |
-| **Relationship** | Connections between people, projects, or concepts | "Alice is the tech lead on Project Nova" |
-| **Skill** | Skills, expertise, or knowledge areas | "Experienced with Docker and CI/CD pipelines" |
+| Entry Type       | Description                                       | Example                                         |
+| ---------------- | ------------------------------------------------- | ----------------------------------------------- |
+| **Fact**         | Factual information                               | "User works at Acme Corp as a backend engineer" |
+| **Preference**   | Likes, dislikes, and preferences                  | "Prefers Swift over Objective-C"                |
+| **Decision**     | Decisions made during conversations               | "Decided to use PostgreSQL for the new project" |
+| **Correction**   | Corrections to previous information               | "Actually uses Python 3.12, not 3.11"           |
+| **Commitment**   | Promises, plans, or intentions                    | "Plans to migrate to Kubernetes next quarter"   |
+| **Relationship** | Connections between people, projects, or concepts | "Alice is the tech lead on Project Nova"        |
+| **Skill**        | Skills, expertise, or knowledge areas             | "Experienced with Docker and CI/CD pipelines"   |
 
 Entries include:
 
@@ -150,12 +150,12 @@ To avoid returning many near-identical results, search results are reranked usin
 
 ### Search Scopes
 
-| Scope | What it searches | Time window |
-|-------|-----------------|-------------|
-| Memory entries | Working memory (Layer 2) | All time |
-| Conversations | Conversation chunks (Layer 4) | All time (query-aware retrieval) |
-| Summaries | Conversation summaries (Layer 3) | Retention window (default: 180 days) |
-| Graph | Knowledge graph entities and relationships | All time |
+| Scope          | What it searches                           | Time window                          |
+| -------------- | ------------------------------------------ | ------------------------------------ |
+| Memory entries | Working memory (Layer 2)                   | All time                             |
+| Conversations  | Conversation chunks (Layer 4)              | All time (query-aware retrieval)     |
+| Summaries      | Conversation summaries (Layer 3)           | Retention window (default: 180 days) |
+| Graph          | Knowledge graph entities and relationships | All time                             |
 
 ---
 
@@ -183,22 +183,22 @@ Before each AI interaction, the `MemoryContextAssembler` builds a memory block t
 
 Context is assembled in priority order with per-section token budgets:
 
-| Priority | Section | Default Budget |
-|----------|---------|---------------|
-| 0 | Current Date | Always included (temporal anchor) |
-| 1 | User Overrides | Always included (no budget limit) |
-| 2 | User Profile | 2,000 tokens |
-| 3 | Working Memory | 3,000 tokens |
-| 4 | Conversation Summaries | 3,000 tokens |
-| 5 | Key Relationships | 300 tokens |
+| Priority | Section                | Default Budget                    |
+| -------- | ---------------------- | --------------------------------- |
+| 0        | Current Date           | Always included (temporal anchor) |
+| 1        | User Overrides         | Always included (no budget limit) |
+| 2        | User Profile           | 2,000 tokens                      |
+| 3        | Working Memory         | 3,000 tokens                      |
+| 4        | Conversation Summaries | 3,000 tokens                      |
+| 5        | Key Relationships      | 300 tokens                        |
 
 When a user query is provided, an additional **query-aware retrieval** pass runs in parallel, searching entries, summaries, and conversation chunks for semantically relevant results. These are deduplicated against the base context and appended as "Relevant Memories", "Relevant Summaries", and "Relevant Conversation Excerpts" sections with their own budgets:
 
-| Section | Default Budget |
-|---------|---------------|
-| Relevant Conversation Excerpts | 3,000 tokens |
-| Relevant Memories | 3,000 tokens |
-| Relevant Summaries | 3,000 tokens |
+| Section                        | Default Budget |
+| ------------------------------ | -------------- |
+| Relevant Conversation Excerpts | 3,000 tokens   |
+| Relevant Memories              | 3,000 tokens   |
+| Relevant Summaries             | 3,000 tokens   |
 
 - Results are **cached for 10 seconds** per agent to avoid redundant database queries
 - Cache is invalidated when memory content changes
@@ -212,59 +212,59 @@ All settings are configurable via the Memory tab in the Management window. The c
 
 ### Core Model
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `coreModelProvider` | `anthropic` | Provider for the extraction model |
-| `coreModelName` | `claude-haiku-4-5` | Model used for memory extraction and summarization |
-| `embeddingBackend` | `mlx` | Embedding backend (`mlx` or `none`) |
-| `embeddingModel` | `nomic-embed-text-v1.5` | Model used for vector embeddings |
+| Setting             | Default                 | Description                                        |
+| ------------------- | ----------------------- | -------------------------------------------------- |
+| `coreModelProvider` | `anthropic`             | Provider for the extraction model                  |
+| `coreModelName`     | `claude-haiku-4-5`      | Model used for memory extraction and summarization |
+| `embeddingBackend`  | `mlx`                   | Embedding backend (`mlx` or `none`)                |
+| `embeddingModel`    | `nomic-embed-text-v1.5` | Model used for vector embeddings                   |
 
 ### Token Budgets
 
-| Setting | Default | Range | Description |
-|---------|---------|-------|-------------|
-| `profileMaxTokens` | 2,000 | 100 -- 50,000 | Max tokens for user profile |
-| `workingMemoryBudgetTokens` | 3,000 | 50 -- 10,000 | Token budget for working memory in context |
-| `summaryBudgetTokens` | 3,000 | 50 -- 10,000 | Token budget for summaries in context |
-| `chunkBudgetTokens` | 3,000 | 50 -- 20,000 | Token budget for conversation chunk excerpts in context |
-| `graphBudgetTokens` | 300 | 50 -- 5,000 | Token budget for knowledge graph in context |
+| Setting                     | Default | Range         | Description                                             |
+| --------------------------- | ------- | ------------- | ------------------------------------------------------- |
+| `profileMaxTokens`          | 2,000   | 100 -- 50,000 | Max tokens for user profile                             |
+| `workingMemoryBudgetTokens` | 3,000   | 50 -- 10,000  | Token budget for working memory in context              |
+| `summaryBudgetTokens`       | 3,000   | 50 -- 10,000  | Token budget for summaries in context                   |
+| `chunkBudgetTokens`         | 3,000   | 50 -- 20,000  | Token budget for conversation chunk excerpts in context |
+| `graphBudgetTokens`         | 300     | 50 -- 5,000   | Token budget for knowledge graph in context             |
 
 ### Profile
 
-| Setting | Default | Range | Description |
-|---------|---------|-------|-------------|
-| `profileRegenerateThreshold` | 10 | 1 -- 100 | New contributions before profile regeneration |
+| Setting                      | Default | Range    | Description                                   |
+| ---------------------------- | ------- | -------- | --------------------------------------------- |
+| `profileRegenerateThreshold` | 10      | 1 -- 100 | New contributions before profile regeneration |
 
 ### Summaries
 
-| Setting | Default | Range | Description |
-|---------|---------|-------|-------------|
-| `summaryDebounceSeconds` | 60 | 10 -- 3,600 | Inactivity period before summary generation |
-| `summaryRetentionDays` | 180 | 0 -- 3,650 | How long summaries are retained (0 = unlimited) |
+| Setting                  | Default | Range       | Description                                     |
+| ------------------------ | ------- | ----------- | ----------------------------------------------- |
+| `summaryDebounceSeconds` | 60      | 10 -- 3,600 | Inactivity period before summary generation     |
+| `summaryRetentionDays`   | 180     | 0 -- 3,650  | How long summaries are retained (0 = unlimited) |
 
 ### Search
 
-| Setting | Default | Range | Description |
-|---------|---------|-------|-------------|
-| `recallTopK` | 30 | 1 -- 100 | Number of results for recall searches |
-| `temporalDecayHalfLifeDays` | 30 | 1 -- 365 | Half-life for temporal decay in ranking |
-| `mmrLambda` | 0.7 | 0.0 -- 1.0 | Relevance vs. diversity tradeoff |
-| `mmrFetchMultiplier` | 2.0 | 1.0 -- 10.0 | Over-fetch multiplier before MMR reranking |
+| Setting                     | Default | Range       | Description                                |
+| --------------------------- | ------- | ----------- | ------------------------------------------ |
+| `recallTopK`                | 30      | 1 -- 100    | Number of results for recall searches      |
+| `temporalDecayHalfLifeDays` | 30      | 1 -- 365    | Half-life for temporal decay in ranking    |
+| `mmrLambda`                 | 0.7     | 0.0 -- 1.0  | Relevance vs. diversity tradeoff           |
+| `mmrFetchMultiplier`        | 2.0     | 1.0 -- 10.0 | Over-fetch multiplier before MMR reranking |
 
 ### Verification
 
-| Setting | Default | Range | Description |
-|---------|---------|-------|-------------|
-| `verificationEnabled` | true | true/false | Enable the 3-layer verification pipeline |
-| `verificationJaccardDedupThreshold` | 0.6 | 0.0 -- 1.0 | Jaccard threshold for near-duplicate detection |
-| `verificationSemanticDedupThreshold` | 0.85 | 0.0 -- 1.0 | Vector similarity threshold for semantic dedup |
+| Setting                              | Default | Range      | Description                                    |
+| ------------------------------------ | ------- | ---------- | ---------------------------------------------- |
+| `verificationEnabled`                | true    | true/false | Enable the 3-layer verification pipeline       |
+| `verificationJaccardDedupThreshold`  | 0.6     | 0.0 -- 1.0 | Jaccard threshold for near-duplicate detection |
+| `verificationSemanticDedupThreshold` | 0.85    | 0.0 -- 1.0 | Vector similarity threshold for semantic dedup |
 
 ### Limits
 
-| Setting | Default | Range | Description |
-|---------|---------|-------|-------------|
-| `maxEntriesPerAgent` | 500 | 0 -- 10,000 | Max active entries per agent (0 = unlimited) |
-| `enabled` | true | true/false | Master toggle for the memory system |
+| Setting              | Default | Range       | Description                                  |
+| -------------------- | ------- | ----------- | -------------------------------------------- |
+| `maxEntriesPerAgent` | 500     | 0 -- 10,000 | Max active entries per agent (0 = unlimited) |
+| `enabled`            | true    | true/false  | Master toggle for the memory system          |
 
 ---
 
@@ -312,7 +312,82 @@ All memory data is stored in a local SQLite database with WAL (Write-Ahead Loggi
 
 **Configuration:** `~/.osaurus/config/memory.json`
 
-The database schema is versioned with automatic migrations. Indexes are maintained on agent ID, status, temporal fields, and conversation IDs for efficient queries.
+The database schema is versioned with automatic migrations (currently V5). Indexes are maintained on agent ID, project ID, status, temporal fields, and conversation IDs for efficient queries.
+
+---
+
+## Project-Scoped Memory
+
+When conversations occur within a [Project](../CLAUDE.md#projects), memory entries are tagged with the project's ID. This enables project-specific context while preserving access to global knowledge.
+
+### How It Works
+
+Memory is scoped along two dimensions:
+
+1. **Agent** — each agent has its own memory store (unchanged from before)
+2. **Project** — within an agent's memory, entries can be global (`project_id = NULL`) or project-specific
+
+### Layer-by-Layer Behavior
+
+| Layer                   | Project Scoping  | Rationale                                   |
+| ----------------------- | ---------------- | ------------------------------------------- |
+| **L1 — User Profile**   | Global only      | Profile describes the user, not a project   |
+| **L2 — Working Memory** | Project + Global | Project-scoped facts plus general knowledge |
+| **L3 — Summaries**      | Project + Global | Project conversations summarized separately |
+| **L4 — Chunks**         | Project + Global | Via `conversations.project_id`              |
+| **Knowledge Graph**     | Global only      | Entities represent cross-project concepts   |
+
+### Query Semantics
+
+When retrieving memory for a project-scoped conversation, queries use **union semantics**:
+
+```sql
+WHERE agent_id = ? AND (project_id = ? OR project_id IS NULL)
+```
+
+This returns:
+
+- Entries specific to the current project
+- **Plus** global entries (those with no project association)
+
+Agents retain general knowledge while working in a project. A fact learned in one project is only visible in that project, but global facts (learned outside any project) are visible everywhere.
+
+### Knowledge Graph Exception
+
+Entities and relationships are **always stored globally** (with `project_id = NULL`), even when extracted from a project conversation. This is intentional:
+
+- Entities are deduplicated by `(name, type)` — project-tagging would break cross-project visibility
+- Real-world concepts like "Daniel Smith" or "PostgreSQL" are inherently cross-project
+- The `project_id` columns exist in the schema but remain unused, available for future partitioning if needed
+
+### VecturaKit Limitation
+
+The vector index has no `project_id` dimension. Semantic search returns candidates across all projects, then SQLite filters by `project_id` post-retrieval. This is acceptable at current scale (500 entries per agent cap) but may need a partitioned index if project counts grow significantly.
+
+### Inspector View
+
+When viewing a project, the right inspector panel shows a **Memory** section displaying:
+
+- Total memory count for that project
+- Breakdown by entry type (facts, preferences, decisions, etc.)
+- Recent entries with content previews
+
+This is powered by `MemorySummaryView` calling `MemoryDatabase.countEntriesByProject()`.
+
+### API Support
+
+The `/memory/ingest` endpoint accepts an optional `project_id` field to tag ingested turns with a project:
+
+```bash
+curl http://127.0.0.1:1337/memory/ingest \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agent_id": "my-agent",
+    "conversation_id": "session-1",
+    "project_id": "project-uuid",
+    "turns": [...]
+  }'
+```
 
 ---
 
@@ -380,11 +455,11 @@ curl http://127.0.0.1:1337/memory/ingest \
   }'
 ```
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `agent_id` | string | Identifier for the agent whose memory is being populated |
-| `conversation_id` | string | Identifier for the conversation session |
-| `turns` | array | Array of turn objects, each with `user` and `assistant` fields |
+| Parameter         | Type   | Description                                                    |
+| ----------------- | ------ | -------------------------------------------------------------- |
+| `agent_id`        | string | Identifier for the agent whose memory is being populated       |
+| `conversation_id` | string | Identifier for the conversation session                        |
+| `turns`           | array  | Array of turn objects, each with `user` and `assistant` fields |
 
 Memory extraction runs asynchronously in the background — ingested turns are processed without blocking the API response.
 
@@ -408,27 +483,27 @@ Our goal is to achieve state-of-the-art on this benchmark. Osaurus uses Apple Fo
 
 ### LoCoMo Leaderboard
 
-| System | F1 Score |
-|--------|----------|
-| MemU | 92.09% |
-| CORE | 88.24% |
-| Human baseline | ~88% |
-| Memobase | 85% (temporal) |
-| Mem0 | 66.9% |
-| **Osaurus (Gemini 2.5 Flash)** | **57.08%** |
-| OpenAI Memory | 52.9% |
-| GPT-3.5-turbo-16K (no memory) | 37.8% |
-| GPT-4-turbo (no memory) | ~32% |
+| System                         | F1 Score       |
+| ------------------------------ | -------------- |
+| MemU                           | 92.09%         |
+| CORE                           | 88.24%         |
+| Human baseline                 | ~88%           |
+| Memobase                       | 85% (temporal) |
+| Mem0                           | 66.9%          |
+| **Osaurus (Gemini 2.5 Flash)** | **57.08%**     |
+| OpenAI Memory                  | 52.9%          |
+| GPT-3.5-turbo-16K (no memory)  | 37.8%          |
+| GPT-4-turbo (no memory)        | ~32%           |
 
 ### Osaurus Breakdown by Category
 
-| Category | Count | F1 Score |
-|----------|-------|----------|
-| Open-domain | 841 | 61.44% |
-| Adversarial | 446 | 90.36% |
-| Multi-hop | 282 | 41.94% |
-| Temporal | 321 | 23.16% |
-| Single-hop | 96 | 22.10% |
+| Category    | Count     | F1 Score   |
+| ----------- | --------- | ---------- |
+| Open-domain | 841       | 61.44%     |
+| Adversarial | 446       | 90.36%     |
+| Multi-hop   | 282       | 41.94%     |
+| Temporal    | 321       | 23.16%     |
+| Single-hop  | 96        | 22.10%     |
 | **Overall** | **1,986** | **57.08%** |
 
 ### Running the Benchmark

@@ -487,6 +487,7 @@ public final class ChatWindowManager: NSObject, ObservableObject {
         let toolbar = NSToolbar(identifier: "ChatToolbar")
         toolbar.allowsUserCustomization = false
         toolbar.autosavesConfiguration = false
+        toolbar.centeredItemIdentifiers = [NSToolbarItem.Identifier("ChatToolbar.modeToggle")]
 
         let toolbarDelegate = ChatToolbarDelegate(windowState: windowState, session: windowState.session)
         toolbar.delegate = toolbarDelegate
@@ -624,8 +625,7 @@ private final class ChatToolbarDelegate: NSObject, NSToolbarDelegate {
     private static let backItem = NSToolbarItem.Identifier("ChatToolbar.back")
     private static let forwardItem = NSToolbarItem.Identifier("ChatToolbar.forward")
     private static let inspectorItem = NSToolbarItem.Identifier("ChatToolbar.inspector")
-    /// System-provided centered/principal toolbar item identifier.
-    private static let principalItem = NSToolbarItem.Identifier("NSToolbarPrincipalItemIdentifier")
+    private static let modeToggleItem = NSToolbarItem.Identifier("ChatToolbar.modeToggle")
 
     private weak var windowState: ChatWindowState?
     private weak var session: ChatSession?
@@ -639,16 +639,16 @@ private final class ChatToolbarDelegate: NSObject, NSToolbarDelegate {
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         [
             Self.sidebarItem, Self.backItem, Self.forwardItem,
-            Self.principalItem,
-            Self.actionItem, Self.inspectorItem, Self.pinItem,
+            Self.modeToggleItem,
+            Self.actionItem, Self.pinItem, Self.inspectorItem,
         ]
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         [
             Self.sidebarItem, Self.backItem, Self.forwardItem,
-            Self.principalItem,
-            Self.actionItem, Self.inspectorItem, Self.pinItem,
+            Self.modeToggleItem,
+            Self.actionItem, Self.pinItem, Self.inspectorItem,
         ]
     }
 
@@ -667,9 +667,9 @@ private final class ChatToolbarDelegate: NSObject, NSToolbarDelegate {
                     ChatToolbarSidebarView(windowState: windowState)
             )
 
-        case Self.principalItem:
+        case Self.modeToggleItem:
             return makeHostingItem(
-                identifier: Self.principalItem,
+                identifier: Self.modeToggleItem,
                 rootView:
                     ChatToolbarModeToggleView(windowState: windowState, session: session)
             )

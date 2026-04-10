@@ -2,6 +2,9 @@
 # SPDX-License-Identifier: MIT
 # Shared by CI (.github/workflows/docs-integrity.yml) and lefthook pre-push.
 # Pin Node markdown-link-check major via npx; config: .markdown-link-check.json
+#
+# If this fails in CI but passes locally: docs may link to repo-root CLAUDE.md or
+# uncommitted fork-local files—see docs/DOC_LINKS_AND_CI.md.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

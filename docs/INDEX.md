@@ -47,13 +47,17 @@ Table of contents for Markdown guides in `docs/`. For **where code lives**, use 
 
 - [Developer map](DEVELOPER_MAP.md) — workspace layout and “start here” by theme
 - [Agent stubs](agent-stubs/) — short per-subsystem entry pages (e.g. [memory](agent-stubs/memory.md))
+- [Doc links & CI prerequisites](DOC_LINKS_AND_CI.md) — when `verify-docs` / **Docs integrity** fails on `CLAUDE.md` or fork-local paths
 
 ## Fork-local
 
 Personal fork notes (paths may vary upstream):
 
 - [Personal fork & local setup](personal_fork_local_documents/PERSONAL_FORK_AND_LOCAL_SETUP.md)
-- Optional local-only files (not linked—add and commit them if they should exist in every clone): `personal_fork_local_documents/OPAL_PORT_ROADMAP.md`, `personal_fork_local_documents/xcode-preview-catalog.md`
+- [Opal port roadmap](personal_fork_local_documents/OPAL_PORT_ROADMAP.md)
+- [Xcode preview catalog](personal_fork_local_documents/xcode-preview-catalog.md)
+
+These fork-local links require the files to be **committed** for CI to pass—see [DOC_LINKS_AND_CI.md](DOC_LINKS_AND_CI.md).
 
 ## Specs & plans
 

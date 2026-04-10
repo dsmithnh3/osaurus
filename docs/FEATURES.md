@@ -8,38 +8,39 @@ Canonical reference for all Osaurus features, their status, and documentation.
 
 ## Feature Matrix
 
-| Feature                          | Status    | README Section     | Documentation                 | Code Location                                                                         |
-| -------------------------------- | --------- | ------------------ | ----------------------------- | ------------------------------------------------------------------------------------- |
-| Local LLM Server (MLX)           | Stable    | "Key Features"     | OpenAI_API_GUIDE.md           | Services/Inference/MLXService.swift, Services/ModelRuntime/                                     |
-| Remote Providers                 | Stable    | "Key Features"     | REMOTE_PROVIDERS.md           | Managers/RemoteProviderManager.swift, Services/Provider/RemoteProviderService.swift            |
-| Remote MCP Providers             | Stable    | "Key Features"     | REMOTE_MCP_PROVIDERS.md       | Managers/MCPProviderManager.swift, Tools/MCPProviderTool.swift                        |
-| MCP Server                       | Stable    | "MCP Server"       | (in README)                   | Networking/OsaurusServer.swift, Services/MCP/MCPServerManager.swift                       |
+| Feature                          | Status    | README Section     | Documentation                 | Code Location                                                                                                                                                                       |
+| -------------------------------- | --------- | ------------------ | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Local LLM Server (MLX)           | Stable    | "Key Features"     | OpenAI_API_GUIDE.md           | Services/Inference/MLXService.swift, Services/ModelRuntime/                                                                                                                         |
+| Remote Providers                 | Stable    | "Key Features"     | REMOTE_PROVIDERS.md           | Managers/RemoteProviderManager.swift, Services/Provider/RemoteProviderService.swift                                                                                                 |
+| Remote MCP Providers             | Stable    | "Key Features"     | REMOTE_MCP_PROVIDERS.md       | Managers/MCPProviderManager.swift, Tools/MCPProviderTool.swift                                                                                                                      |
+| MCP Server                       | Stable    | "MCP Server"       | (in README)                   | Networking/OsaurusServer.swift, Services/MCP/MCPServerManager.swift                                                                                                                 |
 | Tools & Plugins                  | Stable    | "Tools & Plugins"  | PLUGIN_AUTHORING.md           | Tools/, Managers/Plugin/PluginManager.swift, Services/Plugin/PluginHostAPI.swift, Storage/PluginDatabase.swift, Models/Plugin/PluginHTTP.swift, Views/Plugin/PluginConfigView.swift |
-| Skills                           | Stable    | "Skills"           | SKILLS.md                     | Managers/SkillManager.swift, Views/Skill/SkillsView.swift, Services/Skill/SkillSearchService.swift |
-| Methods                          | Stable    | "Skills & Methods" | SKILLS.md                     | Models/Method/Method.swift, Services/Method/MethodService.swift, Services/Method/MethodSearchService.swift, Storage/MethodDatabase.swift, Tools/MethodTools.swift |
-| Context Management               | Stable    | -                  | SKILLS.md                     | Services/Context/PreflightCapabilitySearch.swift, Tools/CapabilityTools.swift, Services/Tool/ToolSearchService.swift, Services/Tool/ToolIndexService.swift |
-| Memory                           | Stable    | "Key Features"     | MEMORY.md                     | Services/Memory/MemoryService.swift, Services/Memory/MemorySearchService.swift, Services/Memory/MemoryContextAssembler.swift |
-| Agents                         | Stable    | "Agents"         | (in README)                   | Managers/AgentManager.swift, Models/Agent/Agent.swift, Views/Agent/AgentsView.swift         |
-| Schedules                        | Stable    | "Schedules"        | (in README)                   | Managers/ScheduleManager.swift, Models/Schedule/Schedule.swift, Views/Schedule/SchedulesView.swift      |
-| Watchers                         | Stable    | "Watchers"         | WATCHERS.md                   | Managers/WatcherManager.swift, Models/Watcher/Watcher.swift, Views/Watcher/WatchersView.swift         |
-| Agents                           | Stable    | "Agents"           | WORK.md                     | Work/, Services/WorkEngine.swift, Views/Work/WorkView.swift                             |
-| Developer Tools: Insights        | Stable    | "Developer Tools"  | DEVELOPER_TOOLS.md            | Views/Insights/InsightsView.swift, Managers/InsightsService.swift                              |
-| Developer Tools: Server Explorer | Stable    | "Developer Tools"  | DEVELOPER_TOOLS.md            | Views/Settings/ServerView.swift                                                                |
-| Apple Foundation Models          | macOS 26+ | "What is Osaurus?" | (in README)                   | Services/Inference/FoundationModelService.swift                                                 |
-| Menu Bar Chat                    | Stable    | "Highlights"       | (in README)                   | Views/Chat/ChatView.swift, Views/ChatOverlayView.swift                                     |
-| Chat Session Management          | Stable    | "Highlights"       | (in README)                   | Managers/Chat/ChatSessionsManager.swift, Models/Chat/ChatSessionData.swift                      |
-| Custom Themes                    | Stable    | "Highlights"       | (in README)                   | Views/Theme/ThemesView.swift, Views/Theme/ThemeEditorView.swift                        |
-| Model Manager                    | Stable    | "Highlights"       | (in README)                   | Views/Model/ModelDownloadView.swift, Services/HuggingFaceService.swift                      |
-| Shared Configuration             | Stable    | -                  | SHARED_CONFIGURATION_GUIDE.md | Services/SharedConfigurationService.swift                                             |
-| OpenAI API Compatibility         | Stable    | "API Endpoints"    | OpenAI_API_GUIDE.md           | Networking/HTTPHandler.swift, Models/API/OpenAIAPI.swift                                  |
-| Anthropic API Compatibility      | Stable    | "API Endpoints"    | (in README)                   | Networking/HTTPHandler.swift, Models/API/AnthropicAPI.swift                               |
-| Open Responses API               | Stable    | "API Endpoints"    | OpenAI_API_GUIDE.md           | Networking/HTTPHandler.swift, Models/API/OpenResponsesAPI.swift                           |
-| Ollama API Compatibility         | Stable    | "API Endpoints"    | (in README)                   | Networking/HTTPHandler.swift                                                          |
-| Voice Input (FluidAudio)         | Stable    | "Voice Input"      | VOICE_INPUT.md                | Managers/SpeechService.swift, Managers/Model/SpeechModelManager.swift                  |
-| VAD Mode                         | Stable    | "Voice Input"      | VOICE_INPUT.md                | Services/Voice/VADService.swift, Views/ContentView.swift (VAD controls)                     |
-| Transcription Mode               | Stable    | "Voice Input"      | VOICE_INPUT.md                | Services/Voice/TranscriptionModeService.swift, Views/Voice/TranscriptionOverlayView.swift         |
-| Sandbox                          | macOS 26+ | "Sandbox"          | SANDBOX.md                    | Services/Sandbox/SandboxManager.swift, Tools/BuiltinSandboxTools.swift, Managers/Plugin/SandboxPluginManager.swift, Views/Sandbox/SandboxView.swift |
-| CLI                              | Stable    | "CLI Reference"    | (in README)                   | Packages/OsaurusCLI/                                                                  |
+| Skills                           | Stable    | "Skills"           | SKILLS.md                     | Managers/SkillManager.swift, Views/Skill/SkillsView.swift, Services/Skill/SkillSearchService.swift                                                                                  |
+| Methods                          | Stable    | "Skills & Methods" | SKILLS.md                     | Models/Method/Method.swift, Services/Method/MethodService.swift, Services/Method/MethodSearchService.swift, Storage/MethodDatabase.swift, Tools/MethodTools.swift                   |
+| Context Management               | Stable    | -                  | SKILLS.md                     | Services/Context/PreflightCapabilitySearch.swift, Tools/CapabilityTools.swift, Services/Tool/ToolSearchService.swift, Services/Tool/ToolIndexService.swift                          |
+| Memory                           | Stable    | "Key Features"     | MEMORY.md                     | Services/Memory/MemoryService.swift, Services/Memory/MemorySearchService.swift, Services/Memory/MemoryContextAssembler.swift                                                        |
+| Agents                           | Stable    | "Agents"           | (in README)                   | Managers/AgentManager.swift, Models/Agent/Agent.swift, Views/Agent/AgentsView.swift                                                                                                 |
+| Schedules                        | Stable    | "Schedules"        | (in README)                   | Managers/ScheduleManager.swift, Models/Schedule/Schedule.swift, Views/Schedule/SchedulesView.swift                                                                                  |
+| Watchers                         | Stable    | "Watchers"         | WATCHERS.md                   | Managers/WatcherManager.swift, Models/Watcher/Watcher.swift, Views/Watcher/WatchersView.swift                                                                                       |
+| Agents                           | Stable    | "Agents"           | WORK.md                       | Work/, Services/WorkEngine.swift, Views/Work/WorkView.swift                                                                                                                         |
+| Developer Tools: Insights        | Stable    | "Developer Tools"  | DEVELOPER_TOOLS.md            | Views/Insights/InsightsView.swift, Managers/InsightsService.swift                                                                                                                   |
+| Developer Tools: Server Explorer | Stable    | "Developer Tools"  | DEVELOPER_TOOLS.md            | Views/Settings/ServerView.swift                                                                                                                                                     |
+| Apple Foundation Models          | macOS 26+ | "What is Osaurus?" | (in README)                   | Services/Inference/FoundationModelService.swift                                                                                                                                     |
+| Menu Bar Chat                    | Stable    | "Highlights"       | (in README)                   | Views/Chat/ChatView.swift, Views/ChatOverlayView.swift                                                                                                                              |
+| Chat Session Management          | Stable    | "Highlights"       | (in README)                   | Managers/Chat/ChatSessionsManager.swift, Models/Chat/ChatSessionData.swift                                                                                                          |
+| Custom Themes                    | Stable    | "Highlights"       | (in README)                   | Views/Theme/ThemesView.swift, Views/Theme/ThemeEditorView.swift                                                                                                                     |
+| Model Manager                    | Stable    | "Highlights"       | (in README)                   | Views/Model/ModelDownloadView.swift, Services/HuggingFaceService.swift                                                                                                              |
+| Shared Configuration             | Stable    | -                  | SHARED_CONFIGURATION_GUIDE.md | Services/SharedConfigurationService.swift                                                                                                                                           |
+| OpenAI API Compatibility         | Stable    | "API Endpoints"    | OpenAI_API_GUIDE.md           | Networking/HTTPHandler.swift, Models/API/OpenAIAPI.swift                                                                                                                            |
+| Anthropic API Compatibility      | Stable    | "API Endpoints"    | (in README)                   | Networking/HTTPHandler.swift, Models/API/AnthropicAPI.swift                                                                                                                         |
+| Open Responses API               | Stable    | "API Endpoints"    | OpenAI_API_GUIDE.md           | Networking/HTTPHandler.swift, Models/API/OpenResponsesAPI.swift                                                                                                                     |
+| Ollama API Compatibility         | Stable    | "API Endpoints"    | (in README)                   | Networking/HTTPHandler.swift                                                                                                                                                        |
+| Voice Input (FluidAudio)         | Stable    | "Voice Input"      | VOICE_INPUT.md                | Managers/SpeechService.swift, Managers/Model/SpeechModelManager.swift                                                                                                               |
+| VAD Mode                         | Stable    | "Voice Input"      | VOICE_INPUT.md                | Services/Voice/VADService.swift, Views/ContentView.swift (VAD controls)                                                                                                             |
+| Transcription Mode               | Stable    | "Voice Input"      | VOICE_INPUT.md                | Services/Voice/TranscriptionModeService.swift, Views/Voice/TranscriptionOverlayView.swift                                                                                           |
+| Sandbox                          | macOS 26+ | "Sandbox"          | SANDBOX.md                    | Services/Sandbox/SandboxManager.swift, Tools/BuiltinSandboxTools.swift, Managers/Plugin/SandboxPluginManager.swift, Views/Sandbox/SandboxView.swift                                 |
+| Projects                         | Stable    | "Projects"         | MEMORY.md (project scoping)   | Managers/ProjectManager.swift, Models/Project/Project.swift, Views/Projects/                                                                                                        |
+| CLI                              | Stable    | "CLI Reference"    | (in README)                   | Packages/OsaurusCLI/                                                                                                                                                                |
 
 ---
 
@@ -173,11 +174,11 @@ Canonical reference for all Osaurus features, their status, and documentation.
 - Settings: Top P, Max Context Length, and advanced KV cache quantization options (collapsed by default)
 - Auto-tuned defaults (when not set in Settings):
 
-| Setting | <24 GB RAM | 24–48 GB | 48–96 GB | 96 GB+ |
-| --------------- | ---------- | -------- | -------- | ------ |
-| Prefill step | 512 | 1024 | 1024 | 2048 |
-| Max KV (tokens) | 8192 | 16384 | 32768 | 65536 |
-| KV quantization | 8-bit when headroom < 16 GB, otherwise off | | | |
+| Setting         | <24 GB RAM                                 | 24–48 GB | 48–96 GB | 96 GB+ |
+| --------------- | ------------------------------------------ | -------- | -------- | ------ |
+| Prefill step    | 512                                        | 1024     | 1024     | 2048   |
+| Max KV (tokens) | 8192                                       | 16384    | 32768    | 65536  |
+| KV quantization | 8-bit when headroom < 16 GB, otherwise off |          |          |        |
 
 ---
 
@@ -415,7 +416,7 @@ Canonical reference for all Osaurus features, their status, and documentation.
 | ------------------- | -------------------------------------------- |
 | `name`              | Display name (required)                      |
 | `instructions`      | Prompt sent to the AI when the schedule runs |
-| `agentId`         | Optional agent to use for the chat         |
+| `agentId`           | Optional agent to use for the chat           |
 | `frequency`         | When and how often to run                    |
 | `isEnabled`         | Whether the schedule is active               |
 | `lastRunAt`         | When the schedule last ran                   |
@@ -458,25 +459,25 @@ Canonical reference for all Osaurus features, their status, and documentation.
 
 **Watcher Properties:**
 
-| Property         | Description                                        |
-| ---------------- | -------------------------------------------------- |
-| `name`           | Display name (required)                            |
-| `instructions`   | Prompt sent to the AI when changes are detected    |
-| `watchedFolder`  | Directory to monitor (security-scoped bookmark)    |
-| `agentId`      | Optional agent to use for the task               |
-| `isEnabled`      | Whether the watcher is active                      |
-| `recursive`      | Whether to monitor subdirectories (default: false) |
-| `responsiveness` | Debounce timing: fast, balanced, or patient        |
-| `lastTriggeredAt`| When the watcher last ran                          |
-| `lastChatSessionId` | Chat session ID from the last run               |
+| Property            | Description                                        |
+| ------------------- | -------------------------------------------------- |
+| `name`              | Display name (required)                            |
+| `instructions`      | Prompt sent to the AI when changes are detected    |
+| `watchedFolder`     | Directory to monitor (security-scoped bookmark)    |
+| `agentId`           | Optional agent to use for the task                 |
+| `isEnabled`         | Whether the watcher is active                      |
+| `recursive`         | Whether to monitor subdirectories (default: false) |
+| `responsiveness`    | Debounce timing: fast, balanced, or patient        |
+| `lastTriggeredAt`   | When the watcher last ran                          |
+| `lastChatSessionId` | Chat session ID from the last run                  |
 
 **Responsiveness Options:**
 
-| Option   | Debounce Window | Best For                                  |
-| -------- | --------------- | ----------------------------------------- |
-| Fast     | ~200ms          | Screenshots, single-file drops            |
-| Balanced | ~1s             | General use (default)                     |
-| Patient  | ~3s             | Downloads, batch operations               |
+| Option   | Debounce Window | Best For                       |
+| -------- | --------------- | ------------------------------ |
+| Fast     | ~200ms          | Screenshots, single-file drops |
+| Balanced | ~1s             | General use (default)          |
+| Patient  | ~3s             | Downloads, batch operations    |
 
 **Change Detection:**
 
@@ -487,12 +488,12 @@ Canonical reference for all Osaurus features, their status, and documentation.
 
 **State Machine:**
 
-| State       | Description                                     |
-| ----------- | ----------------------------------------------- |
-| `idle`      | Waiting for file system changes                 |
-| `debouncing`| Coalescing rapid events within the debounce window |
-| `processing`| Agent task is running                           |
-| `settling`  | Waiting for self-caused FSEvents to flush       |
+| State        | Description                                        |
+| ------------ | -------------------------------------------------- |
+| `idle`       | Waiting for file system changes                    |
+| `debouncing` | Coalescing rapid events within the debounce window |
+| `processing` | Agent task is running                              |
+| `settling`   | Waiting for self-caused FSEvents to flush          |
 
 **Storage:** `~/.osaurus/watchers/{uuid}.json`
 
@@ -574,6 +575,66 @@ Canonical reference for all Osaurus features, their status, and documentation.
 
 ---
 
+### Projects
+
+**Purpose:** Group conversations, work tasks, schedules, watchers, and memory under a shared context with a linked folder and instructions. Projects is the third mode alongside Chat and Work.
+
+**Components:**
+
+- `Models/Project/Project.swift` — Project data model (name, folder, instructions, state)
+- `Models/Project/ProjectStore.swift` — JSON file persistence (one file per project)
+- `Managers/ProjectManager.swift` — CRUD, active project tracking, context building, bookmark lifecycle
+- `Views/Projects/ProjectView.swift` — 3-panel coordinator view
+- `Views/Projects/ProjectHomeView.swift` — Center panel with header, input, outputs, recents
+- `Views/Projects/ProjectInspectorPanel.swift` — Right panel with instructions, scheduled, context, memory
+- `Views/Projects/ProjectListView.swift` — Grid of projects with search and "New project" button
+- `Views/Projects/ProjectEditorSheet.swift` — Create/edit project sheet
+- `Views/Projects/FolderTreeView.swift` — Recursive directory tree browser
+- `Views/Projects/MemorySummaryView.swift` — Compact memory entry list for inspector
+- `Views/Common/CollapsibleSection.swift` — Reusable collapsible header + content
+- `Views/Sidebar/AppSidebar.swift` — Unified sidebar for all three modes
+- `Views/Sidebar/SidebarNavRow.swift` — Navigation item component
+
+**Features:**
+
+- **3-Panel Layout** — Left sidebar, center project home, right inspector (overlay)
+- **Folder Linking** — Security-scoped bookmark grants sandbox-safe access to project folder
+- **Instructions** — Project-level system prompt additions, editable in inspector
+- **Context Files** — All `.md` files in project folder are injected into system prompt
+- **Scoped Memory** — Memory entries tagged with `project_id`; queries return project + global entries
+- **Scoped Entities** — Conversations, schedules, watchers, and work tasks can be associated with a project
+- **Navigation Stack** — Back/forward toolbar buttons traverse project → conversation history
+- **Inspector Sections** — Instructions, Scheduled tasks, Context (folder tree), Memory summary
+
+**Project Properties:**
+
+| Property         | Description                             |
+| ---------------- | --------------------------------------- |
+| `name`           | Display name                            |
+| `description`    | Optional description                    |
+| `icon`           | SF Symbol name (default: `folder.fill`) |
+| `color`          | Hex accent color for UI                 |
+| `folderPath`     | Resolved path to linked folder          |
+| `folderBookmark` | Security-scoped bookmark data           |
+| `instructions`   | Project-level system prompt additions   |
+| `isActive`       | Whether project is active               |
+| `isArchived`     | Whether project is archived             |
+
+**Workflow:**
+
+1. Click "Projects" in sidebar nav to see project list
+2. Click "New project" to create — enter name, pick folder, add instructions
+3. Click a project to enter it — sidebar shows project chip, recents filter to project
+4. Type in the input card to start a new conversation scoped to the project
+5. Memory extracted from project conversations is tagged with `project_id`
+6. Click X on project chip or back button to leave
+
+**Storage:** `~/.osaurus/projects/*.json` (one JSON file per project, UUID filename)
+
+**Related:** See [MEMORY.md](MEMORY.md#project-scoped-memory) for project-scoped memory details.
+
+---
+
 ### Sandbox
 
 **Purpose:** Run agent code in an isolated Linux virtual machine with full dev environment capabilities, per-agent isolation, and an extensible plugin system — safely and locally on Apple Silicon.
@@ -609,79 +670,79 @@ Canonical reference for all Osaurus features, their status, and documentation.
 
 **VM Configuration:**
 
-| Setting | Range | Default |
-|---------|-------|---------|
-| CPUs | 1–8 | 2 |
-| Memory | 1–8 GB | 2 GB |
-| Network | outbound / none | outbound |
-| Auto-Start | on / off | on |
-| Rootfs | — | 8 GiB |
+| Setting    | Range           | Default  |
+| ---------- | --------------- | -------- |
+| CPUs       | 1–8             | 2        |
+| Memory     | 1–8 GB          | 2 GB     |
+| Network    | outbound / none | outbound |
+| Auto-Start | on / off        | on       |
+| Rootfs     | —               | 8 GiB    |
 
 **Built-in Tools:**
 
-| Tool | Category | Description |
-|------|----------|-------------|
-| `sandbox_read_file` | Read-only | Read file contents (supports line ranges and log tails) |
-| `sandbox_list_directory` | Read-only | List files and directories |
-| `sandbox_search_files` | Read-only | Search file contents with ripgrep (regex, context lines, case-insensitive) |
-| `sandbox_find_files` | Read-only | Find files by name glob pattern (e.g. `*.py`, `test_*`) |
-| `sandbox_write_file` | Write | Write content to a file (creates parent directories) |
-| `sandbox_edit_file` | Write | Edit a file by exact string replacement (old_string/new_string) |
-| `sandbox_move` | Write | Move or rename |
-| `sandbox_delete` | Write | Delete files or directories |
-| `sandbox_exec` | Exec | Run shell command (timeout, rate limited) |
-| `sandbox_exec_background` | Exec | Start background process |
-| `sandbox_exec_kill` | Exec | Kill background process |
-| `sandbox_install` | Package | Install via apk (root) |
-| `sandbox_pip_install` | Package | Install via pip |
-| `sandbox_npm_install` | Package | Install via npm |
-| `sandbox_run_script` | Exec | Run a script file (Python, Node, Bash, etc.) |
-| `sandbox_whoami` | Info | Agent identity and environment |
-| `sandbox_processes` | Info | List agent processes |
-| `share_artifact` | Artifact | Share a file as a downloadable artifact |
-| `sandbox_secret_check` | Secret | Check whether a secret exists (never reveals value) |
-| `sandbox_secret_set` | Secret | Store a secret directly or prompt the user |
-| `sandbox_plugin_register` | Plugin | Register an agent-created plugin (requires `pluginCreate`) |
+| Tool                      | Category  | Description                                                                |
+| ------------------------- | --------- | -------------------------------------------------------------------------- |
+| `sandbox_read_file`       | Read-only | Read file contents (supports line ranges and log tails)                    |
+| `sandbox_list_directory`  | Read-only | List files and directories                                                 |
+| `sandbox_search_files`    | Read-only | Search file contents with ripgrep (regex, context lines, case-insensitive) |
+| `sandbox_find_files`      | Read-only | Find files by name glob pattern (e.g. `*.py`, `test_*`)                    |
+| `sandbox_write_file`      | Write     | Write content to a file (creates parent directories)                       |
+| `sandbox_edit_file`       | Write     | Edit a file by exact string replacement (old_string/new_string)            |
+| `sandbox_move`            | Write     | Move or rename                                                             |
+| `sandbox_delete`          | Write     | Delete files or directories                                                |
+| `sandbox_exec`            | Exec      | Run shell command (timeout, rate limited)                                  |
+| `sandbox_exec_background` | Exec      | Start background process                                                   |
+| `sandbox_exec_kill`       | Exec      | Kill background process                                                    |
+| `sandbox_install`         | Package   | Install via apk (root)                                                     |
+| `sandbox_pip_install`     | Package   | Install via pip                                                            |
+| `sandbox_npm_install`     | Package   | Install via npm                                                            |
+| `sandbox_run_script`      | Exec      | Run a script file (Python, Node, Bash, etc.)                               |
+| `sandbox_whoami`          | Info      | Agent identity and environment                                             |
+| `sandbox_processes`       | Info      | List agent processes                                                       |
+| `share_artifact`          | Artifact  | Share a file as a downloadable artifact                                    |
+| `sandbox_secret_check`    | Secret    | Check whether a secret exists (never reveals value)                        |
+| `sandbox_secret_set`      | Secret    | Store a secret directly or prompt the user                                 |
+| `sandbox_plugin_register` | Plugin    | Register an agent-created plugin (requires `pluginCreate`)                 |
 
 Read-only tools are always available. Write/exec/package/secret tools require `autonomous_exec.enabled` on the agent. `sandbox_plugin_register` additionally requires `pluginCreate` to be enabled.
 
 **Plugin Format (JSON recipe):**
 
-| Property | Description |
-|----------|-------------|
-| `name` | Display name |
-| `description` | Brief description |
-| `dependencies` | System packages via `apk add` |
-| `setup` | Setup command as agent user |
-| `files` | Seed files into plugin directory |
-| `tools` | Custom tool definitions (shell commands with `$PARAM_` env vars) |
-| `secrets` | Required secret names |
-| `permissions` | Network and inference access |
+| Property       | Description                                                      |
+| -------------- | ---------------------------------------------------------------- |
+| `name`         | Display name                                                     |
+| `description`  | Brief description                                                |
+| `dependencies` | System packages via `apk add`                                    |
+| `setup`        | Setup command as agent user                                      |
+| `files`        | Seed files into plugin directory                                 |
+| `tools`        | Custom tool definitions (shell commands with `$PARAM_` env vars) |
+| `secrets`      | Required secret names                                            |
+| `permissions`  | Network and inference access                                     |
 
 **Host API Bridge Services:**
 
-| Service | Routes |
-|---------|--------|
-| Secrets | `GET /api/secrets/{name}` |
-| Config | `GET/POST /api/config/{key}` |
-| Inference | `POST /api/inference/chat` |
-| Agent | `POST /api/agent/dispatch`, `POST /api/agent/memory` |
-| Events | `POST /api/events/emit` |
-| Plugin | `POST /api/plugin/create` |
-| Log | `POST /api/log` |
+| Service   | Routes                                               |
+| --------- | ---------------------------------------------------- |
+| Secrets   | `GET /api/secrets/{name}`                            |
+| Config    | `GET/POST /api/config/{key}`                         |
+| Inference | `POST /api/inference/chat`                           |
+| Agent     | `POST /api/agent/dispatch`, `POST /api/agent/memory` |
+| Events    | `POST /api/events/emit`                              |
+| Plugin    | `POST /api/plugin/create`                            |
+| Log       | `POST /api/log`                                      |
 
 **Storage:**
 
-| Path | Purpose |
-|------|---------|
-| `~/.osaurus/container/` | Container root |
-| `~/.osaurus/container/kernel/vmlinux` | Linux kernel |
-| `~/.osaurus/container/workspace/` | Mounted as `/workspace` |
-| `~/.osaurus/container/workspace/agents/{name}/` | Per-agent home |
-| `~/.osaurus/container/output/` | Mounted as `/output` |
-| `~/.osaurus/sandbox-plugins/` | Plugin library |
-| `~/.osaurus/config/sandbox.json` | Configuration |
-| `~/.osaurus/config/sandbox-agent-map.json` | Agent map |
+| Path                                            | Purpose                 |
+| ----------------------------------------------- | ----------------------- |
+| `~/.osaurus/container/`                         | Container root          |
+| `~/.osaurus/container/kernel/vmlinux`           | Linux kernel            |
+| `~/.osaurus/container/workspace/`               | Mounted as `/workspace` |
+| `~/.osaurus/container/workspace/agents/{name}/` | Per-agent home          |
+| `~/.osaurus/container/output/`                  | Mounted as `/output`    |
+| `~/.osaurus/sandbox-plugins/`                   | Plugin library          |
+| `~/.osaurus/config/sandbox.json`                | Configuration           |
+| `~/.osaurus/config/sandbox-agent-map.json`      | Agent map               |
 
 ---
 
@@ -733,13 +794,13 @@ Read-only tools are always available. Write/exec/package/secret tools require `a
 
 **Plugin Capabilities (v2):**
 
-| Capability | Manifest Key          | Description                                          |
-| ---------- | --------------------- | ---------------------------------------------------- |
-| Tools      | `capabilities.tools`  | AI-callable functions                                |
-| Routes     | `capabilities.routes` | HTTP endpoints (OAuth, webhooks, APIs)               |
-| Config     | `capabilities.config` | Native settings UI with validation                   |
-| Web        | `capabilities.web`    | Static frontend serving with context injection       |
-| Docs       | `docs`                | README, changelog, and external links                |
+| Capability | Manifest Key          | Description                                    |
+| ---------- | --------------------- | ---------------------------------------------- |
+| Tools      | `capabilities.tools`  | AI-callable functions                          |
+| Routes     | `capabilities.routes` | HTTP endpoints (OAuth, webhooks, APIs)         |
+| Config     | `capabilities.config` | Native settings UI with validation             |
+| Web        | `capabilities.web`    | Static frontend serving with context injection |
+| Docs       | `docs`                | README, changelog, and external links          |
 
 See [PLUGIN_AUTHORING.md](PLUGIN_AUTHORING.md) for the full reference.
 
@@ -810,16 +871,16 @@ Methods are YAML sequences of tool-call steps that represent learned procedures.
 
 **Method Properties:**
 
-| Property       | Description                                   |
-| -------------- | --------------------------------------------- |
-| `name`         | Display name (required)                       |
-| `description`  | Brief description of what the method does     |
-| `triggerText`  | Optional phrases that trigger this method     |
-| `body`         | YAML steps (the workflow definition)          |
-| `toolsUsed`    | Auto-extracted tool references from YAML      |
-| `skillsUsed`   | Auto-extracted skill references from YAML     |
-| `tokenCount`   | Estimated token count for context budgeting   |
-| `version`      | Incremented on each update                    |
+| Property      | Description                                 |
+| ------------- | ------------------------------------------- |
+| `name`        | Display name (required)                     |
+| `description` | Brief description of what the method does   |
+| `triggerText` | Optional phrases that trigger this method   |
+| `body`        | YAML steps (the workflow definition)        |
+| `toolsUsed`   | Auto-extracted tool references from YAML    |
+| `skillsUsed`  | Auto-extracted skill references from YAML   |
+| `tokenCount`  | Estimated token count for context budgeting |
+| `version`     | Incremented on each update                  |
 
 **Scoring:**
 
@@ -834,10 +895,10 @@ Each time a method is used, a `MethodEvent` is recorded (`loaded`, `succeeded`, 
 
 **Agent Tools:**
 
-| Tool              | Description                                      |
-| ----------------- | ------------------------------------------------ |
-| `methods_save`    | Save a new method from a YAML workflow           |
-| `methods_report`  | Report success or failure to update method score |
+| Tool             | Description                                      |
+| ---------------- | ------------------------------------------------ |
+| `methods_save`   | Save a new method from a YAML workflow           |
+| `methods_report` | Report success or failure to update method score |
 
 **Storage:** `~/.osaurus/methods/methods.db` (SQLite with WAL mode)
 
@@ -859,12 +920,12 @@ Context management replaces manual per-agent tool and skill configuration with a
 
 **Preflight Search Modes:**
 
-| Mode        | Methods | Tools | Skills | Use Case                              |
-| ----------- | ------- | ----- | ------ | ------------------------------------- |
-| `off`       | 0       | 0     | 0      | Disable automatic selection           |
-| `narrow`    | 1       | 2     | 1      | Minimal context, fastest responses    |
-| `balanced`  | 3       | 5     | 2      | Default — good coverage, moderate cost|
-| `wide`      | 5       | 8     | 4      | Maximum coverage, larger prompts      |
+| Mode       | Methods | Tools | Skills | Use Case                               |
+| ---------- | ------- | ----- | ------ | -------------------------------------- |
+| `off`      | 0       | 0     | 0      | Disable automatic selection            |
+| `narrow`   | 1       | 2     | 1      | Minimal context, fastest responses     |
+| `balanced` | 3       | 5     | 2      | Default — good coverage, moderate cost |
+| `wide`     | 5       | 8     | 4      | Maximum coverage, larger prompts       |
 
 The preflight search produces a `PreflightResult` containing:
 
@@ -957,14 +1018,14 @@ All three search services use VecturaKit (hybrid BM25 + vector search):
 
 **Configuration:**
 
-| Setting                 | Description                                  |
-| ----------------------- | -------------------------------------------- |
-| `vadModeEnabled`        | Master toggle for VAD mode                   |
-| `enabledAgentIds`     | UUIDs of agents that respond to wake-words |
-| `customWakePhrase`      | Optional phrase like "Hey Osaurus"           |
-| `wakeWordSensitivity`   | Detection sensitivity level                  |
-| `autoStartVoiceInput`   | Start recording after activation             |
-| `silenceTimeoutSeconds` | Auto-close timeout (0 = disabled)            |
+| Setting                 | Description                                |
+| ----------------------- | ------------------------------------------ |
+| `vadModeEnabled`        | Master toggle for VAD mode                 |
+| `enabledAgentIds`       | UUIDs of agents that respond to wake-words |
+| `customWakePhrase`      | Optional phrase like "Hey Osaurus"         |
+| `wakeWordSensitivity`   | Detection sensitivity level                |
+| `autoStartVoiceInput`   | Start recording after activation           |
+| `silenceTimeoutSeconds` | Auto-close timeout (0 = disabled)          |
 
 **Workflow:**
 
@@ -1039,24 +1100,24 @@ All three search services use VecturaKit (hybrid BM25 + vector search):
 
 **4-Layer Architecture:**
 
-| Layer | Type | Purpose | Retention |
-|-------|------|---------|-----------|
-| Layer 1 | User Profile | Auto-generated user summary with version tracking | Permanent |
-| Layer 2 | Working Memory | Structured entries (facts, preferences, decisions, etc.) | Per-agent limit (default 500) |
-| Layer 3 | Conversation Summaries | Compressed session recaps | Configurable (default 7 days) |
-| Layer 4 | Conversation Chunks | Raw conversation turns | Permanent |
+| Layer   | Type                   | Purpose                                                  | Retention                     |
+| ------- | ---------------------- | -------------------------------------------------------- | ----------------------------- |
+| Layer 1 | User Profile           | Auto-generated user summary with version tracking        | Permanent                     |
+| Layer 2 | Working Memory         | Structured entries (facts, preferences, decisions, etc.) | Per-agent limit (default 500) |
+| Layer 3 | Conversation Summaries | Compressed session recaps                                | Configurable (default 7 days) |
+| Layer 4 | Conversation Chunks    | Raw conversation turns                                   | Permanent                     |
 
 **Memory Entry Types:**
 
-| Type | Description |
-|------|-------------|
-| `fact` | Factual information about the user or their environment |
-| `preference` | User preferences and likes/dislikes |
-| `decision` | Decisions made during conversations |
-| `correction` | Corrections to previous information |
-| `commitment` | Promises or plans the user mentioned |
-| `relationship` | Relationships between people, projects, or concepts |
-| `skill` | Skills, expertise, or knowledge areas |
+| Type           | Description                                             |
+| -------------- | ------------------------------------------------------- |
+| `fact`         | Factual information about the user or their environment |
+| `preference`   | User preferences and likes/dislikes                     |
+| `decision`     | Decisions made during conversations                     |
+| `correction`   | Corrections to previous information                     |
+| `commitment`   | Promises or plans the user mentioned                    |
+| `relationship` | Relationships between people, projects, or concepts     |
+| `skill`        | Skills, expertise, or knowledge areas                   |
 
 **Knowledge Graph:**
 
@@ -1066,33 +1127,33 @@ All three search services use VecturaKit (hybrid BM25 + vector search):
 
 **Search & Retrieval:**
 
-| Method | Backend | Fallback |
-|--------|---------|----------|
+| Method        | Backend                               | Fallback            |
+| ------------- | ------------------------------------- | ------------------- |
 | Hybrid search | VecturaKit (BM25 + vector embeddings) | SQLite LIKE queries |
-| MMR reranking | Jaccard similarity for diversity | N/A |
+| MMR reranking | Jaccard similarity for diversity      | N/A                 |
 
 - Default MMR lambda: 0.7 (relevance vs. diversity tradeoff)
 - Default fetch multiplier: 2.0x over-fetch before reranking
 
 **Verification Pipeline (3 layers, no LLM calls):**
 
-| Layer | Method | Threshold |
-|-------|--------|-----------|
-| Layer 1 | Jaccard word-overlap deduplication | 0.6 |
-| Layer 2 | Contradiction detection (same type + similarity) | 0.3 |
-| Layer 3 | Semantic similarity via vector search | 0.85 |
+| Layer   | Method                                           | Threshold |
+| ------- | ------------------------------------------------ | --------- |
+| Layer 1 | Jaccard word-overlap deduplication               | 0.6       |
+| Layer 2 | Contradiction detection (same type + similarity) | 0.3       |
+| Layer 3 | Semantic similarity via vector search            | 0.85      |
 
 **Context Assembly:**
 
 Memory is injected into system prompts in this order with per-section token budgets:
 
-| Section | Default Budget |
-|---------|---------------|
-| User Overrides | (always included) |
-| User Profile | 2,000 tokens |
-| Working Memory | 500 tokens |
-| Conversation Summaries | 1,000 tokens |
-| Key Relationships | 300 tokens |
+| Section                | Default Budget    |
+| ---------------------- | ----------------- |
+| User Overrides         | (always included) |
+| User Profile           | 2,000 tokens      |
+| Working Memory         | 500 tokens        |
+| Conversation Summaries | 1,000 tokens      |
+| Key Relationships      | 300 tokens        |
 
 Results are cached for 10 seconds per agent.
 
@@ -1106,24 +1167,24 @@ Results are cached for 10 seconds per agent.
 
 **Configuration:**
 
-| Setting | Default | Range |
-|---------|---------|-------|
-| `coreModelProvider` | `anthropic` | Any provider |
-| `coreModelName` | `claude-haiku-4-5` | Any model |
-| `embeddingBackend` | `mlx` | `mlx`, `none` |
-| `embeddingModel` | `nomic-embed-text-v1.5` | Any embedding model |
-| `summaryDebounceSeconds` | 60 | 10 -- 3,600 |
-| `profileMaxTokens` | 2,000 | 100 -- 50,000 |
-| `profileRegenerateThreshold` | 10 | 1 -- 100 |
-| `workingMemoryBudgetTokens` | 500 | 50 -- 10,000 |
-| `summaryRetentionDays` | 7 | 1 -- 365 |
-| `summaryBudgetTokens` | 1,000 | 50 -- 10,000 |
-| `graphBudgetTokens` | 300 | 50 -- 5,000 |
-| `recallTopK` | 10 | 1 -- 100 |
-| `mmrLambda` | 0.7 | 0.0 -- 1.0 |
-| `mmrFetchMultiplier` | 2.0 | 1.0 -- 10.0 |
-| `maxEntriesPerAgent` | 500 | 0 -- 10,000 |
-| `enabled` | true | true/false |
+| Setting                      | Default                 | Range               |
+| ---------------------------- | ----------------------- | ------------------- |
+| `coreModelProvider`          | `anthropic`             | Any provider        |
+| `coreModelName`              | `claude-haiku-4-5`      | Any model           |
+| `embeddingBackend`           | `mlx`                   | `mlx`, `none`       |
+| `embeddingModel`             | `nomic-embed-text-v1.5` | Any embedding model |
+| `summaryDebounceSeconds`     | 60                      | 10 -- 3,600         |
+| `profileMaxTokens`           | 2,000                   | 100 -- 50,000       |
+| `profileRegenerateThreshold` | 10                      | 1 -- 100            |
+| `workingMemoryBudgetTokens`  | 500                     | 50 -- 10,000        |
+| `summaryRetentionDays`       | 7                       | 1 -- 365            |
+| `summaryBudgetTokens`        | 1,000                   | 50 -- 10,000        |
+| `graphBudgetTokens`          | 300                     | 50 -- 5,000         |
+| `recallTopK`                 | 10                      | 1 -- 100            |
+| `mmrLambda`                  | 0.7                     | 0.0 -- 1.0          |
+| `mmrFetchMultiplier`         | 2.0                     | 1.0 -- 10.0         |
+| `maxEntriesPerAgent`         | 500                     | 0 -- 10,000         |
+| `enabled`                    | true                    | true/false          |
 
 **Storage:** `~/.osaurus/memory/memory.sqlite` (SQLite with WAL mode)
 
@@ -1136,13 +1197,13 @@ Results are cached for 10 seconds per agent.
 | [README.md](../README.md)                                      | Project overview, quick start, feature highlights |
 | [FEATURES.md](FEATURES.md)                                     | Feature inventory and architecture (this file)    |
 | [WATCHERS.md](WATCHERS.md)                                     | Watchers and folder monitoring guide              |
-| [WORK.md](WORK.md)                                         | Agents and autonomous task execution guide        |
+| [WORK.md](WORK.md)                                             | Agents and autonomous task execution guide        |
 | [REMOTE_PROVIDERS.md](REMOTE_PROVIDERS.md)                     | Remote provider setup and configuration           |
 | [REMOTE_MCP_PROVIDERS.md](REMOTE_MCP_PROVIDERS.md)             | Remote MCP provider setup                         |
 | [DEVELOPER_TOOLS.md](DEVELOPER_TOOLS.md)                       | Insights and Server Explorer guide                |
 | [VOICE_INPUT.md](VOICE_INPUT.md)                               | Voice input, FluidAudio, and VAD mode guide       |
-| [SKILLS.md](SKILLS.md)                                         | Skills, methods, and context management guide    |
-| [MEMORY.md](MEMORY.md)                                         | Memory system and configuration guide            |
+| [SKILLS.md](SKILLS.md)                                         | Skills, methods, and context management guide     |
+| [MEMORY.md](MEMORY.md)                                         | Memory system and configuration guide             |
 | [SANDBOX.md](SANDBOX.md)                                       | Sandbox VM and plugin guide                       |
 | [PLUGIN_AUTHORING.md](PLUGIN_AUTHORING.md)                     | Creating custom plugins                           |
 | [OpenAI_API_GUIDE.md](OpenAI_API_GUIDE.md)                     | API usage, tool calling, streaming                |

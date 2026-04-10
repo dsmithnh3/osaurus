@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The **Linux VM** sandbox runs untrusted code with VirtioFS, vsock bridge to the host, and rate-limited host APIs. Configuration, networking allowlists, and built-in tools are documented in [SANDBOX.md](../SANDBOX.md). Host paths include `~/.osaurus/container/` (see **CLAUDE.md** at the repository root).
+The **Linux VM** sandbox runs untrusted code with VirtioFS, vsock bridge to the host, and rate-limited host APIs. Configuration, networking allowlists, and built-in tools are documented in [SANDBOX.md](../SANDBOX.md). Host paths include `~/.osaurus/container/` (see [`CLAUDE.md`](../../CLAUDE.md)).
 
 ## Key paths (`Packages/OsaurusCore/`)
 

@@ -1,0 +1,12 @@
+---
+description: Personal fork — upstream is osaurus-ai/osaurus; do not contribute there unless the user asks
+alwaysApply: true
+---
+
+# Personal fork policy
+
+- **This repository** is a personal fork. Treat **`origin`** as the user’s canonical remote for pushes and PRs.
+- **`upstream`** is `https://github.com/osaurus-ai/osaurus.git` — use it only to **fetch** and **merge or cherry-pick** into this fork’s branches.
+- **Never** suggest opening pull requests to `osaurus-ai/osaurus`, pushing to that remote, or implying the parent repo should change, unless the user explicitly wants to upstream a change.
+- For integrating their work: `git fetch upstream` then merge `upstream/main` (or cherry-pick specific commits) into the user’s **local** integration branch; resolve conflicts here.
+- See `CLAUDE.md` section **Personal fork and upstream** for commands and notes on Actions.

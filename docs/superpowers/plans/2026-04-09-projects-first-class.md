@@ -1,6 +1,8 @@
 # Projects as a First-Class Concept — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Status:** **Implemented** on `feat/projects-first-class` branch (commits `598689a3`..`021b8be2`).
+>
+> This plan guided the implementation. Checkboxes below are preserved for reference but the work is complete. Memory scoping was refined in a follow-up spec (`specs/2026-04-10-project-scoped-memory-design.md`); see the parent spec's Errata section for version/behavior changes.
 
 **Goal:** Add Projects as a third mode alongside Chat and Work — an organizational container that groups conversations, tasks, schedules, watchers, and memory under a shared context with folder, instructions, and scoped memory.
 

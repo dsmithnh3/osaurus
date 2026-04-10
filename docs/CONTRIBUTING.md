@@ -31,6 +31,8 @@ Project layout and API overview are in `README.md`. For a complete feature inven
 
 To find **where subsystems live in code** (and for AI-assisted navigation), use [DEVELOPER_MAP.md](DEVELOPER_MAP.md) and the short entry pages in [agent-stubs/](agent-stubs/); a grouped list of guides is in [INDEX.md](INDEX.md). Keep **build and verification commands** in the repo-root `CLAUDE.md`—do not fork those into long copies here.
 
+If **Docs integrity** or `markdown-link-check` fails on a missing `CLAUDE.md` or fork-local doc link, see [DOC_LINKS_AND_CI.md](DOC_LINKS_AND_CI.md).
+
 ## Architecture guide
 
 ### Layer definitions

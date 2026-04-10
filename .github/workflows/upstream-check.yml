@@ -1,0 +1,42 @@
+# Manual-only: compare the checked-out ref with osaurus-ai/osaurus main.
+# Does not merge or open PRs. Use when you want a quick “what’s new upstream?” summary in Actions.
+name: Upstream check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  upstream-diff:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch upstream main
+        run: |
+          git remote add upstream https://github.com/osaurus-ai/osaurus.git
+          git fetch upstream refs/heads/main:refs/remotes/upstream/main
+
+      - name: Summarize commits reachable from upstream/main but not HEAD
+        run: |
+          {
+            echo "## Upstream \`main\` commits not in this ref"
+            echo ""
+            echo "Current ref: \`$(git rev-parse --abbrev-ref HEAD)\` at \`$(git rev-parse --short HEAD)\`"
+            echo ""
+            count=$(git rev-list --count HEAD..upstream/main)
+            echo "**Count:** ${count}"
+            echo ""
+            echo '```'
+            git log HEAD..upstream/main --oneline -n 80
+            echo '```'
+            if [ "$count" -gt 80 ]; then
+              echo ""
+              echo "_Showing newest 80 of ${count} commits._"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -657,3 +657,20 @@ Other future considerations:
 - Project templates (pre-configured instructions + schedules)
 - Project sharing (if multi-user support is added)
 - Drag-and-drop reordering in project list
+
+---
+
+## Errata (2026-04-10)
+
+The following items were accurate at spec time but have since changed during implementation:
+
+1. **Line 87 (WorkDatabase.schemaVersion):** The spec noted `schemaVersion` was "stale at `2`". As implemented, `WorkDatabase.schemaVersion` is now `5` with migrations V1–V5 all wired.
+
+2. **Line 118 (MemoryDatabase schema):** The spec said "current schema is V3" and described V4 adding `project_id` columns. As implemented, `MemoryDatabase.schemaVersion` is now `5`:
+   - **V4:** Added `project_id` to 5 tables (memory_entries, conversation_summaries, conversations, entities, relationships) + 3 composite indexes
+   - **V5:** Added `project_id` to `pending_signals` table (required for summary generation pipeline)
+
+3. **Line 140 (Knowledge Graph scoping):** The spec table said "Filter by `project_id` on entities/relationships". As implemented, **entities and relationships remain global** (`project_id = NULL` always). This was a deliberate design decision documented in `specs/2026-04-10-project-scoped-memory-design.md`:
+   - Entities are globally deduped by `(name, type)` — project-tagging would break cross-project visibility
+   - Real-world concepts (people, systems) are inherently cross-project
+   - The `project_id` columns exist but are unused, available for future partitioning if needed

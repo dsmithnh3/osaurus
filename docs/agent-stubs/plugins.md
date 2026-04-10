@@ -13,7 +13,7 @@
 ## Invariants / don’t break
 
 - **ABI and security** (signing, quarantine, capability boundaries) must stay aligned with [PLUGIN_AUTHORING.md](../PLUGIN_AUTHORING.md) and [SECURITY.md](../SECURITY.md).
-- Prefer **Models** for pure types; **Services** for plugin host logic; **Managers** for observable UI state (**CLAUDE.md** at the repository root).
+- Prefer **Models** for pure types; **Services** for plugin host logic; **Managers** for observable UI state ([`CLAUDE.md`](../../CLAUDE.md)).
 
 ## See also
 
