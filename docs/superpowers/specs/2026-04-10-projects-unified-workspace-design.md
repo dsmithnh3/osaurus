@@ -102,6 +102,7 @@ private var centerContent: some View {
         }
     } else {
         ProjectListView(windowState: windowState)
+        // Chat/Work picker is hidden when no project is selected
     }
 }
 ```
@@ -155,11 +156,13 @@ public struct NavigationEntry: Equatable, Sendable {
 ### ChatWindowState changes
 
 `switchMode(to: .project)`:
+
 - Creates `ProjectSession` if nil
 - If `subMode == .work`: registers work tools, creates `WorkSession` if nil
 - If `subMode == .chat`: unregisters work tools
 
 `restoreNavigationEntry` for `.project`:
+
 - Restores `ProjectSession` with `activeProjectId` from entry
 - Preserves current `subMode` (or defaults to `.chat`)
 - Handles work tool registration based on `subMode`
@@ -167,6 +170,7 @@ public struct NavigationEntry: Equatable, Sendable {
 ## Left Sidebar (AppSidebar)
 
 ### Unchanged
+
 - `SidebarContainer` wrapping with glass styling
 - New Chat button
 - `SidebarSearchField` with search filtering
@@ -194,6 +198,7 @@ enum ProjectRecentItem: Identifiable {
 - Search filters both types by title
 
 **Tap behavior:**
+
 - `SessionRow` tap: loads session into `windowState.session`, sets `subMode = .chat`
 - `TaskRow` tap: loads task into `windowState.workSession`, sets `subMode = .work`
 
@@ -202,6 +207,7 @@ enum ProjectRecentItem: Identifiable {
 ## Right Inspector (ProjectInspectorPanel)
 
 ### Unchanged
+
 - `SidebarContainer(attachedEdge: .trailing, width: SidebarStyle.inspectorWidth)`
 - Instructions section (collapsible)
 - Scheduled section (collapsible)
@@ -221,6 +227,7 @@ Inserted above Context, below Scheduled.
 - Empty state: icon + "No outputs yet", same pattern as other sections
 
 **Section order:**
+
 1. Instructions
 2. Scheduled
 3. Outputs (new)
@@ -230,16 +237,19 @@ Inserted above Context, below Scheduled.
 ## Shared Component Extraction
 
 ### From `ChatSessionSidebar.swift`
+
 - `SessionRow` → `Views/Sidebar/SessionRow.swift` (private → internal)
 - All features preserved: agent dot/letter, inline rename TextField, hover actions (pencil + trash), context menu (rename, delete, open in new window)
 - `ChatSessionSidebar` imports and uses the shared version
 
 ### From `WorkTaskSidebar.swift`
+
 - `TaskRow` → `Views/Sidebar/TaskRow.swift` (private → internal)
 - All features preserved: `MorphingStatusIcon`, hover trash, context menu (delete)
 - `WorkTaskSidebar` imports and uses the shared version
 
 ### From `WorkView.swift`
+
 - `WorkPulseModifier` → `Views/Common/WorkPulseModifier.swift` (private → internal)
 - `WorkStatusButton` → `Views/Common/WorkStatusButton.swift` (private → internal)
 - `ClarificationOverlay` → `Views/Common/ClarificationOverlay.swift` (private → internal)
@@ -247,6 +257,7 @@ Inserted above Context, below Scheduled.
 - `ProjectView` uses the same shared versions (no duplication)
 
 ### ChatView.swift — NOT extracted
+
 `ChatView` is ~1300 lines. Rather than extracting a `ChatContentArea` wrapper, `ProjectView` composes the same building blocks directly: `MessageThreadView`, `FloatingInputCard`, `ScrollToBottomButton`, empty state components. These are already standalone reusable views.
 
 Similarly for Work content: `ProjectView` composes `WorkEmptyState`, `MessageThreadView`, `FloatingInputCard`, `IssueTrackerPanel`, `WorkStatusButton`, etc. directly.
@@ -254,40 +265,46 @@ Similarly for Work content: `ProjectView` composes `WorkEmptyState`, `MessageThr
 ## File Changes
 
 ### Files DELETED (3)
-| File | Reason |
-|------|--------|
-| `Views/Projects/ProjectHomeView.swift` | Replaced by direct chat/work content rendering |
+
+| File                                         | Reason                                                      |
+| -------------------------------------------- | ----------------------------------------------------------- |
+| `Views/Projects/ProjectHomeView.swift`       | Replaced by direct chat/work content rendering              |
 | `Views/Projects/ProjectInlineChatView.swift` | Replaced by composing shared building blocks in ProjectView |
 | `Views/Projects/ProjectInlineWorkView.swift` | Replaced by composing shared building blocks in ProjectView |
 
 ### Files CREATED (5)
-| File | Purpose |
-|------|---------|
-| `Views/Sidebar/SessionRow.swift` | Shared session row (extracted from ChatSessionSidebar) |
-| `Views/Sidebar/TaskRow.swift` | Shared task row (extracted from WorkTaskSidebar) |
-| `Views/Common/WorkPulseModifier.swift` | Shared pulse animation (extracted from WorkView) |
-| `Views/Common/WorkStatusButton.swift` | Shared status button (extracted from WorkView) |
-| `Views/Common/ClarificationOverlay.swift` | Shared clarification UI (extracted from WorkView) |
+
+| File                                      | Purpose                                                |
+| ----------------------------------------- | ------------------------------------------------------ |
+| `Views/Sidebar/SessionRow.swift`          | Shared session row (extracted from ChatSessionSidebar) |
+| `Views/Sidebar/TaskRow.swift`             | Shared task row (extracted from WorkTaskSidebar)       |
+| `Views/Common/WorkPulseModifier.swift`    | Shared pulse animation (extracted from WorkView)       |
+| `Views/Common/WorkStatusButton.swift`     | Shared status button (extracted from WorkView)         |
+| `Views/Common/ClarificationOverlay.swift` | Shared clarification UI (extracted from WorkView)      |
 
 ### Files MODIFIED (7)
-| File | Changes |
-|------|---------|
-| `Views/Projects/ProjectView.swift` | Rewritten: center content renders chat or work based on `subMode`, Chat/Work picker, full-bleed layout matching Chat/Work tabs |
-| `Views/Projects/ProjectInspectorPanel.swift` | Add Outputs section above Context |
-| `Views/Sidebar/AppSidebar.swift` | Replace `RecentRow` with `ProjectRecentItem` using shared `SessionRow`/`TaskRow`, add work task querying |
-| `Views/Chat/ChatSessionSidebar.swift` | Remove private `SessionRow`, import shared version |
-| `Views/Work/WorkTaskSidebar.swift` | Remove private `TaskRow`, import shared version |
-| `Views/Work/WorkView.swift` | Remove private pulse/status/clarification views, import shared versions |
-| `Managers/Chat/ChatWindowState.swift` | Simplify `ProjectSession` (remove inline fields, add `subMode`), simplify `NavigationEntry` (remove `workTaskId`), update `switchMode`/`restoreNavigationEntry` |
+
+| File                                         | Changes                                                                                                                                                         |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Views/Projects/ProjectView.swift`           | Rewritten: center content renders chat or work based on `subMode`, Chat/Work picker, full-bleed layout matching Chat/Work tabs                                  |
+| `Views/Projects/ProjectInspectorPanel.swift` | Add Outputs section above Context                                                                                                                               |
+| `Views/Sidebar/AppSidebar.swift`             | Replace `RecentRow` with `ProjectRecentItem` using shared `SessionRow`/`TaskRow`, add work task querying                                                        |
+| `Views/Chat/ChatSessionSidebar.swift`        | Remove private `SessionRow`, import shared version                                                                                                              |
+| `Views/Work/WorkTaskSidebar.swift`           | Remove private `TaskRow`, import shared version                                                                                                                 |
+| `Views/Work/WorkView.swift`                  | Remove private pulse/status/clarification views, import shared versions                                                                                         |
+| `Managers/Chat/ChatWindowState.swift`        | Simplify `ProjectSession` (remove inline fields, add `subMode`), simplify `NavigationEntry` (remove `workTaskId`), update `switchMode`/`restoreNavigationEntry` |
 
 ### Tests
-| File | Changes |
-|------|---------|
+
+| File                                         | Changes                                                                                  |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | `Tests/Project/ProjectNavigationTests.swift` | Update for simplified `ProjectSession` and `NavigationEntry`, add `ProjectSubMode` tests |
+| `Tests/Project/NavigationStackTests.swift`   | Update any references to `workTaskId` in `NavigationEntry` if present                    |
 
 ## Code Cleanup
 
 ### Dead Code Removal
+
 - `ProjectInputMode` enum — deleted with `ProjectHomeView.swift`
 - `RecentRow` struct — replaced in `AppSidebar.swift`
 - `InlineWorkPulseModifier` — deleted with `ProjectInlineWorkView.swift`
@@ -295,6 +312,7 @@ Similarly for Work content: `ProjectView` composes `WorkEmptyState`, `MessageThr
 - `formatRelativeDate` — verify sole usage; remove if orphaned
 
 ### Grep Sweep (zero references expected)
+
 - `inlineSessionId`
 - `inlineWorkTaskId`
 - `hasInlineContent`
@@ -305,6 +323,7 @@ Similarly for Work content: `ProjectView` composes `WorkEmptyState`, `MessageThr
 - `InlineWorkPulseModifier`
 
 ### Reference Updates
+
 - `ChatWindowState.restoreNavigationEntry` — remove `workTaskId` handling, simplify to sub-mode logic
 - `ProjectView.onChange(of: session.inlineWorkTaskId)` — delete, replace with sub-mode-driven tool registration
 - `AppSidebar` `RecentRow` tap handler — simplify, no "inline" branching
