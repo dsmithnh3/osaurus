@@ -31,11 +31,11 @@ public enum MemoryDatabaseError: Error, LocalizedError {
 public final class MemoryDatabase: @unchecked Sendable {
     public static let shared = MemoryDatabase()
 
-    private static let schemaVersion = 4
+    private static let schemaVersion = 5
 
     private static let memoryEntryColumns = """
         id, agent_id, type, content, confidence, model, source_conversation_id, tags, status,
-        superseded_by, created_at, last_accessed, access_count, valid_from, valid_until
+        superseded_by, created_at, last_accessed, access_count, valid_from, valid_until, project_id
         """
 
     private static let insertMemoryEventSQL =
@@ -158,6 +158,7 @@ public final class MemoryDatabase: @unchecked Sendable {
         if currentVersion < 2 { try migrateToV2() }
         if currentVersion < 3 { try migrateToV3() }
         if currentVersion < 4 { try migrateToV4() }
+        if currentVersion < 5 { try migrateToV5() }
     }
 
     private func getSchemaVersion() throws -> Int {
@@ -508,6 +509,19 @@ public final class MemoryDatabase: @unchecked Sendable {
         MemoryLogger.database.info("Migration to v4 completed")
     }
 
+    /// V5: Add project_id to pending_signals for project-scoped summary generation
+    private func migrateToV5() throws {
+        MemoryLogger.database.info("Running migration to v5")
+
+        try executeRaw("ALTER TABLE pending_signals ADD COLUMN project_id TEXT")
+
+        try executeRaw(
+            "INSERT OR IGNORE INTO schema_version (version, description) VALUES (5, 'Add project_id to pending_signals')"
+        )
+        try setSchemaVersion(5)
+        MemoryLogger.database.info("Migration to v5 completed")
+    }
+
     // MARK: - Query Execution
 
     private func executeRaw(_ sql: String) throws {
@@ -798,8 +812,8 @@ public final class MemoryDatabase: @unchecked Sendable {
 
     private static let insertEntrySQL = """
         INSERT INTO memory_entries (id, agent_id, type, content, confidence, model,
-            source_conversation_id, tags, status, valid_from)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+            source_conversation_id, tags, status, valid_from, project_id)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
         """
 
     private static let supersedeEntrySQL =
@@ -831,6 +845,7 @@ public final class MemoryDatabase: @unchecked Sendable {
             Self.bindText(stmt, index: 8, value: entry.tagsJSON)
             Self.bindText(stmt, index: 9, value: entry.status)
             Self.bindText(stmt, index: 10, value: validFrom)
+            Self.bindText(stmt, index: 11, value: entry.projectId)
         }
     }
 
@@ -846,19 +861,21 @@ public final class MemoryDatabase: @unchecked Sendable {
         }
     }
 
-    public func loadActiveEntries(agentId: String, limit: Int = 0) throws -> [MemoryEntry] {
+    public func loadActiveEntries(agentId: String, limit: Int = 0, projectId: String? = nil) throws -> [MemoryEntry] {
         var entries: [MemoryEntry] = []
         var sql = """
             SELECT \(Self.memoryEntryColumns)
             FROM memory_entries WHERE agent_id = ?1 AND status = 'active'
-            ORDER BY last_accessed DESC
             """
+        if projectId != nil { sql += " AND (project_id = ?3 OR project_id IS NULL)" }
+        sql += " ORDER BY last_accessed DESC"
         if limit > 0 { sql += " LIMIT ?2" }
         try prepareAndExecute(
             sql,
             bind: { stmt in
                 Self.bindText(stmt, index: 1, value: agentId)
                 if limit > 0 { sqlite3_bind_int(stmt, 2, Int32(limit)) }
+                if let projectId { Self.bindText(stmt, index: 3, value: projectId) }
             },
             process: { stmt in
                 while sqlite3_step(stmt) == SQLITE_ROW {
@@ -888,14 +905,21 @@ public final class MemoryDatabase: @unchecked Sendable {
         return entries
     }
 
-    public func loadEntriesByIds(_ ids: [String], agentId: String? = nil) throws -> [MemoryEntry] {
+    public func loadEntriesByIds(_ ids: [String], agentId: String? = nil, projectId: String? = nil) throws -> [MemoryEntry] {
         guard !ids.isEmpty else { return [] }
         let placeholders = ids.enumerated().map { "?\($0.offset + 1)" }.joined(separator: ",")
         var sql = """
             SELECT \(Self.memoryEntryColumns)
             FROM memory_entries WHERE status = 'active' AND id IN (\(placeholders))
             """
-        if agentId != nil { sql += " AND agent_id = ?\(ids.count + 1)" }
+        var nextParam = ids.count + 1
+        if agentId != nil {
+            sql += " AND agent_id = ?\(nextParam)"
+            nextParam += 1
+        }
+        if projectId != nil {
+            sql += " AND (project_id = ?\(nextParam) OR project_id IS NULL)"
+        }
         sql += " ORDER BY last_accessed DESC"
 
         var entries: [MemoryEntry] = []
@@ -905,7 +929,12 @@ public final class MemoryDatabase: @unchecked Sendable {
                 for (i, id) in ids.enumerated() {
                     Self.bindText(stmt, index: Int32(i + 1), value: id)
                 }
-                if let agentId { Self.bindText(stmt, index: Int32(ids.count + 1), value: agentId) }
+                var idx = ids.count + 1
+                if let agentId {
+                    Self.bindText(stmt, index: Int32(idx), value: agentId)
+                    idx += 1
+                }
+                if let projectId { Self.bindText(stmt, index: Int32(idx), value: projectId) }
             },
             process: { stmt in
                 while sqlite3_step(stmt) == SQLITE_ROW {
@@ -1089,7 +1118,8 @@ public final class MemoryDatabase: @unchecked Sendable {
             lastAccessed: String(cString: sqlite3_column_text(stmt, 11)),
             accessCount: Int(sqlite3_column_int(stmt, 12)),
             validFrom: String(cString: sqlite3_column_text(stmt, 13)),
-            validUntil: sqlite3_column_text(stmt, 14).map { String(cString: $0) }
+            validUntil: sqlite3_column_text(stmt, 14).map { String(cString: $0) },
+            projectId: sqlite3_column_text(stmt, 15).map { String(cString: $0) }
         )
     }
 
@@ -1098,8 +1128,8 @@ public final class MemoryDatabase: @unchecked Sendable {
     public func insertSummary(_ summary: ConversationSummary) throws {
         _ = try executeUpdate(
             """
-            INSERT INTO conversation_summaries (agent_id, conversation_id, summary, token_count, model, conversation_at)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            INSERT INTO conversation_summaries (agent_id, conversation_id, summary, token_count, model, conversation_at, project_id)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
             """
         ) { stmt in
             Self.bindText(stmt, index: 1, value: summary.agentId)
@@ -1108,6 +1138,7 @@ public final class MemoryDatabase: @unchecked Sendable {
             sqlite3_bind_int(stmt, 4, Int32(summary.tokenCount))
             Self.bindText(stmt, index: 5, value: summary.model)
             Self.bindText(stmt, index: 6, value: summary.conversationAt)
+            Self.bindText(stmt, index: 7, value: summary.projectId)
         }
     }
 
@@ -1116,8 +1147,8 @@ public final class MemoryDatabase: @unchecked Sendable {
         try inTransaction { _ in
             try self.transactionalStep(
                 """
-                INSERT INTO conversation_summaries (agent_id, conversation_id, summary, token_count, model, conversation_at)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                INSERT INTO conversation_summaries (agent_id, conversation_id, summary, token_count, model, conversation_at, project_id)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
                 """
             ) { stmt in
                 Self.bindText(stmt, index: 1, value: summary.agentId)
@@ -1126,6 +1157,7 @@ public final class MemoryDatabase: @unchecked Sendable {
                 sqlite3_bind_int(stmt, 4, Int32(summary.tokenCount))
                 Self.bindText(stmt, index: 5, value: summary.model)
                 Self.bindText(stmt, index: 6, value: summary.conversationAt)
+                Self.bindText(stmt, index: 7, value: summary.projectId)
             }
             try self.transactionalStep(
                 "UPDATE pending_signals SET status = 'processed' WHERE conversation_id = ?1 AND status = 'pending'"
@@ -1135,30 +1167,37 @@ public final class MemoryDatabase: @unchecked Sendable {
         }
     }
 
-    public func loadSummaries(agentId: String, days: Int = 0) throws -> [ConversationSummary] {
+    public func loadSummaries(agentId: String, days: Int = 0, projectId: String? = nil) throws -> [ConversationSummary] {
         var summaries: [ConversationSummary] = []
-        let sql: String
+        var sql: String
         if days > 0 {
             sql = """
-                SELECT id, agent_id, conversation_id, summary, token_count, model, conversation_at, status, created_at
+                SELECT id, agent_id, conversation_id, summary, token_count, model, conversation_at, status, created_at, project_id
                 FROM conversation_summaries
                 WHERE agent_id = ?1 AND status = 'active'
                   AND conversation_at >= datetime('now', '-' || ?2 || ' days')
-                ORDER BY conversation_at DESC
                 """
+            if projectId != nil { sql += "\n  AND (project_id = ?3 OR project_id IS NULL)" }
+            sql += "\nORDER BY conversation_at DESC"
         } else {
             sql = """
-                SELECT id, agent_id, conversation_id, summary, token_count, model, conversation_at, status, created_at
+                SELECT id, agent_id, conversation_id, summary, token_count, model, conversation_at, status, created_at, project_id
                 FROM conversation_summaries
                 WHERE agent_id = ?1 AND status = 'active'
-                ORDER BY conversation_at DESC
                 """
+            if projectId != nil { sql += "\n  AND (project_id = ?2 OR project_id IS NULL)" }
+            sql += "\nORDER BY conversation_at DESC"
         }
         try prepareAndExecute(
             sql,
             bind: { stmt in
                 Self.bindText(stmt, index: 1, value: agentId)
-                if days > 0 { sqlite3_bind_int(stmt, 2, Int32(days)) }
+                if days > 0 {
+                    sqlite3_bind_int(stmt, 2, Int32(days))
+                    if let projectId { Self.bindText(stmt, index: 3, value: projectId) }
+                } else {
+                    if let projectId { Self.bindText(stmt, index: 2, value: projectId) }
+                }
             },
             process: { stmt in
                 while sqlite3_step(stmt) == SQLITE_ROW {
@@ -1169,27 +1208,34 @@ public final class MemoryDatabase: @unchecked Sendable {
         return summaries
     }
 
-    public func loadAllSummaries(days: Int? = nil) throws -> [ConversationSummary] {
+    public func loadAllSummaries(days: Int? = nil, projectId: String? = nil) throws -> [ConversationSummary] {
         var summaries: [ConversationSummary] = []
-        let sql: String
+        var sql: String
         if days != nil {
             sql = """
-                    SELECT id, agent_id, conversation_id, summary, token_count, model, conversation_at, status, created_at
+                    SELECT id, agent_id, conversation_id, summary, token_count, model, conversation_at, status, created_at, project_id
                     FROM conversation_summaries WHERE status = 'active'
                     AND conversation_at >= datetime('now', '-' || ?1 || ' days')
-                    ORDER BY conversation_at DESC
                 """
+            if projectId != nil { sql += "\n                    AND (project_id = ?2 OR project_id IS NULL)" }
+            sql += "\n                    ORDER BY conversation_at DESC"
         } else {
             sql = """
-                    SELECT id, agent_id, conversation_id, summary, token_count, model, conversation_at, status, created_at
+                    SELECT id, agent_id, conversation_id, summary, token_count, model, conversation_at, status, created_at, project_id
                     FROM conversation_summaries WHERE status = 'active'
-                    ORDER BY conversation_at DESC
                 """
+            if projectId != nil { sql += "\n                    AND (project_id = ?1 OR project_id IS NULL)" }
+            sql += "\n                    ORDER BY conversation_at DESC"
         }
         try prepareAndExecute(
             sql,
             bind: { stmt in
-                if let days { sqlite3_bind_int(stmt, 1, Int32(days)) }
+                if let days {
+                    sqlite3_bind_int(stmt, 1, Int32(days))
+                    if let projectId { Self.bindText(stmt, index: 2, value: projectId) }
+                } else {
+                    if let projectId { Self.bindText(stmt, index: 1, value: projectId) }
+                }
             },
             process: { stmt in
                 while sqlite3_step(stmt) == SQLITE_ROW {
@@ -1204,7 +1250,7 @@ public final class MemoryDatabase: @unchecked Sendable {
         guard !ids.isEmpty else { return [] }
         let placeholders = ids.enumerated().map { "?\($0.offset + 1)" }.joined(separator: ",")
         var sql = """
-            SELECT id, agent_id, conversation_id, summary, token_count, model, conversation_at, status, created_at
+            SELECT id, agent_id, conversation_id, summary, token_count, model, conversation_at, status, created_at, project_id
             FROM conversation_summaries WHERE status = 'active' AND id IN (\(placeholders))
             """
         if agentId != nil { sql += " AND agent_id = ?\(ids.count + 1)" }
@@ -1259,17 +1305,18 @@ public final class MemoryDatabase: @unchecked Sendable {
             model: String(cString: sqlite3_column_text(stmt, 5)),
             conversationAt: String(cString: sqlite3_column_text(stmt, 6)),
             status: String(cString: sqlite3_column_text(stmt, 7)),
-            createdAt: String(cString: sqlite3_column_text(stmt, 8))
+            createdAt: String(cString: sqlite3_column_text(stmt, 8)),
+            projectId: sqlite3_column_text(stmt, 9).map { String(cString: $0) }
         )
     }
 
     // MARK: - Conversations & Chunks
 
-    public func upsertConversation(id: String, agentId: String, title: String?) throws {
+    public func upsertConversation(id: String, agentId: String, title: String?, projectId: String? = nil) throws {
         _ = try executeUpdate(
             """
-            INSERT INTO conversations (id, agent_id, title, started_at, last_message_at, message_count)
-            VALUES (?1, ?2, ?3, datetime('now'), datetime('now'), 0)
+            INSERT INTO conversations (id, agent_id, title, started_at, last_message_at, message_count, project_id)
+            VALUES (?1, ?2, ?3, datetime('now'), datetime('now'), 0, ?4)
             ON CONFLICT(id) DO UPDATE SET
                 last_message_at = datetime('now'),
                 message_count = conversations.message_count + 1,
@@ -1279,6 +1326,7 @@ public final class MemoryDatabase: @unchecked Sendable {
             Self.bindText(stmt, index: 1, value: id)
             Self.bindText(stmt, index: 2, value: agentId)
             Self.bindText(stmt, index: 3, value: title)
+            Self.bindText(stmt, index: 4, value: projectId)
         }
     }
 
@@ -1314,7 +1362,7 @@ public final class MemoryDatabase: @unchecked Sendable {
         }
     }
 
-    public func loadAllChunks(agentId: String? = nil, days: Int = 30, limit: Int = 5000) throws -> [ConversationChunk] {
+    public func loadAllChunks(agentId: String? = nil, days: Int = 30, limit: Int = 5000, projectId: String? = nil) throws -> [ConversationChunk] {
         var chunks: [ConversationChunk] = []
         var sql = """
                 SELECT cc.id, cc.conversation_id, cc.chunk_index, cc.role, cc.content, cc.token_count, cc.created_at,
@@ -1323,17 +1371,32 @@ public final class MemoryDatabase: @unchecked Sendable {
                 JOIN conversations c ON c.id = cc.conversation_id
                 WHERE cc.created_at >= datetime('now', '-' || ?1 || ' days')
             """
-        if agentId != nil { sql += " AND c.agent_id = ?2" }
+        var nextParam: Int32 = 2
+        if agentId != nil {
+            sql += " AND c.agent_id = ?\(nextParam)"
+            nextParam += 1
+        }
+        if projectId != nil {
+            sql += " AND (c.project_id = ?\(nextParam) OR c.project_id IS NULL)"
+            nextParam += 1
+        }
         sql += " ORDER BY cc.created_at DESC"
-        let limitParam = agentId != nil ? 3 : 2
-        sql += " LIMIT ?\(limitParam)"
+        sql += " LIMIT ?\(nextParam)"
 
         try prepareAndExecute(
             sql,
             bind: { stmt in
                 sqlite3_bind_int(stmt, 1, Int32(days))
-                if let agentId { Self.bindText(stmt, index: 2, value: agentId) }
-                sqlite3_bind_int(stmt, Int32(limitParam), Int32(min(limit, 10_000)))
+                var idx: Int32 = 2
+                if let agentId {
+                    Self.bindText(stmt, index: idx, value: agentId)
+                    idx += 1
+                }
+                if let projectId {
+                    Self.bindText(stmt, index: idx, value: projectId)
+                    idx += 1
+                }
+                sqlite3_bind_int(stmt, idx, Int32(min(limit, 10_000)))
             },
             process: { stmt in
                 while sqlite3_step(stmt) == SQLITE_ROW {
@@ -1344,19 +1407,21 @@ public final class MemoryDatabase: @unchecked Sendable {
         return chunks
     }
 
-    public func loadChunksByKeys(_ keys: [(conversationId: String, chunkIndex: Int)]) throws -> [ConversationChunk] {
+    public func loadChunksByKeys(_ keys: [(conversationId: String, chunkIndex: Int)], projectId: String? = nil) throws -> [ConversationChunk] {
         guard !keys.isEmpty else { return [] }
         let conditions = keys.enumerated().map { (i, _) in
             "(cc.conversation_id = ?\(i * 2 + 1) AND cc.chunk_index = ?\(i * 2 + 2))"
         }.joined(separator: " OR ")
-        let sql = """
+        let projectParam = keys.count * 2 + 1
+        var sql = """
             SELECT cc.id, cc.conversation_id, cc.chunk_index, cc.role, cc.content, cc.token_count, cc.created_at,
                    c.agent_id, c.title
             FROM conversation_chunks cc
             JOIN conversations c ON c.id = cc.conversation_id
             WHERE \(conditions)
-            ORDER BY cc.created_at DESC
             """
+        if projectId != nil { sql += " AND (c.project_id = ?\(projectParam) OR c.project_id IS NULL)" }
+        sql += "\nORDER BY cc.created_at DESC"
         var chunks: [ConversationChunk] = []
         try prepareAndExecute(
             sql,
@@ -1365,6 +1430,7 @@ public final class MemoryDatabase: @unchecked Sendable {
                     Self.bindText(stmt, index: Int32(i * 2 + 1), value: key.conversationId)
                     sqlite3_bind_int(stmt, Int32(i * 2 + 2), Int32(key.chunkIndex))
                 }
+                if let projectId { Self.bindText(stmt, index: Int32(projectParam), value: projectId) }
             },
             process: { stmt in
                 while sqlite3_step(stmt) == SQLITE_ROW {
@@ -1375,7 +1441,7 @@ public final class MemoryDatabase: @unchecked Sendable {
         return chunks
     }
 
-    public func searchChunks(query: String, agentId: String? = nil, days: Int = 30) throws -> [ConversationChunk] {
+    public func searchChunks(query: String, agentId: String? = nil, days: Int = 30, projectId: String? = nil) throws -> [ConversationChunk] {
         var chunks: [ConversationChunk] = []
         var sql = """
                 SELECT cc.id, cc.conversation_id, cc.chunk_index, cc.role, cc.content, cc.token_count, cc.created_at,
@@ -1385,7 +1451,14 @@ public final class MemoryDatabase: @unchecked Sendable {
                 WHERE cc.content LIKE '%' || ?1 || '%'
                   AND cc.created_at >= datetime('now', '-' || ?2 || ' days')
             """
-        if agentId != nil { sql += " AND c.agent_id = ?3" }
+        var nextParam: Int32 = 3
+        if agentId != nil {
+            sql += " AND c.agent_id = ?\(nextParam)"
+            nextParam += 1
+        }
+        if projectId != nil {
+            sql += " AND (c.project_id = ?\(nextParam) OR c.project_id IS NULL)"
+        }
         sql += " ORDER BY cc.created_at DESC LIMIT 20"
 
         try prepareAndExecute(
@@ -1393,7 +1466,12 @@ public final class MemoryDatabase: @unchecked Sendable {
             bind: { stmt in
                 Self.bindText(stmt, index: 1, value: query)
                 sqlite3_bind_int(stmt, 2, Int32(days))
-                if let agentId { Self.bindText(stmt, index: 3, value: agentId) }
+                var idx: Int32 = 3
+                if let agentId {
+                    Self.bindText(stmt, index: idx, value: agentId)
+                    idx += 1
+                }
+                if let projectId { Self.bindText(stmt, index: idx, value: projectId) }
             },
             process: { stmt in
                 while sqlite3_step(stmt) == SQLITE_ROW {
@@ -1423,8 +1501,8 @@ public final class MemoryDatabase: @unchecked Sendable {
     public func insertPendingSignal(_ signal: PendingSignal) throws {
         _ = try executeUpdate(
             """
-            INSERT INTO pending_signals (agent_id, conversation_id, signal_type, user_message, assistant_message, status)
-            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            INSERT INTO pending_signals (agent_id, conversation_id, signal_type, user_message, assistant_message, status, project_id)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
             """
         ) { stmt in
             Self.bindText(stmt, index: 1, value: signal.agentId)
@@ -1433,13 +1511,14 @@ public final class MemoryDatabase: @unchecked Sendable {
             Self.bindText(stmt, index: 4, value: signal.userMessage)
             Self.bindText(stmt, index: 5, value: signal.assistantMessage)
             Self.bindText(stmt, index: 6, value: signal.status)
+            Self.bindText(stmt, index: 7, value: signal.projectId)
         }
     }
 
     public func loadPendingSignals(agentId: String) throws -> [PendingSignal] {
         var signals: [PendingSignal] = []
         try prepareAndExecute(
-            "SELECT id, agent_id, conversation_id, signal_type, user_message, assistant_message, status, created_at FROM pending_signals WHERE agent_id = ?1 AND status = 'pending' ORDER BY created_at",
+            "SELECT id, agent_id, conversation_id, signal_type, user_message, assistant_message, status, created_at, project_id FROM pending_signals WHERE agent_id = ?1 AND status = 'pending' ORDER BY created_at",
             bind: { stmt in Self.bindText(stmt, index: 1, value: agentId) },
             process: { stmt in
                 while sqlite3_step(stmt) == SQLITE_ROW {
@@ -1452,7 +1531,8 @@ public final class MemoryDatabase: @unchecked Sendable {
                             userMessage: String(cString: sqlite3_column_text(stmt, 4)),
                             assistantMessage: sqlite3_column_text(stmt, 5).map { String(cString: $0) },
                             status: String(cString: sqlite3_column_text(stmt, 6)),
-                            createdAt: String(cString: sqlite3_column_text(stmt, 7))
+                            createdAt: String(cString: sqlite3_column_text(stmt, 7)),
+                            projectId: sqlite3_column_text(stmt, 8).map { String(cString: $0) }
                         )
                     )
                 }
@@ -1464,7 +1544,7 @@ public final class MemoryDatabase: @unchecked Sendable {
     public func loadPendingSignals(conversationId: String) throws -> [PendingSignal] {
         var signals: [PendingSignal] = []
         try prepareAndExecute(
-            "SELECT id, agent_id, conversation_id, signal_type, user_message, assistant_message, status, created_at FROM pending_signals WHERE conversation_id = ?1 AND status = 'pending' ORDER BY created_at",
+            "SELECT id, agent_id, conversation_id, signal_type, user_message, assistant_message, status, created_at, project_id FROM pending_signals WHERE conversation_id = ?1 AND status = 'pending' ORDER BY created_at",
             bind: { stmt in Self.bindText(stmt, index: 1, value: conversationId) },
             process: { stmt in
                 while sqlite3_step(stmt) == SQLITE_ROW {
@@ -1477,7 +1557,8 @@ public final class MemoryDatabase: @unchecked Sendable {
                             userMessage: String(cString: sqlite3_column_text(stmt, 4)),
                             assistantMessage: sqlite3_column_text(stmt, 5).map { String(cString: $0) },
                             status: String(cString: sqlite3_column_text(stmt, 6)),
-                            createdAt: String(cString: sqlite3_column_text(stmt, 7))
+                            createdAt: String(cString: sqlite3_column_text(stmt, 7)),
+                            projectId: sqlite3_column_text(stmt, 8).map { String(cString: $0) }
                         )
                     )
                 }
@@ -1508,18 +1589,19 @@ public final class MemoryDatabase: @unchecked Sendable {
         }
     }
 
-    /// Distinct (agentId, conversationId) pairs that have at least one pending signal.
-    public func pendingConversations() throws -> [(agentId: String, conversationId: String)] {
-        var results: [(agentId: String, conversationId: String)] = []
+    /// Distinct (agentId, conversationId, projectId) tuples that have at least one pending signal.
+    public func pendingConversations() throws -> [(agentId: String, conversationId: String, projectId: String?)] {
+        var results: [(agentId: String, conversationId: String, projectId: String?)] = []
         try prepareAndExecute(
-            "SELECT DISTINCT agent_id, conversation_id FROM pending_signals WHERE status = 'pending'",
+            "SELECT DISTINCT agent_id, conversation_id, project_id FROM pending_signals WHERE status = 'pending'",
             bind: { _ in },
             process: { stmt in
                 while sqlite3_step(stmt) == SQLITE_ROW {
                     results.append(
                         (
                             agentId: String(cString: sqlite3_column_text(stmt, 0)),
-                            conversationId: String(cString: sqlite3_column_text(stmt, 1))
+                            conversationId: String(cString: sqlite3_column_text(stmt, 1)),
+                            projectId: sqlite3_column_text(stmt, 2).map { String(cString: $0) }
                         )
                     )
                 }
@@ -1631,21 +1713,33 @@ public final class MemoryDatabase: @unchecked Sendable {
 
     // MARK: - Text Search (BM25 fallback)
 
-    public func searchMemoryEntries(query: String, agentId: String? = nil) throws -> [MemoryEntry] {
+    public func searchMemoryEntries(query: String, agentId: String? = nil, projectId: String? = nil) throws -> [MemoryEntry] {
         var entries: [MemoryEntry] = []
         var sql = """
                 SELECT \(Self.memoryEntryColumns)
                 FROM memory_entries
                 WHERE status = 'active' AND content LIKE '%' || ?1 || '%'
             """
-        if agentId != nil { sql += " AND agent_id = ?2" }
+        var nextParam: Int32 = 2
+        if agentId != nil {
+            sql += " AND agent_id = ?\(nextParam)"
+            nextParam += 1
+        }
+        if projectId != nil {
+            sql += " AND (project_id = ?\(nextParam) OR project_id IS NULL)"
+        }
         sql += " ORDER BY last_accessed DESC LIMIT 20"
 
         try prepareAndExecute(
             sql,
             bind: { stmt in
                 Self.bindText(stmt, index: 1, value: query)
-                if let agentId { Self.bindText(stmt, index: 2, value: agentId) }
+                var idx: Int32 = 2
+                if let agentId {
+                    Self.bindText(stmt, index: idx, value: agentId)
+                    idx += 1
+                }
+                if let projectId { Self.bindText(stmt, index: idx, value: projectId) }
             },
             process: { stmt in
                 while sqlite3_step(stmt) == SQLITE_ROW {
@@ -1657,20 +1751,67 @@ public final class MemoryDatabase: @unchecked Sendable {
     }
 
     /// Returns entries that were active at a specific point in time.
-    public func loadEntriesAsOf(agentId: String, asOf: String) throws -> [MemoryEntry] {
+    public func loadEntriesAsOf(agentId: String, asOf: String, projectId: String? = nil) throws -> [MemoryEntry] {
         var entries: [MemoryEntry] = []
-        try prepareAndExecute(
-            """
+        var sql = """
             SELECT \(Self.memoryEntryColumns)
             FROM memory_entries
             WHERE agent_id = ?1
               AND valid_from <= ?2
               AND (valid_until IS NULL OR valid_until > ?2)
-            ORDER BY valid_from DESC
-            """,
+            """
+        if projectId != nil { sql += "\n  AND (project_id = ?3 OR project_id IS NULL)" }
+        sql += "\nORDER BY valid_from DESC"
+        try prepareAndExecute(
+            sql,
             bind: { stmt in
                 Self.bindText(stmt, index: 1, value: agentId)
                 Self.bindText(stmt, index: 2, value: asOf)
+                if let projectId { Self.bindText(stmt, index: 3, value: projectId) }
+            },
+            process: { stmt in
+                while sqlite3_step(stmt) == SQLITE_ROW {
+                    entries.append(Self.readMemoryEntry(stmt))
+                }
+            }
+        )
+        return entries
+    }
+
+    public func countEntriesByProject(projectId: String) throws -> (total: Int, byType: [MemoryEntryType: Int]) {
+        var byType: [MemoryEntryType: Int] = [:]
+        try prepareAndExecute(
+            """
+            SELECT type, COUNT(*) FROM memory_entries
+            WHERE status = 'active' AND project_id = ?1
+            GROUP BY type
+            """,
+            bind: { stmt in Self.bindText(stmt, index: 1, value: projectId) },
+            process: { stmt in
+                while sqlite3_step(stmt) == SQLITE_ROW {
+                    let typeStr = String(cString: sqlite3_column_text(stmt, 0))
+                    let count = Int(sqlite3_column_int(stmt, 1))
+                    if let entryType = MemoryEntryType(rawValue: typeStr) {
+                        byType[entryType] = count
+                    }
+                }
+            }
+        )
+        let total = byType.values.reduce(0, +)
+        return (total, byType)
+    }
+
+    public func loadProjectEntries(projectId: String, limit: Int = 5) throws -> [MemoryEntry] {
+        var entries: [MemoryEntry] = []
+        try prepareAndExecute(
+            """
+            SELECT \(Self.memoryEntryColumns)
+            FROM memory_entries WHERE status = 'active' AND project_id = ?1
+            ORDER BY last_accessed DESC LIMIT ?2
+            """,
+            bind: { stmt in
+                Self.bindText(stmt, index: 1, value: projectId)
+                sqlite3_bind_int(stmt, 2, Int32(limit))
             },
             process: { stmt in
                 while sqlite3_step(stmt) == SQLITE_ROW {
@@ -1712,15 +1853,22 @@ public final class MemoryDatabase: @unchecked Sendable {
         return entries
     }
 
-    public func searchSummaries(query: String, agentId: String? = nil, days: Int = 30) throws -> [ConversationSummary] {
+    public func searchSummaries(query: String, agentId: String? = nil, days: Int = 30, projectId: String? = nil) throws -> [ConversationSummary] {
         var summaries: [ConversationSummary] = []
         var sql = """
-                SELECT id, agent_id, conversation_id, summary, token_count, model, conversation_at, status, created_at
+                SELECT id, agent_id, conversation_id, summary, token_count, model, conversation_at, status, created_at, project_id
                 FROM conversation_summaries
                 WHERE status = 'active' AND summary LIKE '%' || ?1 || '%'
                   AND conversation_at >= datetime('now', '-' || ?2 || ' days')
             """
-        if agentId != nil { sql += " AND agent_id = ?3" }
+        var nextParam: Int32 = 3
+        if agentId != nil {
+            sql += " AND agent_id = ?\(nextParam)"
+            nextParam += 1
+        }
+        if projectId != nil {
+            sql += " AND (project_id = ?\(nextParam) OR project_id IS NULL)"
+        }
         sql += " ORDER BY conversation_at DESC LIMIT 20"
 
         try prepareAndExecute(
@@ -1728,7 +1876,12 @@ public final class MemoryDatabase: @unchecked Sendable {
             bind: { stmt in
                 Self.bindText(stmt, index: 1, value: query)
                 sqlite3_bind_int(stmt, 2, Int32(days))
-                if let agentId { Self.bindText(stmt, index: 3, value: agentId) }
+                var idx: Int32 = 3
+                if let agentId {
+                    Self.bindText(stmt, index: idx, value: agentId)
+                    idx += 1
+                }
+                if let projectId { Self.bindText(stmt, index: idx, value: projectId) }
             },
             process: { stmt in
                 while sqlite3_step(stmt) == SQLITE_ROW {
@@ -1789,17 +1942,25 @@ public final class MemoryDatabase: @unchecked Sendable {
 
     public func loadSummariesByCompositeKeys(
         _ keys: [(agentId: String, conversationId: String, conversationAt: String)],
-        filterAgentId: String? = nil
+        filterAgentId: String? = nil,
+        filterProjectId: String? = nil
     ) throws -> [ConversationSummary] {
         guard !keys.isEmpty else { return [] }
         let conditions = keys.enumerated().map { (i, _) in
             "(agent_id = ?\(i * 3 + 1) AND conversation_id = ?\(i * 3 + 2) AND conversation_at = ?\(i * 3 + 3))"
         }.joined(separator: " OR ")
         var sql = """
-            SELECT id, agent_id, conversation_id, summary, token_count, model, conversation_at, status, created_at
+            SELECT id, agent_id, conversation_id, summary, token_count, model, conversation_at, status, created_at, project_id
             FROM conversation_summaries WHERE status = 'active' AND (\(conditions))
             """
-        if filterAgentId != nil { sql += " AND agent_id = ?\(keys.count * 3 + 1)" }
+        var nextParam = keys.count * 3 + 1
+        if filterAgentId != nil {
+            sql += " AND agent_id = ?\(nextParam)"
+            nextParam += 1
+        }
+        if filterProjectId != nil {
+            sql += " AND (project_id = ?\(nextParam) OR project_id IS NULL)"
+        }
         sql += " ORDER BY conversation_at DESC"
 
         var summaries: [ConversationSummary] = []
@@ -1811,8 +1972,13 @@ public final class MemoryDatabase: @unchecked Sendable {
                     Self.bindText(stmt, index: Int32(i * 3 + 2), value: key.conversationId)
                     Self.bindText(stmt, index: Int32(i * 3 + 3), value: key.conversationAt)
                 }
+                var idx = keys.count * 3 + 1
                 if let agentId = filterAgentId {
-                    Self.bindText(stmt, index: Int32(keys.count * 3 + 1), value: agentId)
+                    Self.bindText(stmt, index: Int32(idx), value: agentId)
+                    idx += 1
+                }
+                if let projectId = filterProjectId {
+                    Self.bindText(stmt, index: Int32(idx), value: projectId)
                 }
             },
             process: { stmt in

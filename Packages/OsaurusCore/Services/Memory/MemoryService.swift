@@ -22,6 +22,7 @@ public actor MemoryService {
     private var summaryTasks: [String: Task<Void, Never>] = [:]
     private var activeConversation: [String: String] = [:]
     private var conversationSessionDates: [String: String] = [:]
+    private var conversationProjectIds: [String: String?] = [:]
 
     private init() {}
 
@@ -45,7 +46,8 @@ public actor MemoryService {
                     conversationId: conversationId,
                     signalType: "conversation",
                     userMessage: userMessage,
-                    assistantMessage: assistantMessage
+                    assistantMessage: assistantMessage,
+                    projectId: projectId
                 )
             )
         } catch {
@@ -58,7 +60,7 @@ public actor MemoryService {
         let startTime = Date()
         let allExistingEntries: [MemoryEntry]
         do {
-            allExistingEntries = try db.loadActiveEntries(agentId: agentId)
+            allExistingEntries = try db.loadActiveEntries(agentId: agentId, projectId: projectId)
         } catch {
             MemoryLogger.service.error("Failed to load existing entries for agent \(agentId): \(error)")
             allExistingEntries = []
@@ -86,7 +88,8 @@ public actor MemoryService {
                 from: parsed.entries,
                 agentId: agentId,
                 conversationId: conversationId,
-                model: coreModelId
+                model: coreModelId,
+                projectId: projectId
             )
 
             let verifyResult = await verifyAndInsertEntries(
@@ -142,27 +145,31 @@ public actor MemoryService {
         // Session-change detection and summary debounce
         let previousConversation = activeConversation[agentId]
         activeConversation[agentId] = conversationId
+        conversationProjectIds[conversationId] = projectId
 
         if let prev = previousConversation, prev != conversationId {
             summaryTasks[prev]?.cancel()
             summaryTasks[prev] = nil
             let prevAgent = agentId
             let prevDate = conversationSessionDates[prev]
+            let prevProjectId = conversationProjectIds[prev]
             Task {
-                await self.generateConversationSummary(agentId: prevAgent, conversationId: prev, sessionDate: prevDate)
+                await self.generateConversationSummary(agentId: prevAgent, conversationId: prev, sessionDate: prevDate, projectId: prevProjectId ?? nil)
             }
         }
 
         summaryTasks[conversationId]?.cancel()
         let debounceSeconds = config.summaryDebounceSeconds
         let capturedDate = conversationSessionDates[conversationId]
+        let capturedProjectId = projectId
         summaryTasks[conversationId] = Task {
             try? await Task.sleep(for: .seconds(debounceSeconds))
             guard !Task.isCancelled else { return }
             await self.generateConversationSummary(
                 agentId: agentId,
                 conversationId: conversationId,
-                sessionDate: capturedDate
+                sessionDate: capturedDate,
+                projectId: capturedProjectId
             )
         }
     }
@@ -261,7 +268,7 @@ public actor MemoryService {
         let config = MemoryConfigurationStore.load()
         guard config.enabled, await hasCoreModel() else { return }
 
-        let conversations: [(agentId: String, conversationId: String)]
+        let conversations: [(agentId: String, conversationId: String, projectId: String?)]
         do {
             conversations = try db.pendingConversations()
         } catch {
@@ -274,7 +281,7 @@ public actor MemoryService {
             "Startup recovery: processing \(conversations.count) orphaned conversation(s)"
         )
         for conv in conversations {
-            await generateConversationSummary(agentId: conv.agentId, conversationId: conv.conversationId)
+            await generateConversationSummary(agentId: conv.agentId, conversationId: conv.conversationId, projectId: conv.projectId)
         }
         MemoryLogger.service.info("Startup recovery completed")
     }
@@ -294,7 +301,7 @@ public actor MemoryService {
 
         MemoryLogger.service.debug("Manual sync starting...")
 
-        let conversations: [(agentId: String, conversationId: String)]
+        let conversations: [(agentId: String, conversationId: String, projectId: String?)]
         do {
             conversations = try db.pendingConversations()
         } catch {
@@ -305,7 +312,7 @@ public actor MemoryService {
         if !conversations.isEmpty {
             MemoryLogger.service.info("Sync: generating summaries for \(conversations.count) conversation(s)")
             for conv in conversations {
-                await generateConversationSummary(agentId: conv.agentId, conversationId: conv.conversationId)
+                await generateConversationSummary(agentId: conv.agentId, conversationId: conv.conversationId, projectId: conv.projectId)
             }
         } else {
             MemoryLogger.service.debug("Sync: no pending signals to process")
@@ -329,10 +336,10 @@ public actor MemoryService {
     // MARK: - Conversation Summary Generation
 
     /// Flush a session's summary immediately. Called from the UI when the user navigates away.
-    public func flushSession(agentId: String, conversationId: String) {
+    public func flushSession(agentId: String, conversationId: String, projectId: String? = nil) {
         summaryTasks[conversationId]?.cancel()
         summaryTasks[conversationId] = Task {
-            await self.generateConversationSummary(agentId: agentId, conversationId: conversationId)
+            await self.generateConversationSummary(agentId: agentId, conversationId: conversationId, projectId: projectId)
         }
     }
 
@@ -347,7 +354,7 @@ public actor MemoryService {
         Do NOT add preamble like "Here is" or "Certainly". Output the structured summary directly.
         """
 
-    private func generateConversationSummary(agentId: String, conversationId: String, sessionDate: String? = nil) async
+    private func generateConversationSummary(agentId: String, conversationId: String, sessionDate: String? = nil, projectId: String? = nil) async
     {
         let config = MemoryConfigurationStore.load()
         guard config.enabled, await hasCoreModel() else { return }
@@ -401,7 +408,8 @@ public actor MemoryService {
                 summary: summaryText,
                 tokenCount: tokenCount,
                 model: coreModelId,
-                conversationAt: conversationAt
+                conversationAt: conversationAt,
+                projectId: projectId
             )
             do {
                 try db.insertSummaryAndMarkProcessed(summaryObj)
@@ -701,7 +709,8 @@ public actor MemoryService {
         from parsed: [ExtractionParseResult.EntryData],
         agentId: String,
         conversationId: String,
-        model: String
+        model: String,
+        projectId: String? = nil
     ) -> [MemoryEntry] {
         let entries = parsed.compactMap { entry -> MemoryEntry? in
             guard let entryType = MemoryEntryType(rawValue: entry.type) else { return nil }
@@ -719,7 +728,8 @@ public actor MemoryService {
                 model: model,
                 sourceConversationId: conversationId,
                 tagsJSON: tagsJSON,
-                validFrom: entry.valid_from ?? ""
+                validFrom: entry.valid_from ?? "",
+                projectId: projectId
             )
         }
 

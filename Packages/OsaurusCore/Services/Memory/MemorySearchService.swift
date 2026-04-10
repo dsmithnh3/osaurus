@@ -158,6 +158,7 @@ public actor MemorySearchService {
     public func searchMemoryEntries(
         query: String,
         agentId: String? = nil,
+        projectId: String? = nil,
         topK: Int = 10,
         lambda: Double? = nil,
         fetchMultiplier: Double? = nil
@@ -178,7 +179,7 @@ public actor MemorySearchService {
                 )
 
                 let idStrings = results.map { $0.id.uuidString }
-                let entries = try MemoryDatabase.shared.loadEntriesByIds(idStrings, agentId: agentId)
+                let entries = try MemoryDatabase.shared.loadEntriesByIds(idStrings, agentId: agentId, projectId: projectId)
                 let scored: [(item: MemoryEntry, score: Double, content: String)] = entries.compactMap { entry in
                     guard let match = scoreMap[entry.id] else { return nil }
                     return (item: entry, score: match.score, content: entry.content)
@@ -191,7 +192,7 @@ public actor MemorySearchService {
         }
 
         do {
-            return try MemoryDatabase.shared.searchMemoryEntries(query: query, agentId: agentId)
+            return try MemoryDatabase.shared.searchMemoryEntries(query: query, agentId: agentId, projectId: projectId)
         } catch {
             MemoryLogger.search.error("Text fallback search failed: \(error)")
             return []
@@ -241,6 +242,7 @@ public actor MemorySearchService {
     public func searchConversations(
         query: String,
         agentId: String? = nil,
+        projectId: String? = nil,
         days: Int = 30,
         topK: Int = 10,
         lambda: Double? = nil,
@@ -266,7 +268,7 @@ public actor MemorySearchService {
                 }
 
                 if !keys.isEmpty {
-                    let chunks = try MemoryDatabase.shared.loadChunksByKeys(keys)
+                    let chunks = try MemoryDatabase.shared.loadChunksByKeys(keys, projectId: projectId)
                     let scored: [(item: ConversationChunk, score: Double, content: String)] = chunks.compactMap {
                         chunk in
                         let compositeKey = "\(chunk.conversationId):\(chunk.chunkIndex)"
@@ -286,7 +288,7 @@ public actor MemorySearchService {
         }
 
         do {
-            return try MemoryDatabase.shared.searchChunks(query: query, agentId: agentId, days: days)
+            return try MemoryDatabase.shared.searchChunks(query: query, agentId: agentId, days: days, projectId: projectId)
         } catch {
             MemoryLogger.search.error("Text fallback chunk search failed: \(error)")
             return []
@@ -299,6 +301,7 @@ public actor MemorySearchService {
     public func searchSummaries(
         query: String,
         agentId: String? = nil,
+        projectId: String? = nil,
         days: Int = 30,
         topK: Int = 10,
         lambda: Double? = nil,
@@ -326,7 +329,8 @@ public actor MemorySearchService {
                 if !compositeKeys.isEmpty {
                     let summaries = try MemoryDatabase.shared.loadSummariesByCompositeKeys(
                         compositeKeys,
-                        filterAgentId: agentId
+                        filterAgentId: agentId,
+                        filterProjectId: projectId
                     )
                     let scored: [(item: ConversationSummary, score: Double, content: String)] =
                         summaries.compactMap { summary in
@@ -345,7 +349,7 @@ public actor MemorySearchService {
         }
 
         do {
-            return try MemoryDatabase.shared.searchSummaries(query: query, agentId: agentId, days: days)
+            return try MemoryDatabase.shared.searchSummaries(query: query, agentId: agentId, days: days, projectId: projectId)
         } catch {
             MemoryLogger.search.error("Text fallback summary search failed: \(error)")
             return []

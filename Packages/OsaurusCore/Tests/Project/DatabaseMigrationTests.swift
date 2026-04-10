@@ -142,6 +142,19 @@ struct DatabaseMigrationTests {
         }
     }
 
+    // MARK: - MemoryDatabase V5 Tests
+
+    @Test func memoryDatabaseV5AddsProjectIdToPendingSignals() throws {
+        let db = MemoryDatabase()
+        try db.openInMemory()
+        defer { db.close() }
+
+        try db.execute { connection in
+            let columns = self.columnNames(in: connection, table: "pending_signals")
+            #expect(columns.contains("project_id"), "pending_signals should have project_id column after V5")
+        }
+    }
+
     // MARK: - WorkDatabase V5 Tests
     // WorkDatabase.shared is a singleton with private init. Open and query schema directly.
 

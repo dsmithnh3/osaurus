@@ -90,7 +90,7 @@ public actor MemoryContextAssembler {
     ) async -> String {
         guard config.enabled else { return "" }
 
-        let baseContext = buildContext(agentId: agentId, config: config)
+        let baseContext = buildContext(agentId: agentId, config: config, projectId: projectId)
 
         guard !query.isEmpty else { return baseContext }
 
@@ -98,7 +98,8 @@ public actor MemoryContextAssembler {
             agentId: agentId,
             query: query,
             config: config,
-            existingContext: baseContext
+            existingContext: baseContext,
+            projectId: projectId
         )
 
         if relevantSection.isEmpty {
@@ -111,12 +112,13 @@ public actor MemoryContextAssembler {
     private func assembleContextCached(agentId: String, config: MemoryConfiguration) -> String {
         guard config.enabled else { return "" }
 
-        if let cached = cache[agentId], Date().timeIntervalSince(cached.timestamp) < Self.cacheTTL {
+        let cacheKey = "\(agentId):global"
+        if let cached = cache[cacheKey], Date().timeIntervalSince(cached.timestamp) < Self.cacheTTL {
             return cached.context
         }
 
         let context = buildContext(agentId: agentId, config: config)
-        cache[agentId] = CacheEntry(context: context, timestamp: Date())
+        cache[cacheKey] = CacheEntry(context: context, timestamp: Date())
         return context
     }
 
@@ -128,7 +130,7 @@ public actor MemoryContextAssembler {
             return cached.context
         }
 
-        let context = buildContext(agentId: agentId, config: config)
+        let context = buildContext(agentId: agentId, config: config, projectId: projectId)
         cache[cacheKey] = CacheEntry(context: context, timestamp: Date())
         return context
     }
@@ -143,7 +145,7 @@ public actor MemoryContextAssembler {
         }
     }
 
-    private func buildContext(agentId: String, config: MemoryConfiguration) -> String {
+    private func buildContext(agentId: String, config: MemoryConfiguration, projectId: String? = nil) -> String {
         let db = MemoryDatabase.shared
         guard db.isOpen else { return "" }
 
@@ -178,7 +180,7 @@ public actor MemoryContextAssembler {
 
         // 3. Remembered Details (this agent's active entries)
         do {
-            let entries = try db.loadActiveEntries(agentId: agentId)
+            let entries = try db.loadActiveEntries(agentId: agentId, projectId: projectId)
             if !entries.isEmpty {
                 let block = buildBudgetSection(
                     header: "## Remembered Details",
@@ -198,7 +200,7 @@ public actor MemoryContextAssembler {
 
         // 4. Conversation Summaries (this agent, last N days)
         do {
-            let summaries = try db.loadSummaries(agentId: agentId, days: config.summaryRetentionDays)
+            let summaries = try db.loadSummaries(agentId: agentId, days: config.summaryRetentionDays, projectId: projectId)
             if !summaries.isEmpty {
                 sections.append(
                     buildBudgetSection(
@@ -371,6 +373,123 @@ public actor MemoryContextAssembler {
         async let summariesResult = searchService.searchSummaries(
             query: query,
             agentId: agentId,
+            topK: topK,
+            lambda: lambda,
+            fetchMultiplier: fetchMultiplier
+        )
+
+        let entries = await entriesResult
+        let searchedChunks = await chunksResult
+        let summaries = await summariesResult
+
+        let chunks = Self.expandChunkWindow(searchedChunks, windowSize: 2)
+
+        var sections: [String] = []
+        var allDates: [String] = []
+
+        // Chunks first — raw dialogue contains the specific details that
+        // single-hop and temporal questions target.
+        if !chunks.isEmpty {
+            for chunk in chunks where !chunk.createdAt.isEmpty {
+                allDates.append(chunk.createdAt)
+            }
+            sections.append(
+                buildBudgetSection(
+                    header: "## Relevant Conversation Excerpts",
+                    budgetTokens: config.chunkBudgetTokens,
+                    items: chunks
+                ) { chunk in
+                    var line = "- \(chunk.content)"
+                    if !chunk.createdAt.isEmpty {
+                        line += " (date: \(Self.naturalLanguageDate(chunk.createdAt)))"
+                    }
+                    return line
+                }
+            )
+        }
+
+        if !entries.isEmpty {
+            let deduplicated = entries.filter { entry in
+                !existingContext.contains(entry.content)
+            }
+            if !deduplicated.isEmpty {
+                for entry in deduplicated where !entry.validFrom.isEmpty {
+                    allDates.append(entry.validFrom)
+                }
+                sections.append(
+                    buildBudgetSection(
+                        header: "## Relevant Memories",
+                        budgetTokens: config.workingMemoryBudgetTokens,
+                        items: deduplicated,
+                        formatLine: Self.formatEntryLine
+                    )
+                )
+            }
+        }
+
+        if !summaries.isEmpty {
+            let deduplicated = summaries.filter { summary in
+                !existingContext.contains(summary.summary)
+            }
+            if !deduplicated.isEmpty {
+                for summary in deduplicated {
+                    allDates.append(summary.conversationAt)
+                }
+                sections.append(
+                    buildBudgetSection(
+                        header: "## Relevant Summaries",
+                        budgetTokens: config.summaryBudgetTokens,
+                        items: deduplicated
+                    ) { "- [date: \(Self.naturalLanguageDate($0.conversationAt))] \($0.summary)" }
+                )
+            }
+        }
+
+        guard !sections.isEmpty else { return "" }
+
+        if let anchor = Self.temporalAnchor(from: allDates) {
+            sections.insert(anchor, at: 0)
+        }
+
+        return sections.joined(separator: "\n\n")
+    }
+
+    /// Search for memory entries and conversation chunks relevant to the query,
+    /// scoped to a specific project, deduplicating against entries already in the base context.
+    private func buildQueryRelevantSection(
+        agentId: String,
+        query: String,
+        config: MemoryConfiguration,
+        existingContext: String,
+        projectId: String?
+    ) async -> String {
+        let searchService = MemorySearchService.shared
+
+        let topK = config.recallTopK
+        let lambda = config.mmrLambda
+        let fetchMultiplier = config.mmrFetchMultiplier
+
+        async let entriesResult = searchService.searchMemoryEntries(
+            query: query,
+            agentId: agentId,
+            projectId: projectId,
+            topK: topK,
+            lambda: lambda,
+            fetchMultiplier: fetchMultiplier
+        )
+        async let chunksResult = searchService.searchConversations(
+            query: query,
+            agentId: agentId,
+            projectId: projectId,
+            days: 3650,
+            topK: topK,
+            lambda: lambda,
+            fetchMultiplier: fetchMultiplier
+        )
+        async let summariesResult = searchService.searchSummaries(
+            query: query,
+            agentId: agentId,
+            projectId: projectId,
             topK: topK,
             lambda: lambda,
             fetchMultiplier: fetchMultiplier
