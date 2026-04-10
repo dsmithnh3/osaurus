@@ -80,7 +80,7 @@ struct ProjectHomeView: View {
                         case .chat:
                             windowState.startNewChat()
                             windowState.session.input = trimmed
-                            windowState.projectSession?.inlineSessionId = windowState.session.sessionId
+                            windowState.projectSession?.subMode = .chat
                             windowState.pushNavigation(NavigationEntry(
                                 mode: .project, projectId: project.id,
                                 sessionId: windowState.session.sessionId
@@ -93,11 +93,9 @@ struct ProjectHomeView: View {
                             }
                             WorkToolManager.shared.registerTools()
                             windowState.workSession?.input = trimmed
-                            let taskId = UUID()
-                            windowState.projectSession?.inlineWorkTaskId = taskId
+                            windowState.projectSession?.subMode = .work
                             windowState.pushNavigation(NavigationEntry(
-                                mode: .project, projectId: project.id,
-                                workTaskId: taskId
+                                mode: .project, projectId: project.id
                             ))
                             Task { await windowState.workSession?.handleUserInput() }
                         }

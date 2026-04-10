@@ -312,7 +312,8 @@ private struct RecentRow: View {
         Button(action: {
             if windowState.mode == .project, windowState.projectSession?.activeProjectId != nil {
                 // Open inline within project
-                windowState.projectSession?.inlineSessionId = sessionData.id
+                windowState.projectSession?.subMode = .chat
+                windowState.session.load(from: sessionData)
                 windowState.pushNavigation(NavigationEntry(
                     mode: .project,
                     projectId: windowState.projectSession?.activeProjectId,

@@ -27,34 +27,34 @@ struct ProjectNavigationTests {
         #expect(modes.count == 3)
     }
 
-    @Test("ProjectSession is a value type")
+    @Test("ProjectSession is a value type with subMode")
     func projectSessionValueType() {
         var session = ProjectSession()
         session.activeProjectId = UUID()
-        session.inlineSessionId = UUID()
+        session.subMode = .work
         var copy = session
-        copy.inlineSessionId = nil
+        copy.subMode = .chat
         // Prove it's a value type — original unchanged
-        #expect(session.inlineSessionId != nil)
-        #expect(copy.inlineSessionId == nil)
+        #expect(session.subMode == .work)
+        #expect(copy.subMode == .chat)
     }
 
-    @Test("ProjectSession hasInlineContent reflects inline fields")
-    func projectSessionHasInlineContent() {
+    @Test("ProjectSubMode defaults to chat and toggles to work")
+    func projectSubMode() {
         var session = ProjectSession()
-        #expect(session.hasInlineContent == false)
-        session.inlineSessionId = UUID()
-        #expect(session.hasInlineContent == true)
-        session.inlineSessionId = nil
-        session.inlineWorkTaskId = UUID()
-        #expect(session.hasInlineContent == true)
+        #expect(session.subMode == .chat)
+        session.subMode = .work
+        #expect(session.subMode == .work)
+        session.subMode = .chat
+        #expect(session.subMode == .chat)
     }
 
-    @Test("NavigationEntry carries workTaskId")
-    func navigationEntryWorkTaskId() {
-        let taskId = UUID()
-        let entry = NavigationEntry(mode: .project, projectId: UUID(), workTaskId: taskId)
-        #expect(entry.workTaskId == taskId)
-        #expect(entry.sessionId == nil)
+    @Test("NavigationEntry without workTaskId field")
+    func navigationEntryNoWorkTaskId() {
+        let projectId = UUID()
+        let sessionId = UUID()
+        let entry = NavigationEntry(mode: .project, projectId: projectId, sessionId: sessionId)
+        #expect(entry.projectId == projectId)
+        #expect(entry.sessionId == sessionId)
     }
 }

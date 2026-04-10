@@ -36,17 +36,12 @@ struct ProjectView: View {
 
                     // Center content
                     Group {
-                        if let projectId = session.activeProjectId {
-                            if session.inlineSessionId != nil {
+                        if session.activeProjectId != nil {
+                            switch session.subMode {
+                            case .chat:
                                 ProjectInlineChatView(windowState: windowState)
-                            } else if session.inlineWorkTaskId != nil {
+                            case .work:
                                 ProjectInlineWorkView(windowState: windowState)
-                            } else if let project = projectFor(projectId) {
-                                ProjectHomeView(
-                                    project: project,
-                                    windowState: windowState,
-                                    onFileSelected: openFilePreview
-                                )
                             }
                         } else {
                             ProjectListView(windowState: windowState)
@@ -68,9 +63,9 @@ struct ProjectView: View {
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .animation(.spring(response: 0.35, dampingFraction: 0.88), value: windowState.showProjectInspector)
         .animation(theme.springAnimation(responseMultiplier: 0.9), value: windowState.showSidebar)
-        .onChange(of: session.inlineWorkTaskId) { old, new in
-            if new != nil { WorkToolManager.shared.registerTools() }
-            if old != nil && new == nil { WorkToolManager.shared.unregisterTools() }
+        .onChange(of: session.subMode) { old, new in
+            if new == .work { WorkToolManager.shared.registerTools() }
+            if old == .work && new != .work { WorkToolManager.shared.unregisterTools() }
         }
         .sheet(item: $previewArtifact) { artifact in
             ArtifactViewerSheet(

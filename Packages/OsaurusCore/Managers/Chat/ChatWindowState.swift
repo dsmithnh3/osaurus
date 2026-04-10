@@ -27,18 +27,16 @@ public enum SidebarContentMode: Sendable {
     case scheduled
 }
 
-/// Lightweight state for the active project context. Plain struct stored as
-/// @Published on ChatWindowState (which is ObservableObject, not @Observable).
+/// Sub-mode within Projects: chat or work engine.
+public enum ProjectSubMode: String, Codable, Sendable {
+    case chat
+    case work
+}
+
+/// Lightweight state for the active project context.
 public struct ProjectSession: Equatable, Sendable {
     public var activeProjectId: UUID?
-
-    // Inline session state — at most one is non-nil
-    public var inlineSessionId: UUID?
-    public var inlineWorkTaskId: UUID?
-
-    public var hasInlineContent: Bool {
-        inlineSessionId != nil || inlineWorkTaskId != nil
-    }
+    public var subMode: ProjectSubMode = .chat
 
     public init(activeProjectId: UUID? = nil) {
         self.activeProjectId = activeProjectId
@@ -50,13 +48,11 @@ public struct NavigationEntry: Equatable, Sendable {
     public let mode: ChatMode
     public let projectId: UUID?
     public let sessionId: UUID?
-    public let workTaskId: UUID?
 
-    public init(mode: ChatMode, projectId: UUID? = nil, sessionId: UUID? = nil, workTaskId: UUID? = nil) {
+    public init(mode: ChatMode, projectId: UUID? = nil, sessionId: UUID? = nil) {
         self.mode = mode
         self.projectId = projectId
         self.sessionId = sessionId
-        self.workTaskId = workTaskId
     }
 }
 
@@ -134,7 +130,6 @@ final class ChatWindowState: ObservableObject {
 
     private func restoreNavigationEntry(_ entry: NavigationEntry) {
         if entry.mode != mode {
-            // Set mode directly to avoid resetting project session state
             mode = entry.mode
             sidebarContentMode = .chat
             switch entry.mode {
@@ -145,7 +140,7 @@ final class ChatWindowState: ObservableObject {
                 }
                 refreshWorkTasks()
             case .project:
-                if entry.workTaskId != nil {
+                if projectSession?.subMode == .work {
                     WorkToolManager.shared.registerTools()
                     if workSession == nil {
                         workSession = WorkSession(agentId: agentId, windowState: self)
@@ -159,10 +154,14 @@ final class ChatWindowState: ObservableObject {
         }
 
         if entry.mode == .project {
-            var session = ProjectSession(activeProjectId: entry.projectId)
-            session.inlineSessionId = entry.sessionId
-            session.inlineWorkTaskId = entry.workTaskId
-            projectSession = session
+            let session = ProjectSession(activeProjectId: entry.projectId)
+            if let existing = projectSession, existing.activeProjectId == entry.projectId {
+                var updated = session
+                updated.subMode = existing.subMode
+                projectSession = updated
+            } else {
+                projectSession = session
+            }
             if let pid = entry.projectId {
                 ProjectManager.shared.setActiveProject(pid)
             }
@@ -314,9 +313,16 @@ final class ChatWindowState: ObservableObject {
             }
             refreshWorkTasks()
         case .project:
-            WorkToolManager.shared.unregisterTools()
             if projectSession == nil {
                 projectSession = ProjectSession()
+            }
+            if projectSession?.subMode == .work {
+                WorkToolManager.shared.registerTools()
+                if workSession == nil {
+                    workSession = WorkSession(agentId: agentId, windowState: self)
+                }
+            } else {
+                WorkToolManager.shared.unregisterTools()
             }
         case .chat:
             WorkToolManager.shared.unregisterTools()
