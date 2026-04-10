@@ -113,13 +113,14 @@ public struct MemoryEntry: Codable, Sendable, Identifiable {
     public var accessCount: Int
     public var validFrom: String
     public var validUntil: String?
+    public var projectId: String?
 
     public var tags: [String]
 
     private enum CodingKeys: String, CodingKey {
         case id, agentId, type, content, confidence, model, sourceConversationId
         case tagsJSON, status, supersededBy, createdAt, lastAccessed, accessCount
-        case validFrom, validUntil
+        case validFrom, validUntil, projectId
     }
 
     private static func decodeTags(from json: String?) -> [String] {
@@ -144,7 +145,8 @@ public struct MemoryEntry: Codable, Sendable, Identifiable {
         lastAccessed: String = "",
         accessCount: Int = 0,
         validFrom: String = "",
-        validUntil: String? = nil
+        validUntil: String? = nil,
+        projectId: String? = nil
     ) {
         self.id = id
         self.agentId = agentId
@@ -161,6 +163,7 @@ public struct MemoryEntry: Codable, Sendable, Identifiable {
         self.accessCount = max(0, accessCount)
         self.validFrom = validFrom
         self.validUntil = validUntil
+        self.projectId = projectId
         self.tags = Self.decodeTags(from: tagsJSON)
     }
 
@@ -181,6 +184,7 @@ public struct MemoryEntry: Codable, Sendable, Identifiable {
         accessCount = try c.decode(Int.self, forKey: .accessCount)
         validFrom = try c.decode(String.self, forKey: .validFrom)
         validUntil = try c.decodeIfPresent(String.self, forKey: .validUntil)
+        projectId = try c.decodeIfPresent(String.self, forKey: .projectId)
         tags = Self.decodeTags(from: tagsJSON)
     }
 }
@@ -197,6 +201,7 @@ public struct ConversationSummary: Codable, Sendable, Identifiable {
     public var conversationAt: String
     public var status: String
     public var createdAt: String
+    public var projectId: String?
 
     public init(
         id: Int = 0,
@@ -207,7 +212,8 @@ public struct ConversationSummary: Codable, Sendable, Identifiable {
         model: String,
         conversationAt: String,
         status: String = "active",
-        createdAt: String = ""
+        createdAt: String = "",
+        projectId: String? = nil
     ) {
         self.id = id
         self.agentId = agentId
@@ -218,6 +224,7 @@ public struct ConversationSummary: Codable, Sendable, Identifiable {
         self.conversationAt = conversationAt
         self.status = status
         self.createdAt = createdAt
+        self.projectId = projectId
     }
 }
 
@@ -268,6 +275,7 @@ public struct PendingSignal: Codable, Sendable {
     public var assistantMessage: String?
     public var status: String
     public var createdAt: String
+    public var projectId: String?
 
     public init(
         id: Int = 0,
@@ -277,7 +285,8 @@ public struct PendingSignal: Codable, Sendable {
         userMessage: String,
         assistantMessage: String? = nil,
         status: String = "pending",
-        createdAt: String = ""
+        createdAt: String = "",
+        projectId: String? = nil
     ) {
         self.id = id
         self.agentId = agentId
@@ -287,6 +296,7 @@ public struct PendingSignal: Codable, Sendable {
         self.assistantMessage = assistantMessage
         self.status = status
         self.createdAt = createdAt
+        self.projectId = projectId
     }
 }
 
