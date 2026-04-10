@@ -42,7 +42,7 @@ private struct FileRowView: View {
     @Environment(\.theme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
+        VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 4) {
                 if item.isDirectory {
                     Image(systemName: expandedDirs.contains(item.path) ? "chevron.down" : "chevron.right")
@@ -62,31 +62,36 @@ private struct FileRowView: View {
 
                 Image(systemName: item.isDirectory ? "folder" : (item.isMd ? "doc.text" : "doc"))
                     .font(.system(size: 11))
-                    .foregroundColor(item.isMd ? theme.accentColor : theme.tertiaryText)
+                    .foregroundColor(item.isDirectory ? theme.accentColor.opacity(0.7) : theme.tertiaryText)
 
                 Text(item.name)
                     .font(.system(size: 11))
                     .foregroundColor(theme.primaryText)
                     .lineLimit(1)
+                    .help(item.name)
 
                 if item.isMd {
                     Text("context")
                         .font(.system(size: 9))
-                        .foregroundColor(theme.accentColor.opacity(0.7))
+                        .foregroundColor(theme.accentColor)
                         .padding(.horizontal, 4)
                         .padding(.vertical, 1)
                         .background(
-                            Capsule().fill(theme.accentColor.opacity(0.1))
+                            Capsule().fill(theme.accentColor.opacity(0.12))
                         )
                 }
             }
             .padding(.leading, CGFloat(depth) * 16)
-            .padding(.vertical, 2)
+            .padding(.vertical, 3)
+            .help(item.name)
 
             if item.isDirectory && expandedDirs.contains(item.path) {
-                ForEach(listDirectory(at: item.path), id: \.path) { child in
-                    FileRowView(item: child, depth: depth + 1, expandedDirs: $expandedDirs)
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(listDirectory(at: item.path), id: \.path) { child in
+                        FileRowView(item: child, depth: depth + 1, expandedDirs: $expandedDirs)
+                    }
                 }
+                .animation(.easeInOut(duration: 0.2), value: expandedDirs)
             }
         }
     }

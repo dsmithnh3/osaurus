@@ -16,6 +16,9 @@ struct ProjectHomeView: View {
 
     @Environment(\.theme) private var theme
 
+    @State private var isFolderHovered = false
+    @State private var isInspectorButtonHovered = false
+
     init(project: Project, windowState: ChatWindowState) {
         self.project = project
         self._windowState = ObservedObject(wrappedValue: windowState)
@@ -24,8 +27,8 @@ struct ProjectHomeView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 24) {
                     headerSection
                     outputsSection
                     recentsSection
@@ -88,9 +91,19 @@ struct ProjectHomeView: View {
                 Button(action: { windowState.showProjectInspector.toggle() }) {
                     Image(systemName: "sidebar.right")
                         .font(.system(size: 14))
-                        .foregroundColor(theme.secondaryText)
+                        .foregroundColor(isInspectorButtonHovered ? theme.primaryText : theme.secondaryText)
+                        .padding(6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                .fill(isInspectorButtonHovered ? theme.secondaryBackground.opacity(0.5) : Color.clear)
+                        )
                 }
                 .buttonStyle(.plain)
+                .onHover { hovering in
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        isInspectorButtonHovered = hovering
+                    }
+                }
                 .help("Toggle inspector")
             }
 
@@ -110,15 +123,20 @@ struct ProjectHomeView: View {
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
-                    .foregroundColor(theme.tertiaryText)
+                    .foregroundColor(isFolderHovered ? theme.secondaryText : theme.tertiaryText)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(
                         RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(theme.secondaryBackground.opacity(0.3))
+                            .fill(isFolderHovered ? theme.secondaryBackground.opacity(0.5) : theme.secondaryBackground.opacity(0.3))
                     )
                 }
                 .buttonStyle(.plain)
+                .onHover { hovering in
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        isFolderHovered = hovering
+                    }
+                }
             }
         }
     }
@@ -129,14 +147,23 @@ struct ProjectHomeView: View {
                 .font(.headline)
                 .foregroundColor(theme.primaryText)
 
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    Text("No outputs yet")
-                        .font(.subheadline)
-                        .foregroundColor(theme.tertiaryText)
-                        .padding(20)
-                }
+            VStack(spacing: 8) {
+                Image(systemName: "rectangle.stack")
+                    .font(.system(size: 20))
+                    .foregroundColor(theme.tertiaryText)
+                Text("No outputs yet")
+                    .font(.subheadline)
+                    .foregroundColor(theme.tertiaryText)
+                Text("Outputs from tasks will appear here")
+                    .font(.caption)
+                    .foregroundColor(theme.tertiaryText.opacity(0.7))
             }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 24)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(theme.secondaryBackground.opacity(0.2))
+            )
         }
     }
 
@@ -146,9 +173,23 @@ struct ProjectHomeView: View {
                 .font(.headline)
                 .foregroundColor(theme.primaryText)
 
-            Text("No recent conversations")
-                .font(.subheadline)
-                .foregroundColor(theme.tertiaryText)
+            VStack(spacing: 8) {
+                Image(systemName: "bubble.left.and.bubble.right")
+                    .font(.system(size: 20))
+                    .foregroundColor(theme.tertiaryText)
+                Text("No recent conversations")
+                    .font(.subheadline)
+                    .foregroundColor(theme.tertiaryText)
+                Text("Conversations in this project will appear here")
+                    .font(.caption)
+                    .foregroundColor(theme.tertiaryText.opacity(0.7))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 24)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(theme.secondaryBackground.opacity(0.2))
+            )
         }
     }
 }

@@ -30,13 +30,13 @@ struct CollapsibleSection<Content: View, HeaderAccessory: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button(action: { withAnimation(.easeInOut(duration: 0.2)) { isExpanded.toggle() } }) {
+            Button(action: { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { isExpanded.toggle() } }) {
                 HStack {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundColor(theme.tertiaryText)
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                        .animation(.easeInOut(duration: 0.2), value: isExpanded)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isExpanded)
 
                     Text(title)
                         .font(.headline)
@@ -47,7 +47,7 @@ struct CollapsibleSection<Content: View, HeaderAccessory: View>: View {
                     headerAccessory
                 }
                 .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.vertical, 10)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -56,6 +56,8 @@ struct CollapsibleSection<Content: View, HeaderAccessory: View>: View {
             .accessibilityAddTraits(.isButton)
 
             if isExpanded {
+                Divider().opacity(0.5)
+
                 content
                     .padding(.horizontal, 16)
                     .padding(.bottom, 12)

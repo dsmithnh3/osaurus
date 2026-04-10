@@ -22,7 +22,7 @@ struct ProjectInspectorPanel: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 0) {
                 CollapsibleSection("Instructions", isExpanded: $instructionsExpanded) {
                     Button(action: { isEditingInstructions.toggle() }) {
                         Image(systemName: "pencil")
@@ -36,19 +36,35 @@ struct ProjectInspectorPanel: View {
                             .font(.system(size: 12))
                             .scrollContentBackground(.hidden)
                             .frame(minHeight: 80)
+                            .padding(.horizontal, 12)
                             .onChange(of: instructionsText) { _, newValue in
                                 var updated = project
                                 updated.instructions = newValue
                                 ProjectManager.shared.updateProject(updated)
                             }
-                    } else {
-                        Text(project.instructions ?? "No instructions set")
+                    } else if let instructions = project.instructions {
+                        Text(instructions)
                             .font(.system(size: 12))
-                            .foregroundColor(project.instructions != nil ? theme.primaryText : theme.tertiaryText)
+                            .foregroundColor(theme.primaryText)
+                            .padding(.horizontal, 12)
+                    } else {
+                        VStack(spacing: 6) {
+                            Image(systemName: "pencil.slash")
+                                .font(.system(size: 16))
+                                .foregroundColor(theme.tertiaryText)
+                            Text("No instructions set")
+                                .font(.caption)
+                                .foregroundColor(theme.tertiaryText)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .padding(.horizontal, 12)
                     }
                 }
 
-                Divider().padding(.horizontal, 8)
+                Divider()
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 8)
 
                 CollapsibleSection("Scheduled", isExpanded: $scheduledExpanded) {
                     Button(action: { }) {
@@ -58,12 +74,22 @@ struct ProjectInspectorPanel: View {
                     }
                     .buttonStyle(.plain)
                 } content: {
-                    Text("No scheduled tasks")
-                        .font(.system(size: 12))
-                        .foregroundColor(theme.tertiaryText)
+                    VStack(spacing: 6) {
+                        Image(systemName: "calendar.badge.clock")
+                            .font(.system(size: 16))
+                            .foregroundColor(theme.tertiaryText)
+                        Text("No scheduled tasks")
+                            .font(.caption)
+                            .foregroundColor(theme.tertiaryText)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .padding(.horizontal, 12)
                 }
 
-                Divider().padding(.horizontal, 8)
+                Divider()
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 8)
 
                 CollapsibleSection("Context", isExpanded: $contextExpanded) {
                     Button(action: { }) {
@@ -75,23 +101,38 @@ struct ProjectInspectorPanel: View {
                 } content: {
                     if let folderPath = project.folderPath {
                         FolderTreeView(rootPath: folderPath)
+                            .padding(.horizontal, 12)
                     } else {
-                        Text("No folder linked")
-                            .font(.system(size: 12))
-                            .foregroundColor(theme.tertiaryText)
+                        VStack(spacing: 6) {
+                            Image(systemName: "folder.badge.questionmark")
+                                .font(.system(size: 16))
+                                .foregroundColor(theme.tertiaryText)
+                            Text("No folder linked")
+                                .font(.caption)
+                                .foregroundColor(theme.tertiaryText)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .padding(.horizontal, 12)
                     }
                 }
 
-                Divider().padding(.horizontal, 8)
+                Divider()
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 8)
 
                 CollapsibleSection("Memory", isExpanded: $memoryExpanded) {
                     MemorySummaryView(projectId: project.id)
+                        .padding(.horizontal, 12)
                 }
             }
             .padding(.vertical, 12)
         }
         .frame(maxHeight: .infinity)
-        .background(theme.secondaryBackground.opacity(0.5))
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(theme.secondaryBackground.opacity(0.5))
+        )
         .overlay(
             Rectangle()
                 .frame(width: 1)

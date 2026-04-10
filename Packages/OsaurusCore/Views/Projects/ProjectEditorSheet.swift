@@ -26,25 +26,57 @@ struct ProjectEditorSheet: View {
     var body: some View {
         VStack(spacing: 20) {
             Text(existingProject != nil ? "Edit Project" : "New Project")
-                .font(.headline)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundColor(theme.primaryText)
 
-            VStack(alignment: .leading, spacing: 12) {
-                TextField("Project name", text: $name)
-                    .textFieldStyle(.roundedBorder)
-
-                TextField("Description (optional)", text: $description)
-                    .textFieldStyle(.roundedBorder)
-
-                HStack {
-                    Text("Folder:")
-                        .font(.system(size: 12))
-                    Text(folderPath ?? "None selected")
-                        .font(.system(size: 12))
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Project name")
+                        .font(.caption)
                         .foregroundColor(theme.secondaryText)
-                        .lineLimit(1)
-                    Spacer()
-                    Button("Choose...") { pickFolder() }
-                        .buttonStyle(.bordered)
+                    TextField("e.g., Website Redesign", text: $name)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Description")
+                        .font(.caption)
+                        .foregroundColor(theme.secondaryText)
+                    TextField("Optional description", text: $description)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Folder")
+                        .font(.caption)
+                        .foregroundColor(theme.secondaryText)
+                    Button(action: { pickFolder() }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "folder")
+                                .font(.system(size: 12))
+                                .foregroundColor(theme.secondaryText)
+                            Text(folderPath ?? "No folder selected")
+                                .font(.system(size: 12))
+                                .foregroundColor(folderPath != nil ? theme.primaryText : theme.tertiaryText)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer()
+                            Text("Choose...")
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundColor(theme.accentColor)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(theme.inputBackground)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .strokeBorder(theme.inputBorder, lineWidth: 1)
+                                )
+                        )
+                    }
+                    .buttonStyle(.plain)
                 }
             }
 
@@ -54,11 +86,12 @@ struct ProjectEditorSheet: View {
                 Spacer()
                 Button(existingProject != nil ? "Save" : "Create") { save() }
                     .buttonStyle(.borderedProminent)
+                    .tint(theme.accentColor)
                     .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
             }
         }
         .padding(24)
-        .frame(width: 400)
+        .frame(minWidth: 400, minHeight: 300)
         .onAppear {
             if let existing = existingProject {
                 name = existing.name

@@ -23,8 +23,11 @@ struct ProjectView: View {
                     project: project,
                     windowState: windowState
                 )
+                .transition(.opacity)
+                .animation(.easeInOut(duration: 0.2), value: projectId)
             } else {
                 ProjectListView(windowState: windowState)
+                    .transition(.opacity)
             }
 
             // Right inspector overlay
@@ -33,9 +36,14 @@ struct ProjectView: View {
                let project = ProjectManager.shared.projects.first(where: { $0.id == projectId }) {
                 ProjectInspectorPanel(project: project)
                     .frame(width: 300)
+                    .overlay(alignment: .leading) {
+                        Rectangle()
+                            .fill(theme.primaryBorder.opacity(0.15))
+                            .frame(width: 1)
+                    }
                     .transition(.move(edge: .trailing))
             }
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: windowState.showProjectInspector)
+        .animation(.spring(response: 0.35, dampingFraction: 0.88), value: windowState.showProjectInspector)
     }
 }

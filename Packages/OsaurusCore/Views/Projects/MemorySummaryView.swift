@@ -14,10 +14,19 @@ struct MemorySummaryView: View {
     @Environment(\.theme) private var theme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Memory entries for this project will appear here")
-                .font(.system(size: 11))
+        VStack(spacing: 8) {
+            Image(systemName: "brain")
+                .font(.system(size: 18))
                 .foregroundColor(theme.tertiaryText)
+            Text("No memories yet")
+                .font(.caption)
+                .foregroundColor(theme.tertiaryText)
+            Text("Memories from project conversations will appear here")
+                .font(.caption2)
+                .foregroundColor(theme.tertiaryText.opacity(0.7))
+                .multilineTextAlignment(.center)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 16)
     }
 }
