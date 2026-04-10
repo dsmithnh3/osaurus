@@ -282,12 +282,6 @@ public final class ProjectManager {
         return results
     }
 
-    /// Discover all .md files recursively in a directory.
-    @available(*, deprecated, renamed: "discoverProjectFiles(in:)")
-    public func discoverMarkdownFiles(in directory: URL) -> [URL] {
-        Self.discoverProjectFiles(in: directory).filter { $0.pathExtension.lowercased() == "md" }
-    }
-
     // MARK: - Security-Scoped Bookmark Lifecycle
 
     /// Start accessing the project's folder bookmark. Call when entering a project.
