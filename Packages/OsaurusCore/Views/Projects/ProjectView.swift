@@ -13,6 +13,7 @@ struct ProjectView: View {
     let session: ProjectSession
 
     @Environment(\.theme) private var theme
+    @State private var previewArtifact: SharedArtifact?
 
     var body: some View {
         ZStack(alignment: .trailing) {
@@ -21,7 +22,8 @@ struct ProjectView: View {
                let project = ProjectManager.shared.projects.first(where: { $0.id == projectId }) {
                 ProjectHomeView(
                     project: project,
-                    windowState: windowState
+                    windowState: windowState,
+                    onFileSelected: openFilePreview
                 )
                 .transition(.opacity)
                 .animation(.easeInOut(duration: 0.2), value: projectId)
@@ -34,16 +36,22 @@ struct ProjectView: View {
             if windowState.showProjectInspector,
                let projectId = session.activeProjectId,
                let project = ProjectManager.shared.projects.first(where: { $0.id == projectId }) {
-                ProjectInspectorPanel(project: project)
-                    .frame(width: 300)
-                    .overlay(alignment: .leading) {
-                        Rectangle()
-                            .fill(theme.primaryBorder.opacity(0.15))
-                            .frame(width: 1)
-                    }
+                ProjectInspectorPanel(project: project, onFileSelected: openFilePreview)
                     .transition(.move(edge: .trailing))
             }
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.88), value: windowState.showProjectInspector)
+        .sheet(item: $previewArtifact) { artifact in
+            ArtifactViewerSheet(
+                artifact: artifact,
+                onDismiss: { previewArtifact = nil }
+            )
+            .environment(\.theme, windowState.theme)
+        }
+    }
+
+    private func openFilePreview(_ path: String) {
+        guard let artifact = SharedArtifact.fromFilePath(path) else { return }
+        previewArtifact = artifact
     }
 }
