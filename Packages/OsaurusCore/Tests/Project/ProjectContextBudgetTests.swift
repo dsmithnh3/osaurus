@@ -86,4 +86,44 @@ struct ProjectContextBudgetTests {
         let tier = ProjectManager.priorityTier(for: file, relativeTo: root)
         #expect(tier == 6)
     }
+
+    @Test("Depth 3 .md gets tier 6 (at boundary)")
+    func depth3MdTier6() {
+        let root = URL(fileURLWithPath: "/tmp/testproject/")
+        let file = URL(fileURLWithPath: "/tmp/testproject/a/b/c/deep.md")
+        let tier = ProjectManager.priorityTier(for: file, relativeTo: root)
+        #expect(tier == 6)
+    }
+
+    @Test("Depth 4 .md returns nil (beyond limit)")
+    func depth4MdNil() {
+        let root = URL(fileURLWithPath: "/tmp/testproject/")
+        let file = URL(fileURLWithPath: "/tmp/testproject/a/b/c/d/tooDeep.md")
+        let tier = ProjectManager.priorityTier(for: file, relativeTo: root)
+        #expect(tier == nil)
+    }
+
+    @Test(".yml extension gets tier 4 at root")
+    func ymlExtensionTier4() {
+        let root = URL(fileURLWithPath: "/tmp/testproject/")
+        let file = URL(fileURLWithPath: "/tmp/testproject/config.yml")
+        let tier = ProjectManager.priorityTier(for: file, relativeTo: root)
+        #expect(tier == 4)
+    }
+
+    @Test("Known tier-1 name at depth > 0 gets tier 6, not tier 1")
+    func knownNameAtDepthGetsTier6() {
+        let root = URL(fileURLWithPath: "/tmp/testproject/")
+        let file = URL(fileURLWithPath: "/tmp/testproject/docs/CLAUDE.md")
+        let tier = ProjectManager.priorityTier(for: file, relativeTo: root)
+        #expect(tier == 6)
+    }
+
+    @Test("Non-md non-yaml file returns nil")
+    func nonMdNonYamlReturnsNil() {
+        let root = URL(fileURLWithPath: "/tmp/testproject/")
+        let file = URL(fileURLWithPath: "/tmp/testproject/data.json")
+        let tier = ProjectManager.priorityTier(for: file, relativeTo: root)
+        #expect(tier == nil)
+    }
 }

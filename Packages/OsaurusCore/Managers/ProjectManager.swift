@@ -88,18 +88,18 @@ public final class ProjectManager {
     // MARK: - Project Context Constants
 
     // internal (not private) so tests can reference these values directly
-    nonisolated(unsafe) static let projectContextBudgetChars = 32_000  // ~8,000 tokens
-    nonisolated(unsafe) static let truncatedPreviewChars = 500
-    nonisolated(unsafe) static let maxDiscoveryDepth = 3
+    nonisolated static let projectContextBudgetChars = 32_000  // ~8,000 tokens
+    nonisolated static let truncatedPreviewChars = 500
+    nonisolated static let maxDiscoveryDepth = 3
 
-    nonisolated(unsafe) static let excludePatterns = [
+    nonisolated static let excludePatterns = [
         "memory/", ".build/", "DerivedData/", "node_modules/",
         "docs/superpowers/", "benchmarks/", "results/",
     ]
 
-    nonisolated(unsafe) private static let tier1Names: Set<String> = ["claude.md", "agents.md", "gemini.md"]
-    nonisolated(unsafe) private static let tier2Names: Set<String> = ["tasks.md", "readme.md"]
-    nonisolated(unsafe) private static let tier3Names: Set<String> = ["active-projects.md"]
+    nonisolated private static let tier1Names: Set<String> = ["claude.md", "agents.md", "gemini.md"]
+    nonisolated private static let tier2Names: Set<String> = ["tasks.md", "readme.md"]
+    nonisolated private static let tier3Names: Set<String> = ["active-projects.md"]
 
     /// Assign a priority tier (1-6) to a file URL relative to the project root.
     /// Returns nil if the file should not be included (unsupported extension at depth, etc.).
