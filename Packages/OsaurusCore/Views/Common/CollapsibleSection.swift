@@ -39,7 +39,7 @@ struct CollapsibleSection<Content: View, HeaderAccessory: View>: View {
                         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: isExpanded)
 
                     Text(title)
-                        .font(.headline)
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(theme.primaryText)
 
                     Spacer()
