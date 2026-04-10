@@ -31,7 +31,7 @@ public enum MemoryDatabaseError: Error, LocalizedError {
 public final class MemoryDatabase: @unchecked Sendable {
     public static let shared = MemoryDatabase()
 
-    private static let schemaVersion = 4
+    private static let schemaVersion = 5
 
     private static let memoryEntryColumns = """
         id, agent_id, type, content, confidence, model, source_conversation_id, tags, status,
@@ -158,6 +158,7 @@ public final class MemoryDatabase: @unchecked Sendable {
         if currentVersion < 2 { try migrateToV2() }
         if currentVersion < 3 { try migrateToV3() }
         if currentVersion < 4 { try migrateToV4() }
+        if currentVersion < 5 { try migrateToV5() }
     }
 
     private func getSchemaVersion() throws -> Int {
@@ -506,6 +507,19 @@ public final class MemoryDatabase: @unchecked Sendable {
         )
         try setSchemaVersion(4)
         MemoryLogger.database.info("Migration to v4 completed")
+    }
+
+    /// V5: Add project_id to pending_signals for project-scoped summary generation
+    private func migrateToV5() throws {
+        MemoryLogger.database.info("Running migration to v5")
+
+        try executeRaw("ALTER TABLE pending_signals ADD COLUMN project_id TEXT")
+
+        try executeRaw(
+            "INSERT OR IGNORE INTO schema_version (version, description) VALUES (5, 'Add project_id to pending_signals')"
+        )
+        try setSchemaVersion(5)
+        MemoryLogger.database.info("Migration to v5 completed")
     }
 
     // MARK: - Query Execution
