@@ -112,12 +112,13 @@ public actor MemoryContextAssembler {
     private func assembleContextCached(agentId: String, config: MemoryConfiguration) -> String {
         guard config.enabled else { return "" }
 
-        if let cached = cache[agentId], Date().timeIntervalSince(cached.timestamp) < Self.cacheTTL {
+        let cacheKey = "\(agentId):global"
+        if let cached = cache[cacheKey], Date().timeIntervalSince(cached.timestamp) < Self.cacheTTL {
             return cached.context
         }
 
         let context = buildContext(agentId: agentId, config: config)
-        cache[agentId] = CacheEntry(context: context, timestamp: Date())
+        cache[cacheKey] = CacheEntry(context: context, timestamp: Date())
         return context
     }
 
