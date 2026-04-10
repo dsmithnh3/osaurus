@@ -53,7 +53,7 @@ struct ProjectView: View {
                     if windowState.showProjectInspector,
                        let projectId = session.activeProjectId,
                        let project = projectFor(projectId) {
-                        ProjectInspectorPanel(project: project, onFileSelected: openFilePreview)
+                        ProjectInspectorPanel(project: project, onFileSelected: openFilePreview, onArtifactSelected: { previewArtifact = $0 })
                             .transition(.move(edge: .trailing))
                     }
                 }
