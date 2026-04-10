@@ -1801,6 +1801,27 @@ public final class MemoryDatabase: @unchecked Sendable {
         return (total, byType)
     }
 
+    public func loadProjectEntries(projectId: String, limit: Int = 5) throws -> [MemoryEntry] {
+        var entries: [MemoryEntry] = []
+        try prepareAndExecute(
+            """
+            SELECT \(Self.memoryEntryColumns)
+            FROM memory_entries WHERE status = 'active' AND project_id = ?1
+            ORDER BY last_accessed DESC LIMIT ?2
+            """,
+            bind: { stmt in
+                Self.bindText(stmt, index: 1, value: projectId)
+                sqlite3_bind_int(stmt, 2, Int32(limit))
+            },
+            process: { stmt in
+                while sqlite3_step(stmt) == SQLITE_ROW {
+                    entries.append(Self.readMemoryEntry(stmt))
+                }
+            }
+        )
+        return entries
+    }
+
     /// Returns the history of entries of a given type, optionally filtered by keyword.
     public func loadEntryHistory(agentId: String, type: String, containing: String? = nil) throws -> [MemoryEntry] {
         var entries: [MemoryEntry] = []
