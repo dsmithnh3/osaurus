@@ -455,8 +455,8 @@ public struct IssueStore {
     @discardableResult
     public static func createTask(_ task: WorkTask) throws -> WorkTask {
         let sql = """
-                INSERT INTO tasks (id, title, query, persona_id, status, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO tasks (id, title, query, persona_id, status, created_at, updated_at, project_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """
 
         try WorkDatabase.shared.prepareAndExecute(
@@ -469,6 +469,7 @@ public struct IssueStore {
                 WorkDatabase.bindText(stmt, index: 5, value: task.status.rawValue)
                 WorkDatabase.bindDate(stmt, index: 6, value: task.createdAt)
                 WorkDatabase.bindDate(stmt, index: 7, value: task.updatedAt)
+                WorkDatabase.bindText(stmt, index: 8, value: task.projectId?.uuidString)
             }
         ) { stmt in
             let result = sqlite3_step(stmt)
@@ -503,7 +504,7 @@ public struct IssueStore {
     public static func updateTask(_ task: WorkTask) throws {
         let sql = """
                 UPDATE tasks
-                SET title = ?, status = ?, updated_at = ?
+                SET title = ?, status = ?, updated_at = ?, project_id = ?
                 WHERE id = ?
             """
 
@@ -513,7 +514,8 @@ public struct IssueStore {
                 WorkDatabase.bindText(stmt, index: 1, value: task.title)
                 WorkDatabase.bindText(stmt, index: 2, value: task.status.rawValue)
                 WorkDatabase.bindDate(stmt, index: 3, value: Date())
-                WorkDatabase.bindText(stmt, index: 4, value: task.id)
+                WorkDatabase.bindText(stmt, index: 4, value: task.projectId?.uuidString)
+                WorkDatabase.bindText(stmt, index: 5, value: task.id)
             }
         ) { stmt in
             let result = sqlite3_step(stmt)
@@ -555,10 +557,11 @@ public struct IssueStore {
     }
 
     /// Lists all tasks, optionally filtered by agent
-    public static func listTasks(agentId: UUID? = nil, status: WorkTaskStatus? = nil) throws -> [WorkTask] {
+    public static func listTasks(agentId: UUID? = nil, status: WorkTaskStatus? = nil, projectId: UUID? = nil) throws -> [WorkTask] {
         var conditions: [String] = []
         if agentId != nil { conditions.append("persona_id = ?") }
         if status != nil { conditions.append("status = ?") }
+        if projectId != nil { conditions.append("project_id = ?") }
 
         let whereClause = conditions.isEmpty ? "" : "WHERE \(conditions.joined(separator: " AND "))"
         let sql = "SELECT * FROM tasks \(whereClause) ORDER BY updated_at DESC"
@@ -575,6 +578,10 @@ public struct IssueStore {
                 }
                 if let status = status {
                     WorkDatabase.bindText(stmt, index: paramIndex, value: status.rawValue)
+                    paramIndex += 1
+                }
+                if let projectId = projectId {
+                    WorkDatabase.bindText(stmt, index: paramIndex, value: projectId.uuidString)
                 }
             }
         ) { stmt in
@@ -671,6 +678,8 @@ public struct IssueStore {
 
         let agentIdString = WorkDatabase.getText(stmt, column: 3)
         let agentId = agentIdString.flatMap { UUID(uuidString: $0) }
+        let projectIdString = WorkDatabase.getText(stmt, column: 7)
+        let projectId = projectIdString.flatMap { UUID(uuidString: $0) }
 
         return WorkTask(
             id: id,
@@ -679,7 +688,8 @@ public struct IssueStore {
             agentId: agentId,
             status: status,
             createdAt: createdAt,
-            updatedAt: updatedAt
+            updatedAt: updatedAt,
+            projectId: projectId
         )
     }
 
