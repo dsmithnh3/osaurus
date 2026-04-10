@@ -1,6 +1,6 @@
 # Developer map
 
-Quick orientation for **where to edit** in this repo. **Canonical commands, layer rules, and architecture** live in the repo-root [`CLAUDE.md`](../CLAUDE.md)—prefer linking there over copying.
+Quick orientation for **where to edit** in this repo. **Canonical commands, layer rules, and architecture** live in **CLAUDE.md** at the repository root—open that file locally; it may not be present in every remote checkout.
 
 ## Workspace layout
 
@@ -14,7 +14,7 @@ Quick orientation for **where to edit** in this repo. **Canonical commands, laye
 
 ## If you change … start here
 
-Use **directories** as anchors; open [`CLAUDE.md`](../CLAUDE.md) for the full layer table (Models / Services / Managers / Views, etc.).
+Use **directories** as anchors; open **CLAUDE.md** at the repository root for the full layer table (Models / Services / Managers / Views, etc.).
 
 | Theme                      | Start in `Packages/OsaurusCore/`                                           | Deep doc                                           |
 | -------------------------- | -------------------------------------------------------------------------- | -------------------------------------------------- |
@@ -26,7 +26,7 @@ Use **directories** as anchors; open [`CLAUDE.md`](../CLAUDE.md) for the full la
 | **Identity**               | `Identity/`                                                                | [IDENTITY.md](IDENTITY.md)                         |
 | **Plugins (native dylib)** | `Managers/Plugin/`, `Services/Plugin/`, `Models/Plugin/`                   | [PLUGIN_AUTHORING.md](PLUGIN_AUTHORING.md)         |
 
-**HTTP / relay / local API:** `Networking/` (see [`CLAUDE.md`](../CLAUDE.md) Server & Networking).
+**HTTP / relay / local API:** `Networking/` (see **CLAUDE.md** at the repository root — Server & Networking).
 
 ## One-screen stubs (agents & humans)
 

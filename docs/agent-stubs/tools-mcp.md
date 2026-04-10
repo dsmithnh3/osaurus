@@ -2,7 +2,7 @@
 
 ## Purpose
 
-**Built-in tools**, **plugin tools**, **MCP tools**, and **sandbox tools** are registered and dispatched through the tool system. Osaurus is both an **MCP server** (expose tools to clients) and an **MCP client** (aggregate remote servers). Configuration and security expectations are in the remote MCP guide and [`CLAUDE.md`](../../CLAUDE.md).
+**Built-in tools**, **plugin tools**, **MCP tools**, and **sandbox tools** are registered and dispatched through the tool system. Osaurus is both an **MCP server** (expose tools to clients) and an **MCP client** (aggregate remote servers). Configuration and security expectations are in the remote MCP guide and **CLAUDE.md** at the repository root.
 
 ## Key paths (`Packages/OsaurusCore/`)
 

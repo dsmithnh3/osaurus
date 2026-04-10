@@ -8,7 +8,7 @@
 
 - **Default path:** `AGENTS.md` → [`docs/DEVELOPER_MAP.md`](docs/DEVELOPER_MAP.md) → [`docs/agent-stubs/<topic>.md`](docs/agent-stubs/) → feature doc under `docs/` → `Packages/OsaurusCore/` code.
 - **Docs table of contents:** [`docs/INDEX.md`](docs/INDEX.md).
-- Build, test, lint, and architecture rules: **[`CLAUDE.md`](CLAUDE.md)** only (do not duplicate long sections here).
+- Build, test, lint, and architecture rules: **CLAUDE.md** at the repository root only (do not duplicate long sections here).
 
 ## Learned Workspace Facts
 

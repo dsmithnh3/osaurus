@@ -7,12 +7,12 @@ Chat flows through the **chat engine** and **model routing** (local MLX, cloud p
 ## Key paths (`Packages/OsaurusCore/`)
 
 - `Services/Chat/` — `ChatEngine.swift`, protocols, streaming and tool-call integration with providers
-- `Networking/` — HTTP server, handlers, routing (`OsaurusServer`, `HTTPHandler`, `Router` per [`CLAUDE.md`](../../CLAUDE.md))
+- `Networking/` — HTTP server, handlers, routing (`OsaurusServer`, `HTTPHandler`, `Router` per **CLAUDE.md** at the repository root)
 - `Managers/` — session/UI coordination (e.g. chat managers) as needed for UI-driven features
 
 ## Invariants / don’t break
 
-- **Services** stay non-observable; **Managers** own UI-visible state ([`CLAUDE.md`](../../CLAUDE.md) layer rules).
+- **Services** stay non-observable; **Managers** own UI-visible state (**CLAUDE.md** at the repository root — layer rules).
 - Provider and DTO shapes affect OpenAI/Anthropic compatibility—change request/response types carefully and align with [OpenAI_API_GUIDE.md](../OpenAI_API_GUIDE.md).
 
 ## See also
