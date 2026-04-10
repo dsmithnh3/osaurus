@@ -1339,6 +1339,7 @@ final class HTTPHandler: ChannelInboundHandler, Sendable {
         let turns: [MemoryIngestTurn]
         let session_date: String?
         let skip_extraction: Bool?
+        var project_id: String?
     }
 
     private struct MemoryIngestTurn: Codable {
@@ -1400,7 +1401,8 @@ final class HTTPHandler: ChannelInboundHandler, Sendable {
             try? db.upsertConversation(
                 id: req.conversation_id,
                 agentId: req.agent_id,
-                title: nil
+                title: nil,
+                projectId: req.project_id
             )
 
             let skipExtraction = req.skip_extraction ?? false
@@ -1441,7 +1443,8 @@ final class HTTPHandler: ChannelInboundHandler, Sendable {
                         assistantMessage: turn.assistant,
                         agentId: req.agent_id,
                         conversationId: req.conversation_id,
-                        sessionDate: turnDate
+                        sessionDate: turnDate,
+                        projectId: req.project_id
                     )
                 }
             }

@@ -1467,12 +1467,14 @@ extension WorkSession: WorkEngineDelegate {
 
         if !userMessage.isEmpty {
             let convId = issue.id
+            let activeProjectId = ProjectManager.shared.activeProjectId?.uuidString
             Task.detached {
                 await MemoryService.shared.recordConversationTurn(
                     userMessage: userMessage,
                     assistantMessage: assistantContent,
                     agentId: agentStr,
-                    conversationId: convId
+                    conversationId: convId,
+                    projectId: activeProjectId
                 )
             }
         }

@@ -651,12 +651,13 @@ final class ChatSession: ObservableObject {
 
         let assistantContent = turns.last(where: { $0.role == .assistant })?.content
 
+        let activeProjectId = ProjectManager.shared.activeProjectId?.uuidString
         if context.hasContent, let sid = sessionId {
             let convId = sid.uuidString
             let aid = context.memoryAgentId
             let chunkIdx = turns.count
             let db = MemoryDatabase.shared
-            do { try db.upsertConversation(id: convId, agentId: aid, title: title) } catch {
+            do { try db.upsertConversation(id: convId, agentId: aid, title: title, projectId: activeProjectId) } catch {
                 MemoryLogger.database.warning("Failed to upsert conversation: \(error)")
             }
             let userChunkIndex = chunkIdx - 1
@@ -718,7 +719,8 @@ final class ChatSession: ObservableObject {
                     assistantMessage: assistantContent,
                     agentId: context.memoryAgentId,
                     conversationId: context.memoryConversationId,
-                    sessionDate: today
+                    sessionDate: today,
+                    projectId: activeProjectId
                 )
             }
         }

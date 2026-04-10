@@ -319,8 +319,9 @@ final class ChatWindowState: ObservableObject {
         guard let sid = session.sessionId else { return }
         let agentStr = (session.agentId ?? Agent.defaultId).uuidString
         let convStr = sid.uuidString
+        let projectIdStr = ProjectManager.shared.activeProjectId?.uuidString
         Task {
-            await MemoryService.shared.flushSession(agentId: agentStr, conversationId: convStr)
+            await MemoryService.shared.flushSession(agentId: agentStr, conversationId: convStr, projectId: projectIdStr)
         }
     }
 

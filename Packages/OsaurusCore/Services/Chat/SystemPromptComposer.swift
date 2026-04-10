@@ -271,7 +271,8 @@ public struct SystemPromptComposer: Sendable {
         into messages: inout [ChatMessage]
     ) async -> (cacheHint: String, staticPrefix: String) {
         var composer = forChat(agentId: agentId, executionMode: .none)
-        await composer.appendMemory(agentId: agentId.uuidString, query: query.isEmpty ? nil : query)
+        let activeProjectId = ProjectManager.shared.activeProjectId?.uuidString
+        await composer.appendMemory(agentId: agentId.uuidString, query: query.isEmpty ? nil : query, projectId: activeProjectId)
         let manifest = composer.manifest()
         let rendered = composer.render()
         debugLog("[Context:inject] \(manifest.debugDescription)")
