@@ -289,6 +289,10 @@ final class ChatWindowState: ObservableObject {
         if !session.turns.isEmpty { session.save() }
         flushCurrentSession()
         session.reset(for: agentId)
+        // Restore project scoping so the new session is tagged correctly
+        if mode == .project, let projectId = projectSession?.activeProjectId {
+            session.projectId = projectId
+        }
         refreshSessions()
     }
 

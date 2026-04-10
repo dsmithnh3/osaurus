@@ -53,11 +53,12 @@ public final class IssueManager: ObservableObject {
     // MARK: - Task Operations
 
     /// Creates a new task from a user query
-    public func createTask(query: String, agentId: UUID? = nil) async throws -> WorkTask {
+    public func createTask(query: String, agentId: UUID? = nil, projectId: UUID? = nil) async throws -> WorkTask {
         let task = WorkTask(
             title: WorkTask.generateTitle(from: query),
             query: query,
-            agentId: agentId
+            agentId: agentId,
+            projectId: projectId
         )
 
         try IssueStore.createTask(task)
@@ -523,9 +524,9 @@ public final class IssueManager: ObservableObject {
     }
 
     /// Creates a task without throwing (returns nil on failure)
-    public func createTaskSafe(query: String, agentId: UUID? = nil) async -> WorkTask? {
+    public func createTaskSafe(query: String, agentId: UUID? = nil, projectId: UUID? = nil) async -> WorkTask? {
         await safe("createTask") {
-            try await createTask(query: query, agentId: agentId)
+            try await createTask(query: query, agentId: agentId, projectId: projectId)
         }
     }
 
