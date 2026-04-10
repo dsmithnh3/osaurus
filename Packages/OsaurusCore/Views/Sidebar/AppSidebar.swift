@@ -22,9 +22,32 @@ struct AppSidebar: View {
     @FocusState private var searchFocused: Bool
     @State private var isNewChatHovered = false
     @State private var isDraggingDivider = false
+    @State private var renamingSessionId: UUID?
+    @State private var renamingTitle: String = ""
 
     private let minProjectHeight: CGFloat = 56
     private let maxProjectFraction: CGFloat = 0.5
+
+    // MARK: - ProjectRecentItem
+
+    enum ProjectRecentItem: Identifiable {
+        case session(ChatSessionData)
+        case task(WorkTask)
+
+        var id: String {
+            switch self {
+            case .session(let s): return "session-\(s.id.uuidString)"
+            case .task(let t): return "task-\(t.id)"
+            }
+        }
+
+        var date: Date {
+            switch self {
+            case .session(let s): return s.updatedAt
+            case .task(let t): return t.updatedAt
+            }
+        }
+    }
 
     var body: some View {
         SidebarContainer(attachedEdge: .leading, topPadding: 40) {
@@ -208,33 +231,127 @@ struct AppSidebar: View {
 
     // MARK: - Recents Section
 
-    /// Sessions filtered by active project (if in project mode) and search query.
-    private var visibleSessions: [ChatSessionData] {
-        var sessions = windowState.filteredSessions
+    /// Recent items (sessions + tasks) filtered by active project and search query, sorted by date descending.
+    private var projectRecentItems: [ProjectRecentItem] {
+        var items: [ProjectRecentItem] = []
 
-        // Project-scope: show only sessions belonging to this project
+        // Chat sessions
+        let sessions: [ChatSessionData] = {
+            var s = windowState.filteredSessions
+            if windowState.mode == .project,
+               let projectId = windowState.projectSession?.activeProjectId {
+                s = s.filter { $0.projectId == projectId }
+            }
+            return s
+        }()
+        items.append(contentsOf: sessions.map { .session($0) })
+
+        // Work tasks (only in project mode with active project)
         if windowState.mode == .project,
-           let projectId = windowState.projectSession?.activeProjectId {
-            sessions = sessions.filter { $0.projectId == projectId }
+           let projectId = windowState.projectSession?.activeProjectId,
+           WorkDatabase.shared.isOpen {
+            let tasks = (try? IssueStore.listTasks(projectId: projectId)) ?? []
+            items.append(contentsOf: tasks.map { .task($0) })
         }
 
-        // Search filter
+        // Sort by date descending
+        items.sort { $0.date > $1.date }
+
+        // Apply search filter
         let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         if !query.isEmpty {
-            sessions = sessions.filter {
-                $0.title.localizedCaseInsensitiveContains(query)
+            items = items.filter {
+                switch $0 {
+                case .session(let s): return s.title.localizedCaseInsensitiveContains(query)
+                case .task(let t): return t.title.localizedCaseInsensitiveContains(query)
+                }
             }
         }
 
-        return sessions
+        return items
     }
 
     private var recentsSection: some View {
         CollapsibleSection("Recents", isExpanded: $isRecentsExpanded) {
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: 2) {
-                    ForEach(visibleSessions) { sessionData in
-                        RecentRow(sessionData: sessionData, windowState: windowState)
+                    ForEach(projectRecentItems) { item in
+                        switch item {
+                        case .session(let sessionData):
+                            SessionRow(
+                                session: sessionData,
+                                agent: windowState.agents.first { $0.id == sessionData.agentId },
+                                isSelected: sessionData.id == windowState.session.sessionId,
+                                isEditing: renamingSessionId == sessionData.id,
+                                editingTitle: $renamingTitle,
+                                onSelect: {
+                                    if windowState.mode == .project,
+                                       windowState.projectSession?.activeProjectId != nil {
+                                        windowState.projectSession?.subMode = .chat
+                                        windowState.loadSession(sessionData)
+                                        windowState.pushNavigation(NavigationEntry(
+                                            mode: .project,
+                                            projectId: windowState.projectSession?.activeProjectId,
+                                            sessionId: sessionData.id
+                                        ))
+                                    } else {
+                                        windowState.loadSession(sessionData)
+                                        windowState.switchMode(to: .chat)
+                                    }
+                                },
+                                onStartRename: {
+                                    renamingSessionId = sessionData.id
+                                    renamingTitle = sessionData.title
+                                },
+                                onConfirmRename: {
+                                    if let id = renamingSessionId, !renamingTitle.isEmpty {
+                                        ChatSessionsManager.shared.rename(id: id, title: renamingTitle)
+                                        windowState.refreshSessions()
+                                    }
+                                    renamingSessionId = nil
+                                    renamingTitle = ""
+                                },
+                                onCancelRename: {
+                                    renamingSessionId = nil
+                                    renamingTitle = ""
+                                },
+                                onDelete: {
+                                    ChatSessionsManager.shared.delete(id: sessionData.id)
+                                    if windowState.session.sessionId == sessionData.id {
+                                        windowState.startNewChat()
+                                    }
+                                    windowState.refreshSessions()
+                                },
+                                onOpenInNewWindow: {
+                                    ChatWindowManager.shared.createWindow(
+                                        agentId: sessionData.agentId,
+                                        sessionData: sessionData
+                                    )
+                                }
+                            )
+                        case .task(let task):
+                            TaskRow(
+                                task: task,
+                                isSelected: windowState.workSession?.currentTask?.id == task.id,
+                                isHovered: false,
+                                onSelect: {
+                                    windowState.projectSession?.subMode = .work
+                                    if windowState.workSession == nil {
+                                        windowState.workSession = WorkSession(
+                                            agentId: windowState.agentId,
+                                            windowState: windowState
+                                        )
+                                    }
+                                    Task { await windowState.workSession?.loadTask(task) }
+                                },
+                                onDelete: {
+                                    Task {
+                                        try? await IssueManager.shared.deleteTask(task.id)
+                                        windowState.refreshWorkTasks()
+                                    }
+                                }
+                            )
+                        }
                     }
                 }
                 .padding(.horizontal, 8)
@@ -299,60 +416,3 @@ private struct ProjectSidebarRow: View {
     }
 }
 
-// MARK: - Recent Row
-
-private struct RecentRow: View {
-    let sessionData: ChatSessionData
-    @ObservedObject var windowState: ChatWindowState
-
-    @Environment(\.theme) private var theme
-    @State private var isHovered = false
-
-    var body: some View {
-        Button(action: {
-            if windowState.mode == .project, windowState.projectSession?.activeProjectId != nil {
-                // Open inline within project
-                windowState.projectSession?.subMode = .chat
-                windowState.session.load(from: sessionData)
-                windowState.pushNavigation(NavigationEntry(
-                    mode: .project,
-                    projectId: windowState.projectSession?.activeProjectId,
-                    sessionId: sessionData.id
-                ))
-            } else {
-                // Normal session selection
-                windowState.session.load(from: sessionData)
-                windowState.switchMode(to: .chat)
-            }
-        }) {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(theme.accentColor.opacity(0.5))
-                    .frame(width: 8, height: 8)
-
-                Text(sessionData.title)
-                    .font(.system(size: 12))
-                    .foregroundColor(theme.primaryText)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-
-                Spacer()
-
-                Text(formatRelativeDate(sessionData.updatedAt))
-                    .font(.system(size: 10))
-                    .foregroundColor(theme.tertiaryText)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(
-                SidebarRowBackground(
-                    isSelected: sessionData.id == windowState.session.sessionId,
-                    isHovered: isHovered
-                )
-            )
-            .clipShape(RoundedRectangle(cornerRadius: SidebarStyle.rowCornerRadius, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .onHover { isHovered = $0 }
-    }
-}
