@@ -35,30 +35,32 @@ Single file optimized for **skim and search**:
 
 ### 2. `docs/INDEX.md`
 
-Grouped **table of contents** for existing guides in `docs/` (Identity, Sandbox, Memory, Plugins, Work, etc.), **one line per doc** where practical.
+Grouped **table of contents** for existing guides in `docs/` (Identity, Sandbox, Memory, Plugins, Work, etc.), **one line per doc** where practical. **Grouping:** by theme (e.g. Core product, Security, Developer, Voice), **alphabetical within each group**. Omit **`docs/personal_fork_local_documents/`** from the main index body (fork-local material stays discoverable via the map or fork docs); optionally add a short **Fork-local** subsection with links if useful.
 
 Purpose: human and agent **wayfinding** without opening every file.
 
-### 3. `docs/agent-stubs/` (or `docs/subsystems/`)
+### 3. `docs/agent-stubs/`
 
-A **small capped set** of markdown stubs (target **5–8 files**). Each stub is **navigation**, not a second copy of `CLAUDE.md`:
+A **small capped set** of markdown stubs (target **5–8 files**). Use this directory name unless a later convention explicitly renames it (avoid maintaining two parallel folders). Each stub is **navigation**, not a second copy of `CLAUDE.md`:
 
 - **Purpose** of the subsystem.
-- **Key paths** (directories and, where helpful, representative type names).
+- **Key paths** — prefer **directory** anchors; name **concrete Swift types only when relatively stable** so stubs do not churn with refactors.
 - **Invariants / don’t-break-this** (short bullet list).
 - **See also** links to existing `docs/*.md` and relevant `Packages/OsaurusCore/` subtrees.
 
-Initial stub candidates (adjust during implementation to match actual edit frequency):
+**Soft-budget override:** exceed ~80 lines in a stub only when splitting would scatter one subsystem across multiple entry files; prefer adding a **second stub** over turning one stub into a mini-guide.
 
-| Stub topic        | Likely deep links                          |
-| ----------------- | ----------------------------------------- |
-| Chat / inference  | Chat engine, providers, streaming         |
-| Memory            | `MEMORY.md`, storage, services           |
-| Tools / MCP       | Tool registry, MCP integration docs      |
-| Work mode         | `WORK.md`, work engine                   |
-| Sandbox           | `SANDBOX.md`, sandbox manager            |
-| Identity / keys   | `IDENTITY.md`, Identity layer            |
-| Plugins           | `PLUGIN_AUTHORING.md`, plugin manager    |
+Initial stub candidates — **implement first** (within the 5–8 cap): memory, chat/inference, tools/MCP, work mode, sandbox. **Then**: identity/keys, plugins as capacity allows. Adjust if real edit traffic focuses elsewhere.
+
+| Stub topic       | Likely deep links                     |
+| ---------------- | ------------------------------------- |
+| Chat / inference | Chat engine, providers, streaming     |
+| Memory           | `MEMORY.md`, storage, services        |
+| Tools / MCP      | Tool registry, MCP integration docs   |
+| Work mode        | `WORK.md`, work engine                |
+| Sandbox          | `SANDBOX.md`, sandbox manager         |
+| Identity / keys  | `IDENTITY.md`, Identity layer         |
+| Plugins          | `PLUGIN_AUTHORING.md`, plugin manager |
 
 **Soft budget:** **~80 lines or fewer per stub**.
 
@@ -79,7 +81,7 @@ Add a **short paragraph** in “Getting started” or “Architecture guide” t
 ### AI agents (primary)
 
 1. Read `AGENTS.md`, then `docs/DEVELOPER_MAP.md`.
-2. Open the matching stub under `docs/agent-stubs/` (or `docs/subsystems/`).
+2. Open the matching stub under `docs/agent-stubs/`.
 3. Follow links to full guides (`MEMORY.md`, etc.) and then the codebase.
 
 ### Humans (light)
@@ -101,10 +103,15 @@ Add a **short paragraph** in “Getting started” or “Architecture guide” t
 
 ## Success criteria
 
-- A new session can locate **where to edit** for memory, tools, work mode, and chat within **one or two hops** from repo root (`AGENTS.md` / `README` → map → stub → code).
+- A new session can locate **where to edit** for memory, tools, work mode, and chat within **one or two hops** from repo root: **`AGENTS.md` → `docs/DEVELOPER_MAP.md` → stub → code**. **Optional:** root `README.md` may add **one line** pointing to `docs/DEVELOPER_MAP.md` (not required for spec compliance).
 - Combined **new** material (map + index + stubs + `AGENTS.md` delta + optional `CONTRIBUTING` paragraph) stays **lean**: stubs and map respect the soft line budgets above.
 - **No contradiction** with `CLAUDE.md` or `.cursor/rules/personal-fork.mdc`; stubs **link** to canon instead of re-stating fork policy.
 
+## Risks (v1, no automation)
+
+- **Stale stubs/links** when code moves — mitigated by directory-first pointers, type names only when stable, and updating stubs in the **same PR** as meaningful boundary changes when possible. Full doc-drift CI is out of scope for this spec.
+- **CONTRIBUTING.md** — keep the optional paragraph to **pointers only** so it does not paraphrase long sections of `CLAUDE.md`.
+
 ## Implementation note
 
-Implementation tasks (file names finalization, exact stub list, line edits) belong in a separate **implementation plan** produced after this spec is reviewed in the repo.
+Implementation tasks (exact stub list, line edits) belong in a separate **implementation plan** produced after this spec is reviewed in the repo.
