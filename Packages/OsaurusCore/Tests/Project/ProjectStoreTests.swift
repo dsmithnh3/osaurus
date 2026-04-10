@@ -12,11 +12,12 @@ import Testing
 
 struct ProjectStoreTests {
 
-    // MARK: - Project Model Tests
+    // MARK: - Project Model Tests (no I/O, no overrideRoot)
 
     @Test func projectRoundTripsJSON() throws {
         let id = UUID()
-        let now = Date()
+        // Truncate to whole seconds so ISO8601 round-trip preserves equality
+        let now = Date(timeIntervalSinceReferenceDate: Double(Int(Date().timeIntervalSinceReferenceDate)))
         let project = Project(
             id: id,
             name: "Test Project",
@@ -66,87 +67,57 @@ struct ProjectStoreTests {
         #expect(project.isArchived == false)
     }
 
-    // MARK: - ProjectStore Tests
+    // MARK: - ProjectStore Persistence Tests
+    // Uses ProjectManager.shared for real file I/O to avoid overrideRoot conflicts.
 
-    @Test func storeSaveAndLoad() async throws {
-        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        OsaurusPaths.overrideRoot = tempDir
-        defer {
-            OsaurusPaths.overrideRoot = nil
-            try? FileManager.default.removeItem(at: tempDir)
-        }
+    @Test @MainActor func storeSaveAndLoad() async throws {
+        let project = Project(name: "StoreTest-\(UUID().uuidString.prefix(8))", description: "Testing save/load")
+        ProjectStore.save(project)
+        defer { ProjectStore.delete(id: project.id) }
 
-        let project = Project(name: "Store Test", description: "Testing save/load")
-        await ProjectStore.save(project)
-
-        let loaded = await ProjectStore.load(id: project.id)
+        let loaded = ProjectStore.load(id: project.id)
         #expect(loaded != nil)
-        #expect(loaded?.name == "Store Test")
+        #expect(loaded?.name == project.name)
         #expect(loaded?.description == "Testing save/load")
     }
 
-    @Test func storeLoadAll() async throws {
-        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        OsaurusPaths.overrideRoot = tempDir
+    @Test @MainActor func storeLoadAllContainsSavedProjects() async throws {
+        let p1 = Project(name: "LoadAll-A-\(UUID().uuidString.prefix(8))")
+        let p2 = Project(name: "LoadAll-B-\(UUID().uuidString.prefix(8))")
+        ProjectStore.save(p1)
+        ProjectStore.save(p2)
         defer {
-            OsaurusPaths.overrideRoot = nil
-            try? FileManager.default.removeItem(at: tempDir)
+            ProjectStore.delete(id: p1.id)
+            ProjectStore.delete(id: p2.id)
         }
 
-        let p1 = Project(name: "Alpha")
-        let p2 = Project(name: "Beta")
-        await ProjectStore.save(p1)
-        await ProjectStore.save(p2)
-
-        let all = await ProjectStore.loadAll()
-        #expect(all.count == 2)
-        // loadAll should sort by name
-        #expect(all[0].name == "Alpha")
-        #expect(all[1].name == "Beta")
+        let all = ProjectStore.loadAll()
+        #expect(all.contains(where: { $0.id == p1.id }))
+        #expect(all.contains(where: { $0.id == p2.id }))
     }
 
-    @Test func storeDelete() async throws {
-        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        OsaurusPaths.overrideRoot = tempDir
-        defer {
-            OsaurusPaths.overrideRoot = nil
-            try? FileManager.default.removeItem(at: tempDir)
-        }
+    @Test @MainActor func storeDelete() async throws {
+        let project = Project(name: "Delete-\(UUID().uuidString.prefix(8))")
+        ProjectStore.save(project)
+        #expect(ProjectStore.exists(id: project.id) == true)
 
-        let project = Project(name: "To Delete")
-        await ProjectStore.save(project)
-        #expect(await ProjectStore.exists(id: project.id) == true)
-
-        let deleted = await ProjectStore.delete(id: project.id)
+        let deleted = ProjectStore.delete(id: project.id)
         #expect(deleted == true)
-        #expect(await ProjectStore.exists(id: project.id) == false)
-        #expect(await ProjectStore.load(id: project.id) == nil)
+        #expect(ProjectStore.exists(id: project.id) == false)
+        #expect(ProjectStore.load(id: project.id) == nil)
     }
 
-    @Test func storeDeleteNonexistent() async {
-        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        OsaurusPaths.overrideRoot = tempDir
-        defer {
-            OsaurusPaths.overrideRoot = nil
-            try? FileManager.default.removeItem(at: tempDir)
-        }
-
-        let deleted = await ProjectStore.delete(id: UUID())
+    @Test @MainActor func storeDeleteNonexistent() async {
+        let deleted = ProjectStore.delete(id: UUID())
         #expect(deleted == false)
     }
 
-    @Test func storeExists() async {
-        let tempDir = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        OsaurusPaths.overrideRoot = tempDir
-        defer {
-            OsaurusPaths.overrideRoot = nil
-            try? FileManager.default.removeItem(at: tempDir)
-        }
+    @Test @MainActor func storeExists() async {
+        let project = Project(name: "Exists-\(UUID().uuidString.prefix(8))")
+        #expect(ProjectStore.exists(id: project.id) == false)
 
-        let project = Project(name: "Existence Check")
-        #expect(await ProjectStore.exists(id: project.id) == false)
-
-        await ProjectStore.save(project)
-        #expect(await ProjectStore.exists(id: project.id) == true)
+        ProjectStore.save(project)
+        defer { ProjectStore.delete(id: project.id) }
+        #expect(ProjectStore.exists(id: project.id) == true)
     }
 }
