@@ -619,11 +619,13 @@ private final class ChatPanel: NSPanel {
 @MainActor
 private final class ChatToolbarDelegate: NSObject, NSToolbarDelegate {
     private static let sidebarItem = NSToolbarItem.Identifier("ChatToolbar.sidebar")
-    private static let modeToggleItem = NSToolbarItem.Identifier("ChatToolbar.modeToggle")
     private static let actionItem = NSToolbarItem.Identifier("ChatToolbar.action")
     private static let pinItem = NSToolbarItem.Identifier("ChatToolbar.pin")
     private static let backItem = NSToolbarItem.Identifier("ChatToolbar.back")
     private static let forwardItem = NSToolbarItem.Identifier("ChatToolbar.forward")
+    private static let inspectorItem = NSToolbarItem.Identifier("ChatToolbar.inspector")
+    /// System-provided centered/principal toolbar item identifier.
+    private static let principalItem = NSToolbarItem.Identifier("NSToolbarPrincipalItemIdentifier")
 
     private weak var windowState: ChatWindowState?
     private weak var session: ChatSession?
@@ -636,15 +638,17 @@ private final class ChatToolbarDelegate: NSObject, NSToolbarDelegate {
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         [
-            Self.sidebarItem, Self.backItem, Self.forwardItem, .flexibleSpace, Self.modeToggleItem,
-            .flexibleSpace, Self.actionItem, Self.pinItem,
+            Self.sidebarItem, Self.backItem, Self.forwardItem,
+            Self.principalItem,
+            Self.actionItem, Self.inspectorItem, Self.pinItem,
         ]
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         [
-            Self.sidebarItem, Self.backItem, Self.forwardItem, .flexibleSpace, Self.modeToggleItem,
-            .flexibleSpace, Self.actionItem, Self.pinItem,
+            Self.sidebarItem, Self.backItem, Self.forwardItem,
+            Self.principalItem,
+            Self.actionItem, Self.inspectorItem, Self.pinItem,
         ]
     }
 
@@ -663,9 +667,9 @@ private final class ChatToolbarDelegate: NSObject, NSToolbarDelegate {
                     ChatToolbarSidebarView(windowState: windowState)
             )
 
-        case Self.modeToggleItem:
+        case Self.principalItem:
             return makeHostingItem(
-                identifier: itemIdentifier,
+                identifier: Self.principalItem,
                 rootView:
                     ChatToolbarModeToggleView(windowState: windowState, session: session)
             )
@@ -694,6 +698,13 @@ private final class ChatToolbarDelegate: NSObject, NSToolbarDelegate {
             return makeHostingItem(
                 identifier: itemIdentifier,
                 rootView: ChatToolbarForwardView(windowState: windowState)
+            )
+
+        case Self.inspectorItem:
+            return makeHostingItem(
+                identifier: itemIdentifier,
+                rootView:
+                    ChatToolbarInspectorView(windowState: windowState)
             )
 
         default:
@@ -813,6 +824,26 @@ private struct ChatToolbarForwardView: View {
         )
         .opacity(windowState.canGoForward ? 1.0 : 0.4)
         .disabled(!windowState.canGoForward)
+    }
+}
+
+/// Inspector toggle button (visible in Projects mode only).
+private struct ChatToolbarInspectorView: View {
+    @ObservedObject var windowState: ChatWindowState
+
+    var body: some View {
+        HeaderActionButton(
+            icon: "sidebar.right",
+            help: windowState.showProjectInspector ? "Hide inspector" : "Show inspector",
+            action: {
+                withAnimation(windowState.theme.springAnimation()) {
+                    windowState.showProjectInspector.toggle()
+                }
+            }
+        )
+        .opacity(windowState.mode == .project ? 1.0 : 0.0)
+        .disabled(windowState.mode != .project)
+        .environment(\.theme, windowState.theme)
     }
 }
 
