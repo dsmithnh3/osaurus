@@ -3,8 +3,7 @@
 //  osaurus
 //
 //  Unified workspace coordinator for the project 3-panel layout.
-//  Directly composes chat and work content instead of delegating to
-//  ProjectInlineChatView or ProjectInlineWorkView.
+//  Directly composes chat and work content inline.
 //
 
 import SwiftUI
