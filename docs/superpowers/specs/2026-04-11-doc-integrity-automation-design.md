@@ -23,21 +23,27 @@ Navigation docs (`docs/DEVELOPER_MAP.md`, `docs/INDEX.md`, `docs/agent-stubs/*.m
 
 ## Components
 
-### 1. GitHub Actions — `docs` integrity job
+### 1. GitHub Actions — docs integrity workflow
 
+- **Workflow file (suggested):** `.github/workflows/docs-integrity.yml` — enables a single discoverable name for branch protection.
+- **Job id (suggested):** `verify-docs` — use this id when marking the check as **required** on the fork.
 - **Trigger:** `pull_request` (and optionally `push` to `main` if desired for consistency).
-- **Path filter (recommended):** run when PR changes `docs/**`, `AGENTS.md`, `README.md`, or `.github/workflows/*docs*` / scripts used by the job—or run on every PR if the job stays fast enough.
+- **Path filter (recommended):** run when PR changes `docs/**`, `AGENTS.md`, `README.md`, `scripts/verify-doc-paths.*`, or `.github/workflows/docs-integrity.yml`—or run on every PR if execution time stays low.
 - **Steps (v1):**
   1. Checkout
-  2. **Markdown relative link check** for `docs/` (implementation picks tool: e.g. `markdown-link-check`, `lychee`, or equivalent; prefer **configurable** ignores for flaky external URLs if any root README links are checked)
-  3. **Path validator script** (small shell or Python committed to repo, e.g. `scripts/verify-doc-paths.sh` or `.py`): reads allowlisted files (`docs/DEVELOPER_MAP.md`, `docs/agent-stubs/*.md` initially), extracts **constrained** patterns (e.g. paths in backticks starting with `Packages/OsaurusCore/`), resolves relative to repo root, fails if file or directory missing. **Scope v1 narrowly** to reduce false positives; document allowed patterns in script header.
-- **Required check:** enable in **fork** branch protection if merge-blocking behavior is desired.
+  2. **Markdown link check — v1 scope:** **required** pass validates **relative** links for all `docs/**/*.md` (and `docs/index` if not only `.md`). **Optional v1 extension:** `AGENTS.md` relative links only; **exclude or soft-ignore** `README.md` in the blocking pass if it contains many `https://` targets that would flake—otherwise add a dedicated ignore config. Defer aggressive external URL enforcement until config is stable.
+  3. **Path validator script** (committed to repo, e.g. `scripts/verify-doc-paths.py`): reads allowlisted files (`docs/DEVELOPER_MAP.md`, `docs/agent-stubs/*.md` in v1), extracts **constrained** patterns (e.g. backtick-wrapped segments starting with `Packages/OsaurusCore/`), resolves relative to repo root, fails if path missing. Document patterns and **intentional non-path** literals in the script header; edge cases (examples, placeholders) are handled in implementation with tests or allowlist—implementation plan owns detail.
+- **Required check:** in fork **Settings → Branches**, require status check named per GitHub’s listing for this workflow/job (typically `verify-docs` or `docs-integrity / verify-docs`—confirm after first run).
+
+### CI ↔ local parity
+
+- One **script entrypoint** (e.g. `scripts/verify-docs.sh`) invoked by **both** GitHub Actions and **lefthook**, which in turn calls the link tool with a **committed config file** (e.g. `.markdown-link-check.json` or `lychee.toml`) and the path validator. **Pin tool versions** in workflow (and document `brew`/`npm` install for local). Avoid “similar” checks that diverge in ignores or base path.
 
 ### 2. Local hook — lefthook
 
-- Add **`pre-push`** (or **`pre-commit`**) job that runs the **same** path validator and, where practical, the **same** link check as CI.
-- **Condition:** when staged/changed files intersect `docs/**`, `AGENTS.md`, `README.md`, or always run if cheap—implementation chooses; spec prefers **intersection** with `docs/**` and map/stubs to keep pushes fast.
-- **Failure message:** point to `CLAUDE.md` / `CONTRIBUTING.md` and the workflow name so developers know how to fix.
+- Add **`pre-push`** job invoking **`scripts/verify-docs.sh`** (same as CI).
+- **When to run:** if the commits being pushed **touch any** of `docs/**`, `AGENTS.md`, `README.md`, `scripts/verify-doc-paths.*`, `scripts/verify-docs.sh`, or link-check config—**mirror the CI path filter** so hook and CI always run together on the same change set. If filtering is awkward in lefthook, running the script on every push is acceptable when total runtime stays **under ~30s**.
+- **Failure message:** reference `.github/workflows/docs-integrity.yml` and the shared script path.
 
 ### 3. PR template
 
@@ -74,6 +80,7 @@ Navigation docs (`docs/DEVELOPER_MAP.md`, `docs/INDEX.md`, `docs/agent-stubs/*.m
 - A PR that **breaks a relative link** in `docs/` or **references a removed** `Packages/OsaurusCore/` path in allowlisted files **fails** the docs job.
 - A PR that only changes unrelated Swift **does not** pay heavy doc tooling cost if **path filtering** is implemented.
 - Running the **same** verifier locally (lefthook) reproduces CI failures before push for typical doc edits.
+- **Interpretation:** green CI means **modeled mechanical consistency**, not that narrative docs are semantically perfect or that `CLAUDE.md` prose is fully audited—only what this spec’s checks encode.
 
 ## Implementation note
 
