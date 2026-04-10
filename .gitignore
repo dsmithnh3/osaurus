@@ -137,3 +137,6 @@ benchmarks/
 
 # Generated benchmark/test output
 results/
+
+# Worktrees
+.worktrees/
