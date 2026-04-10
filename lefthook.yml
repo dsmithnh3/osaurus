@@ -3,3 +3,9 @@ pre-push:
     - name: swift lint
       run: swift-format lint --strict --recursive Packages App
       fail_text: Run "swift-format format --in-place --recursive Packages App" to fix linting issues
+
+    - name: docs integrity
+      files: git diff --name-only HEAD @{push}
+      only: /^(docs\/|AGENTS\.md|README\.md|scripts\/verify-doc-paths\.py|scripts\/verify-docs\.sh|\.markdown-link-check\.json|\.github\/workflows\/docs-integrity\.yml)/
+      run: bash scripts/verify-docs.sh
+      fail_text: "See .github/workflows/docs-integrity.yml — run: bash scripts/verify-docs.sh"

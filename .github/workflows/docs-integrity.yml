@@ -1,0 +1,32 @@
+# Deterministic doc checks (links + cited paths). See:
+# docs/superpowers/specs/2026-04-11-doc-integrity-automation-design.md
+name: Docs integrity
+
+on:
+  pull_request:
+    paths:
+      - "docs/**"
+      - "AGENTS.md"
+      - "README.md"
+      - "scripts/verify-doc-paths.py"
+      - "scripts/verify-docs.sh"
+      - ".markdown-link-check.json"
+      - ".github/workflows/docs-integrity.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify-docs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Verify docs (links + paths)
+        run: bash scripts/verify-docs.sh

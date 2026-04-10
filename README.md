@@ -235,7 +235,7 @@ brew install lefthook
 lefthook install
 ```
 
-This installs a `pre-push` hook that runs `swift-format` over the `Packages/` directory before each push.
+This installs a `pre-push` hook that runs **`swift-format`** over `Packages/` and **`scripts/verify-docs.sh`** when you push changes under `docs/`, `AGENTS.md`, `README.md`, or the verifier scripts (mirrors the **Docs integrity** GitHub Action). The script uses **Node** (`npx`) for link checking. Run `bash scripts/verify-docs.sh` manually at any time.
 
 ## Project Structure
 
