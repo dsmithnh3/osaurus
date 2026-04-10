@@ -17,6 +17,7 @@ enum SidebarStyle {
     static let rowCornerRadius: CGFloat = 8
     static let searchFieldCornerRadius: CGFloat = 8
     static let actionButtonSize: CGFloat = 24
+    static let inspectorWidth: CGFloat = 300
     static let actionButtonCornerRadius: CGFloat = 5
 
     // MARK: Glass Background
@@ -47,13 +48,21 @@ struct SidebarContainer<Content: View>: View {
     let attachedEdge: Edge?
     /// Top padding for the content (useful for window control clearance)
     let topPadding: CGFloat
+    /// Panel width (default: SidebarStyle.width for left sidebar)
+    let width: CGFloat
 
     @ViewBuilder let content: () -> Content
     @Environment(\.theme) private var theme
 
-    init(attachedEdge: Edge? = nil, topPadding: CGFloat = 0, @ViewBuilder content: @escaping () -> Content) {
+    init(
+        attachedEdge: Edge? = nil,
+        topPadding: CGFloat = 0,
+        width: CGFloat = SidebarStyle.width,
+        @ViewBuilder content: @escaping () -> Content
+    ) {
         self.attachedEdge = attachedEdge
         self.topPadding = topPadding
+        self.width = width
         self.content = content
     }
 
@@ -62,7 +71,7 @@ struct SidebarContainer<Content: View>: View {
             content()
         }
         .padding(.top, topPadding)
-        .frame(width: SidebarStyle.width, alignment: .top)
+        .frame(width: width, alignment: .top)
         .frame(maxHeight: .infinity, alignment: .top)
         .background { SidebarBackground() }
         .clipShape(containerShape)
