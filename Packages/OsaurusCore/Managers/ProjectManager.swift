@@ -83,9 +83,7 @@ public final class ProjectManager {
         projects = ProjectStore.loadAll()
     }
 
-    // MARK: - Context
-
-    // MARK: - Project Context Constants
+    // MARK: - Project Context
 
     // internal (not private) so tests can reference these values directly
     nonisolated static let projectContextBudgetChars = 32_000  // ~8,000 tokens

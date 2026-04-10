@@ -127,6 +127,23 @@ struct ProjectContextBudgetTests {
         #expect(tier == nil)
     }
 
+    @Test("Nested excluded directory is still excluded (e.g. src/node_modules/)")
+    func nestedExcludedDirectory() throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        try "root".write(to: tmp.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        let nested = tmp.appendingPathComponent("src/node_modules")
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        try "package".write(to: nested.appendingPathComponent("package.md"), atomically: true, encoding: .utf8)
+
+        let files = ProjectManager.discoverProjectFiles(in: tmp)
+        let names = files.map { $0.lastPathComponent }
+        #expect(names.contains("README.md"))
+        #expect(!names.contains("package.md"))
+    }
+
     // MARK: - File Discovery
 
     @Test("Discovery excludes memory/ directory")
