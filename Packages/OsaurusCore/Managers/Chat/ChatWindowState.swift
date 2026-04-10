@@ -31,11 +31,17 @@ public enum SidebarContentMode: Sendable {
 /// @Published on ChatWindowState (which is ObservableObject, not @Observable).
 public struct ProjectSession: Equatable, Sendable {
     public var activeProjectId: UUID?
-    public var showInspector: Bool = true
 
-    public init(activeProjectId: UUID? = nil, showInspector: Bool = true) {
+    // Inline session state — at most one is non-nil
+    public var inlineSessionId: UUID?
+    public var inlineWorkTaskId: UUID?
+
+    public var hasInlineContent: Bool {
+        inlineSessionId != nil || inlineWorkTaskId != nil
+    }
+
+    public init(activeProjectId: UUID? = nil) {
         self.activeProjectId = activeProjectId
-        self.showInspector = showInspector
     }
 }
 
@@ -44,11 +50,13 @@ public struct NavigationEntry: Equatable, Sendable {
     public let mode: ChatMode
     public let projectId: UUID?
     public let sessionId: UUID?
+    public let workTaskId: UUID?
 
-    public init(mode: ChatMode, projectId: UUID? = nil, sessionId: UUID? = nil) {
+    public init(mode: ChatMode, projectId: UUID? = nil, sessionId: UUID? = nil, workTaskId: UUID? = nil) {
         self.mode = mode
         self.projectId = projectId
         self.sessionId = sessionId
+        self.workTaskId = workTaskId
     }
 }
 
@@ -125,8 +133,33 @@ final class ChatWindowState: ObservableObject {
     }
 
     private func restoreNavigationEntry(_ entry: NavigationEntry) {
-        switchMode(to: entry.mode)
-        if let projectId = entry.projectId {
+        if entry.mode != mode {
+            // Set mode directly to avoid resetting project session state
+            mode = entry.mode
+            sidebarContentMode = .chat
+            switch entry.mode {
+            case .work:
+                WorkToolManager.shared.registerTools()
+                if workSession == nil {
+                    workSession = WorkSession(agentId: agentId, windowState: self)
+                }
+                refreshWorkTasks()
+            case .project:
+                WorkToolManager.shared.unregisterTools()
+            case .chat:
+                WorkToolManager.shared.unregisterTools()
+            }
+        }
+
+        if entry.mode == .project {
+            var session = ProjectSession(activeProjectId: entry.projectId)
+            session.inlineSessionId = entry.sessionId
+            session.inlineWorkTaskId = entry.workTaskId
+            projectSession = session
+            if let pid = entry.projectId {
+                ProjectManager.shared.setActiveProject(pid)
+            }
+        } else if let projectId = entry.projectId {
             projectSession = ProjectSession(activeProjectId: projectId)
             ProjectManager.shared.setActiveProject(projectId)
         }

@@ -31,11 +31,30 @@ struct ProjectNavigationTests {
     func projectSessionValueType() {
         var session = ProjectSession()
         session.activeProjectId = UUID()
-        session.showInspector = false
+        session.inlineSessionId = UUID()
         var copy = session
-        copy.showInspector = true
+        copy.inlineSessionId = nil
         // Prove it's a value type — original unchanged
-        #expect(session.showInspector == false)
-        #expect(copy.showInspector == true)
+        #expect(session.inlineSessionId != nil)
+        #expect(copy.inlineSessionId == nil)
+    }
+
+    @Test("ProjectSession hasInlineContent reflects inline fields")
+    func projectSessionHasInlineContent() {
+        var session = ProjectSession()
+        #expect(session.hasInlineContent == false)
+        session.inlineSessionId = UUID()
+        #expect(session.hasInlineContent == true)
+        session.inlineSessionId = nil
+        session.inlineWorkTaskId = UUID()
+        #expect(session.hasInlineContent == true)
+    }
+
+    @Test("NavigationEntry carries workTaskId")
+    func navigationEntryWorkTaskId() {
+        let taskId = UUID()
+        let entry = NavigationEntry(mode: .project, projectId: UUID(), workTaskId: taskId)
+        #expect(entry.workTaskId == taskId)
+        #expect(entry.sessionId == nil)
     }
 }
