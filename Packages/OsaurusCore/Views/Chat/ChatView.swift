@@ -514,9 +514,11 @@ final class ChatSession: ObservableObject {
 
     private func refreshMemoryTokens() async {
         let effectiveAgentId = agentId ?? Agent.defaultId
+        let activeProjectId = ProjectManager.shared.activeProjectId?.uuidString
         let context = await MemoryContextAssembler.assembleContext(
             agentId: effectiveAgentId.uuidString,
-            config: MemoryConfigurationStore.load()
+            config: MemoryConfigurationStore.load(),
+            projectId: activeProjectId
         )
         let newTokens = ContextBudgetManager.estimateTokens(for: context)
         let oldTokens = cachedContext?.manifest.memoryTokens ?? 0

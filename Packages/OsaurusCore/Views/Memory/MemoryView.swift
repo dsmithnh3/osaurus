@@ -389,9 +389,11 @@ struct MemoryView: View {
                 Button {
                     Task {
                         let cfg = MemoryConfigurationStore.load()
+                        let activeProjectId = ProjectManager.shared.activeProjectId?.uuidString
                         let ctx = await MemoryContextAssembler.assembleContext(
                             agentId: Agent.defaultId.uuidString,
-                            config: cfg
+                            config: cfg,
+                            projectId: activeProjectId
                         )
                         let trimmed = ctx.trimmingCharacters(in: .whitespacesAndNewlines)
                         let text =
@@ -526,9 +528,11 @@ struct MemoryView: View {
                             onPreviewContext: {
                                 Task {
                                     let cfg = MemoryConfigurationStore.load()
+                                    let activeProjectId = ProjectManager.shared.activeProjectId?.uuidString
                                     let ctx = await MemoryContextAssembler.assembleContext(
                                         agentId: pair.agent.id.uuidString,
-                                        config: cfg
+                                        config: cfg,
+                                        projectId: activeProjectId
                                     )
                                     let trimmed = ctx.trimmingCharacters(in: .whitespacesAndNewlines)
                                     let text =
