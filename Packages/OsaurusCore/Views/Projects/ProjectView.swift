@@ -2,7 +2,7 @@
 //  ProjectView.swift
 //  osaurus
 //
-//  Coordinator for the project 3-panel layout: sidebar (handled by parent) + center + right inspector.
+//  Coordinator for the project 3-panel layout: left sidebar + center + right inspector.
 //
 
 import SwiftUI
@@ -16,43 +16,58 @@ struct ProjectView: View {
     @State private var previewArtifact: SharedArtifact?
 
     var body: some View {
-        ZStack(alignment: .trailing) {
-            // Themed background (matches Chat and Work modes)
-            ThemedBackgroundLayer(
-                cachedBackgroundImage: windowState.cachedBackgroundImage,
-                showSidebar: windowState.showSidebar
-            )
+        GeometryReader { proxy in
+            let sidebarWidth: CGFloat = windowState.showSidebar ? SidebarStyle.width : 0
 
-            // Center content
-            Group {
-                if let projectId = session.activeProjectId {
-                    if let sessionId = session.inlineSessionId {
-                        inlineChatContent(projectId: projectId, sessionId: sessionId)
-                    } else if let taskId = session.inlineWorkTaskId {
-                        inlineWorkContent(projectId: projectId, taskId: taskId)
-                    } else if let project = projectFor(projectId) {
-                        ProjectHomeView(
-                            project: project,
-                            windowState: windowState,
-                            onFileSelected: openFilePreview
-                        )
-                    }
-                } else {
-                    ProjectListView(windowState: windowState)
+            HStack(alignment: .top, spacing: 0) {
+                // Left sidebar
+                if windowState.showSidebar {
+                    AppSidebar(windowState: windowState, session: windowState.session)
+                        .transition(.move(edge: .leading).combined(with: .opacity))
                 }
-            }
-            .transition(.opacity)
 
-            // Right inspector overlay
-            if windowState.showProjectInspector,
-               let projectId = session.activeProjectId,
-               let project = projectFor(projectId) {
-                ProjectInspectorPanel(project: project, onFileSelected: openFilePreview)
-                    .transition(.move(edge: .trailing))
+                // Center + right inspector
+                ZStack(alignment: .trailing) {
+                    // Themed background (matches Chat and Work modes)
+                    ThemedBackgroundLayer(
+                        cachedBackgroundImage: windowState.cachedBackgroundImage,
+                        showSidebar: windowState.showSidebar
+                    )
+
+                    // Center content
+                    Group {
+                        if let projectId = session.activeProjectId {
+                            if session.inlineSessionId != nil {
+                                ProjectInlineChatView(windowState: windowState)
+                            } else if session.inlineWorkTaskId != nil {
+                                ProjectInlineWorkView(windowState: windowState)
+                            } else if let project = projectFor(projectId) {
+                                ProjectHomeView(
+                                    project: project,
+                                    windowState: windowState,
+                                    onFileSelected: openFilePreview
+                                )
+                            }
+                        } else {
+                            ProjectListView(windowState: windowState)
+                        }
+                    }
+                    .transition(.opacity)
+
+                    // Right inspector overlay
+                    if windowState.showProjectInspector,
+                       let projectId = session.activeProjectId,
+                       let project = projectFor(projectId) {
+                        ProjectInspectorPanel(project: project, onFileSelected: openFilePreview)
+                            .transition(.move(edge: .trailing))
+                    }
+                }
+                .frame(width: proxy.size.width - sidebarWidth)
             }
         }
-        .clipShape(contentClipShape)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .animation(.spring(response: 0.35, dampingFraction: 0.88), value: windowState.showProjectInspector)
+        .animation(theme.springAnimation(responseMultiplier: 0.9), value: windowState.showSidebar)
         .onChange(of: session.inlineWorkTaskId) { old, new in
             if new != nil { WorkToolManager.shared.registerTools() }
             if old != nil && new == nil { WorkToolManager.shared.unregisterTools() }
@@ -75,32 +90,5 @@ struct ProjectView: View {
     private func openFilePreview(_ path: String) {
         guard let artifact = SharedArtifact.fromFilePath(path) else { return }
         previewArtifact = artifact
-    }
-
-    private var contentClipShape: UnevenRoundedRectangle {
-        let radius: CGFloat = 24
-        return UnevenRoundedRectangle(
-            topLeadingRadius: windowState.showSidebar ? 0 : radius,
-            bottomLeadingRadius: windowState.showSidebar ? 0 : radius,
-            bottomTrailingRadius: radius,
-            topTrailingRadius: radius,
-            style: .continuous
-        )
-    }
-
-    // MARK: - Inline Views
-
-    @ViewBuilder
-    private func inlineChatContent(projectId: UUID, sessionId: UUID) -> some View {
-        // TODO: Load ChatSessionData for sessionId, render chat content inline
-        Text("Inline chat: \(sessionId.uuidString)")
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    @ViewBuilder
-    private func inlineWorkContent(projectId: UUID, taskId: UUID) -> some View {
-        // TODO: Load WorkTask for taskId, render work view inline
-        Text("Inline work: \(taskId.uuidString)")
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
