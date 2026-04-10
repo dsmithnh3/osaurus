@@ -27,10 +27,11 @@ struct AppSidebar: View {
     private let maxProjectFraction: CGFloat = 0.5
 
     var body: some View {
-        GeometryReader { geometry in
-            let maxProjectHeight = geometry.size.height * maxProjectFraction
+        SidebarContainer(attachedEdge: .leading, topPadding: 40) {
+            GeometryReader { geometry in
+                let maxProjectHeight = geometry.size.height * maxProjectFraction
 
-            VStack(spacing: 0) {
+                VStack(spacing: 0) {
                 // New Chat button
                 newChatButton
                     .padding(.horizontal, 12)
@@ -58,6 +59,7 @@ struct AppSidebar: View {
                 recentsSection
 
                 Spacer(minLength: 0)
+                }
             }
         }
     }
