@@ -7,21 +7,30 @@
 
 import SwiftUI
 
+/// Determines whether project input creates a chat or work task.
+private enum ProjectInputMode: String, CaseIterable {
+    case chat
+    case work
+}
+
 /// Center panel of the project view.
 struct ProjectHomeView: View {
     let project: Project
     @ObservedObject var windowState: ChatWindowState
+    var onFileSelected: ((String) -> Void)?
 
     @StateObject private var inputSession: ChatSession
 
     @Environment(\.theme) private var theme
 
     @State private var isFolderHovered = false
-    @State private var isInspectorButtonHovered = false
+    @State private var projectInputMode: ProjectInputMode = .chat
+    @Namespace private var modePickerAnimation
 
-    init(project: Project, windowState: ChatWindowState) {
+    init(project: Project, windowState: ChatWindowState, onFileSelected: ((String) -> Void)? = nil) {
         self.project = project
         self._windowState = ObservedObject(wrappedValue: windowState)
+        self.onFileSelected = onFileSelected
         self._inputSession = StateObject(wrappedValue: ChatSession())
     }
 
@@ -38,74 +47,77 @@ struct ProjectHomeView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            FloatingInputCard(
-                text: $inputSession.input,
-                selectedModel: $inputSession.selectedModel,
-                pendingAttachments: $inputSession.pendingAttachments,
-                isContinuousVoiceMode: $inputSession.isContinuousVoiceMode,
-                voiceInputState: $inputSession.voiceInputState,
-                showVoiceOverlay: $inputSession.showVoiceOverlay,
-                pickerItems: inputSession.pickerItems,
-                activeModelOptions: $inputSession.activeModelOptions,
-                isStreaming: inputSession.isStreaming,
-                supportsImages: false,
-                estimatedContextTokens: 0,
-                onSend: { manualText in
-                    let message = manualText ?? inputSession.input
-                    let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !trimmed.isEmpty else { return }
-                    // Create a new project-scoped chat, switch to chat mode
-                    windowState.startNewChat()
-                    windowState.session.input = trimmed
-                    windowState.switchMode(to: .chat)
-                    windowState.pushNavigation(NavigationEntry(mode: .chat, projectId: project.id))
-                    windowState.session.sendCurrent()
-                    inputSession.input = ""
-                },
-                onStop: {},
-                agentId: windowState.agentId,
-                windowId: windowState.windowId,
-                onClearChat: { inputSession.reset() },
-                onSkillSelected: { skillId in
-                    inputSession.pendingOneOffSkillId = skillId
-                },
-                pendingSkillId: $inputSession.pendingOneOffSkillId
-            )
-            .frame(maxWidth: 800)
-            .frame(maxWidth: .infinity)
+            VStack(spacing: 8) {
+                // Mode picker
+                HStack(spacing: 0) {
+                    modeSegment(.chat, icon: "bubble.left", label: "Chat")
+                    modeSegment(.work, icon: "bolt.circle", label: "Work")
+                }
+                .padding(2)
+                .background(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(theme.secondaryBackground.opacity(0.3))
+                )
+
+                FloatingInputCard(
+                    text: $inputSession.input,
+                    selectedModel: $inputSession.selectedModel,
+                    pendingAttachments: $inputSession.pendingAttachments,
+                    isContinuousVoiceMode: $inputSession.isContinuousVoiceMode,
+                    voiceInputState: $inputSession.voiceInputState,
+                    showVoiceOverlay: $inputSession.showVoiceOverlay,
+                    pickerItems: inputSession.pickerItems,
+                    activeModelOptions: $inputSession.activeModelOptions,
+                    isStreaming: inputSession.isStreaming,
+                    supportsImages: false,
+                    estimatedContextTokens: 0,
+                    onSend: { manualText in
+                        let message = manualText ?? inputSession.input
+                        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !trimmed.isEmpty else { return }
+
+                        switch projectInputMode {
+                        case .chat:
+                            windowState.startNewChat()
+                            windowState.session.input = trimmed
+                            windowState.projectSession?.inlineSessionId = windowState.session.sessionId
+                            windowState.pushNavigation(NavigationEntry(
+                                mode: .project, projectId: project.id,
+                                sessionId: windowState.session.sessionId
+                            ))
+                            windowState.session.sendCurrent()
+                        case .work:
+                            windowState.projectSession?.inlineWorkTaskId = UUID()
+                            windowState.pushNavigation(NavigationEntry(
+                                mode: .project, projectId: project.id,
+                                workTaskId: windowState.projectSession?.inlineWorkTaskId
+                            ))
+                        }
+                        inputSession.input = ""
+                    },
+                    onStop: {},
+                    agentId: windowState.agentId,
+                    windowId: windowState.windowId,
+                    onClearChat: { inputSession.reset() },
+                    onSkillSelected: { skillId in
+                        inputSession.pendingOneOffSkillId = skillId
+                    },
+                    pendingSkillId: $inputSession.pendingOneOffSkillId
+                )
+                .frame(maxWidth: 1100)
+                .frame(maxWidth: .infinity)
+            }
             .padding(.bottom, 12)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.trailing, windowState.showProjectInspector ? 300 : 0)
+        .padding(.trailing, windowState.showProjectInspector ? SidebarStyle.inspectorWidth : 0)
     }
 
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text(project.name)
-                    .font(.title)
-                    .foregroundColor(theme.primaryText)
-
-                Spacer()
-
-                Button(action: { windowState.showProjectInspector.toggle() }) {
-                    Image(systemName: "sidebar.right")
-                        .font(.system(size: 14))
-                        .foregroundColor(isInspectorButtonHovered ? theme.primaryText : theme.secondaryText)
-                        .padding(6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(isInspectorButtonHovered ? theme.secondaryBackground.opacity(0.5) : Color.clear)
-                        )
-                }
-                .buttonStyle(.plain)
-                .onHover { hovering in
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        isInspectorButtonHovered = hovering
-                    }
-                }
-                .help("Toggle inspector")
-            }
+            Text(project.name)
+                .font(.title)
+                .foregroundColor(theme.primaryText)
 
             Text("What would you like to work on in this project?")
                 .font(.subheadline)
@@ -191,5 +203,30 @@ struct ProjectHomeView: View {
                     .fill(theme.secondaryBackground.opacity(0.2))
             )
         }
+    }
+
+    @ViewBuilder
+    private func modeSegment(_ mode: ProjectInputMode, icon: String, label: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: icon)
+                .font(.system(size: 10, weight: .semibold))
+            Text(label)
+                .font(.system(size: 11, weight: .semibold))
+        }
+        .fixedSize()
+        .foregroundColor(projectInputMode == mode ? theme.primaryText : theme.tertiaryText)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 5)
+        .background {
+            if projectInputMode == mode {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(theme.secondaryBackground.opacity(0.8))
+                    .shadow(color: theme.shadowColor.opacity(0.08), radius: 1.5, x: 0, y: 0.5)
+                    .matchedGeometryEffect(id: "modePickerIndicator", in: modePickerAnimation)
+            }
+        }
+        .contentShape(Rectangle())
+        .animation(theme.springAnimation(), value: projectInputMode == mode)
+        .onTapGesture { projectInputMode = mode }
     }
 }
