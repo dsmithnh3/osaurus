@@ -214,6 +214,8 @@ ln -sf "/Applications/Osaurus.app/Contents/MacOS/osaurus" "$(brew --prefix)/bin/
 
 Most features are accessible through the Management window (`⌘ ⇧ M`).
 
+**Contributors:** Where features live in the repo — [Developer map](docs/DEVELOPER_MAP.md).
+
 ## Build from Source
 
 ```bash
