@@ -1,6 +1,8 @@
 # Repo AI Workflow Baseline — Implementation Plan
 
 > **For agentic workers:** Implement task-by-task; use checkboxes (`- [ ]`) for tracking. Doc-only change: no new automated tests required. Verify internal links after edits.
+>
+> **Status:** Implemented 2026-04-10 (commit: `docs: add developer map, index, and agent stubs`).
 
 **Goal:** Add developer map, docs index, agent stub entries, and short `AGENTS.md` / optional `CONTRIBUTING` / optional `README` pointers so humans and AI sessions reach the right `docs/*.md` and `Packages/OsaurusCore/` areas in one-to-two hops.
 
