@@ -261,7 +261,7 @@ public actor MemoryService {
         let config = MemoryConfigurationStore.load()
         guard config.enabled, await hasCoreModel() else { return }
 
-        let conversations: [(agentId: String, conversationId: String)]
+        let conversations: [(agentId: String, conversationId: String, projectId: String?)]
         do {
             conversations = try db.pendingConversations()
         } catch {
@@ -294,7 +294,7 @@ public actor MemoryService {
 
         MemoryLogger.service.debug("Manual sync starting...")
 
-        let conversations: [(agentId: String, conversationId: String)]
+        let conversations: [(agentId: String, conversationId: String, projectId: String?)]
         do {
             conversations = try db.pendingConversations()
         } catch {
