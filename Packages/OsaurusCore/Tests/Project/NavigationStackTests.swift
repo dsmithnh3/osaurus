@@ -62,16 +62,20 @@ struct NavigationEntryTests {
         #expect(entry.mode == .chat)
         #expect(entry.projectId == nil)
         #expect(entry.sessionId == nil)
+        #expect(entry.subMode == nil)
     }
 
-    @Test("NavigationEntry initializes with all fields")
+    @Test("NavigationEntry initializes with all fields including subMode")
     func initWithAllFields() {
         let projectId = UUID()
         let sessionId = UUID()
-        let entry = NavigationEntry(mode: .project, projectId: projectId, sessionId: sessionId)
+        let entry = NavigationEntry(
+            mode: .project, projectId: projectId, sessionId: sessionId, subMode: .work
+        )
         #expect(entry.mode == .project)
         #expect(entry.projectId == projectId)
         #expect(entry.sessionId == sessionId)
+        #expect(entry.subMode == .work)
     }
 
     @Test("NavigationEntry equality holds for identical values")
@@ -132,6 +136,22 @@ struct NavigationEntryTests {
             let entry = NavigationEntry(mode: mode)
             #expect(entry.mode == mode)
         }
+    }
+
+    @Test("NavigationEntry equality fails on different subMode")
+    func equalityDifferentSubMode() {
+        let pid = UUID()
+        let a = NavigationEntry(mode: .project, projectId: pid, subMode: .chat)
+        let b = NavigationEntry(mode: .project, projectId: pid, subMode: .work)
+        #expect(a != b)
+    }
+
+    @Test("NavigationEntry with nil subMode vs set subMode are not equal")
+    func equalityNilVsSetSubMode() {
+        let pid = UUID()
+        let a = NavigationEntry(mode: .project, projectId: pid, subMode: nil)
+        let b = NavigationEntry(mode: .project, projectId: pid, subMode: .chat)
+        #expect(a != b)
     }
 }
 

@@ -38,7 +38,7 @@ public final class ExecutionContext: ObservableObject {
         switch mode {
         case .chat: chatSession.isStreaming
         case .work: workSession?.isExecuting ?? false
-        case .project: false
+        case .project: false  // No headless runner for `.project`; window UI drives project chat/work.
         }
     }
 
@@ -96,7 +96,7 @@ public final class ExecutionContext: ObservableObject {
                 print("[ExecutionContext] Work dispatch failed: \(error.localizedDescription)")
             }
         case .project:
-            break
+            break  // Plugin/schedule dispatch uses `.chat` or `.work` only.
         }
     }
 
@@ -143,7 +143,7 @@ public final class ExecutionContext: ObservableObject {
         switch mode {
         case .chat: chatSession.stop()
         case .work: workSession?.cancelExecution()
-        case .project: break
+        case .project: break  // Matches `start`; nothing to cancel in this context.
         }
     }
 }

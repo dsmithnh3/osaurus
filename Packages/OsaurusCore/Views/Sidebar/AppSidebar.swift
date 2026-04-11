@@ -363,10 +363,7 @@ private struct ProjectSidebarRow: View {
 
     var body: some View {
         Button(action: {
-            ProjectManager.shared.setActiveProject(project.id)
-            windowState.switchMode(to: .project)
-            windowState.projectSession = ProjectSession(activeProjectId: project.id)
-            windowState.pushNavigation(NavigationEntry(mode: .project, projectId: project.id))
+            windowState.openProject(project.id)
         }) {
             HStack(spacing: 8) {
                 Image(systemName: project.icon)

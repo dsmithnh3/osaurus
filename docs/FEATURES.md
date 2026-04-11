@@ -585,7 +585,6 @@ Canonical reference for all Osaurus features, their status, and documentation.
 - `Models/Project/ProjectStore.swift` — JSON file persistence (one file per project)
 - `Managers/ProjectManager.swift` — CRUD, active project tracking, context building, bookmark lifecycle
 - `Views/Projects/ProjectView.swift` — 3-panel coordinator view
-- `Views/Projects/ProjectHomeView.swift` — Center panel with header, input, outputs, recents
 - `Views/Projects/ProjectInspectorPanel.swift` — Right panel with instructions, scheduled, context, memory
 - `Views/Projects/ProjectListView.swift` — Grid of projects with search and "New project" button
 - `Views/Projects/ProjectEditorSheet.swift` — Create/edit project sheet

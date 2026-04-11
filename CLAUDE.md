@@ -176,7 +176,7 @@ Projects group conversations, work tasks, schedules, watchers, and memory under 
 - **Model**: `Models/Project/Project.swift` — fields include `name`, `folderPath`, `folderBookmark` (security-scoped), `instructions`, `isActive`, `isArchived`
 - **Persistence**: `Models/Project/ProjectStore.swift` — JSON files in `~/.osaurus/projects/`
 - **Manager**: `Managers/ProjectManager.swift` — CRUD, active project tracking, context building, security-scoped bookmark lifecycle
-- **Views**: `Views/Projects/` — `ProjectView` (3-panel coordinator), `ProjectHomeView` (center), `ProjectInspectorPanel` (right), `ProjectListView`, `ProjectEditorSheet`, `FolderTreeView`, `MemorySummaryView`
+- **Views**: `Views/Projects/` — `ProjectView` (3-panel coordinator with inline chat/work), `ProjectInspectorPanel` (right), `ProjectListView`, `ProjectEditorSheet`, `FolderTreeView`, `MemorySummaryView`
 - **Navigation**: `ChatMode.project` case, `NavigationEntry` with `projectId`, back/forward toolbar items
 - **System prompt**: `SystemPromptComposer.appendProjectContext()` injects project instructions and `.md` files from the project folder
 

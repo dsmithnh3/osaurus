@@ -17,6 +17,8 @@ public final class ProjectManager {
     public private(set) var projects: [Project] = []
     public var activeProjectId: UUID?
 
+    private static let lastActiveProjectKey = "lastActiveProjectId"
+
     /// Set of project IDs whose folder bookmarks are currently being accessed.
     private var accessingBookmarks: Set<UUID> = []
 
@@ -26,6 +28,18 @@ public final class ProjectManager {
 
     public var activeProjects: [Project] {
         projects.filter { $0.isActive && !$0.isArchived }
+    }
+
+    /// The last active project ID, validated against existing non-archived projects.
+    public var lastActiveProjectId: UUID? {
+        guard let savedId = loadLastActiveProjectId() else { return nil }
+        guard let project = projects.first(where: { $0.id == savedId }),
+            !project.isArchived
+        else {
+            saveLastActiveProjectId(nil)
+            return nil
+        }
+        return savedId
     }
 
     private init() {
@@ -69,6 +83,7 @@ public final class ProjectManager {
         stopAccessingBookmark(for: id)
         ProjectStore.delete(id: id)
         if activeProjectId == id { activeProjectId = nil }
+        if loadLastActiveProjectId() == id { saveLastActiveProjectId(nil) }
         reload()
     }
 
@@ -77,6 +92,7 @@ public final class ProjectManager {
         project.isArchived = true
         project.isActive = false
         updateProject(project)
+        if loadLastActiveProjectId() == id { saveLastActiveProjectId(nil) }
     }
 
     public func reload() {
@@ -339,6 +355,24 @@ public final class ProjectManager {
         activeProjectId = projectId
         if let projectId {
             startAccessingBookmark(for: projectId)
+        }
+        saveLastActiveProjectId(projectId)
+    }
+
+    // MARK: - Last Active Project Persistence
+
+    private func loadLastActiveProjectId() -> UUID? {
+        guard let string = UserDefaults.standard.string(forKey: Self.lastActiveProjectKey) else {
+            return nil
+        }
+        return UUID(uuidString: string)
+    }
+
+    private func saveLastActiveProjectId(_ id: UUID?) {
+        if let id {
+            UserDefaults.standard.set(id.uuidString, forKey: Self.lastActiveProjectKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: Self.lastActiveProjectKey)
         }
     }
 }

@@ -202,6 +202,7 @@ public final class BackgroundTaskManager: ObservableObject {
         switch state.mode {
         case .work: state.session?.cancelExecution()
         case .chat: state.chatSession?.stop()
+        // `BackgroundTaskState` is only ever `.work` or `.chat`; exhaustive match for `ChatMode.project`.
         case .project: break
         }
 
@@ -236,6 +237,7 @@ public final class BackgroundTaskManager: ObservableObject {
             }
         case .chat:
             state.chatSession?.stop()
+        // See `cancelTask`: no `.project` background tasks yet; project work still uses `.work`.
         case .project:
             break
         }

@@ -36,6 +36,7 @@ struct HeaderActionButton: View {
             }
         }
         .help(help)
+        .accessibilityLabel(help)
     }
 }
 
@@ -47,7 +48,6 @@ struct ModeToggleButton: View {
     var isDisabled: Bool = false
     let action: (ChatMode) -> Void
 
-    @State private var isHovered = false
     @Environment(\.theme) private var theme
     @Namespace private var animation
 
@@ -61,30 +61,35 @@ struct ModeToggleButton: View {
         .padding(.vertical, 2)
         .opacity(isDisabled ? 0.4 : 1.0)
         .disabled(isDisabled)
-        .help(isDisabled ? "Set up a model to use Work mode" : "Switch mode")
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Mode")
     }
 
     @ViewBuilder
     private func segment(mode: ChatMode, isSelected: Bool) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: mode.icon).font(.system(size: 10, weight: .semibold))
-            Text(mode.displayName).font(.system(size: 11, weight: .semibold))
-        }
-        .fixedSize()
-        .foregroundColor(isSelected ? theme.primaryText : theme.tertiaryText)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 5)
-        .background {
-            if isSelected {
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(theme.secondaryBackground.opacity(0.8))
-                    .shadow(color: theme.shadowColor.opacity(0.08), radius: 1.5, x: 0, y: 0.5)
-                    .matchedGeometryEffect(id: "modeIndicator", in: animation)
+        Button { action(mode) } label: {
+            HStack(spacing: 5) {
+                Image(systemName: mode.icon).font(.system(size: 10, weight: .semibold))
+                Text(mode.displayName).font(.system(size: 11, weight: .semibold))
             }
+            .fixedSize()
+            .foregroundColor(isSelected ? theme.primaryText : theme.tertiaryText)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 5)
+            .background {
+                if isSelected {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .fill(theme.secondaryBackground.opacity(0.8))
+                        .shadow(color: theme.shadowColor.opacity(0.08), radius: 1.5, x: 0, y: 0.5)
+                        .matchedGeometryEffect(id: "modeIndicator", in: animation)
+                }
+            }
+            .contentShape(Rectangle())
+            .animation(theme.springAnimation(), value: isSelected)
         }
-        .contentShape(Rectangle())
-        .animation(theme.springAnimation(), value: isSelected)
-        .onTapGesture { action(mode) }
+        .buttonStyle(.plain)
+        .accessibilityLabel(mode.displayName)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
@@ -122,6 +127,7 @@ struct CloseButton: View {
             }
         }
         .help(Text("Close window", bundle: .module))
+        .accessibilityLabel(Text("Close window", bundle: .module))
     }
 }
 
@@ -154,6 +160,9 @@ struct PinButton: View {
             }
         }
         .help(isPinned ? "Unpin from top" : "Pin to top")
+        .accessibilityLabel("Pin to top")
+        .accessibilityAddTraits(.isToggle)
+        .accessibilityValue(isPinned ? "Pinned" : "Unpinned")
         .animation(theme.springAnimation(), value: isPinned)
     }
 }

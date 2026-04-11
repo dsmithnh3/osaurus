@@ -183,7 +183,7 @@ public final class ChatWindowManager: NSObject, ObservableObject {
         }
 
         // Activate app and bring this specific window forward
-        NSRunningApplication.current.activate()
+        NSRunningApplication.current.activate(options: .activateIgnoringOtherApps)
 
         // Bring the window forward and make it key
         window.makeKeyAndOrderFront(nil)
@@ -641,7 +641,9 @@ private final class ChatToolbarDelegate: NSObject, NSToolbarDelegate {
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         [
             Self.sidebarItem, Self.backItem, Self.forwardItem,
+            .flexibleSpace,
             Self.modeToggleItem,
+            .flexibleSpace,
             Self.actionItem, Self.pinItem, Self.inspectorItem,
         ]
     }
@@ -649,7 +651,9 @@ private final class ChatToolbarDelegate: NSObject, NSToolbarDelegate {
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         [
             Self.sidebarItem, Self.backItem, Self.forwardItem,
+            .flexibleSpace,
             Self.modeToggleItem,
+            .flexibleSpace,
             Self.actionItem, Self.pinItem, Self.inspectorItem,
         ]
     }
@@ -742,6 +746,8 @@ private struct ChatToolbarSidebarView: View {
                 }
             }
         )
+        .accessibilityAddTraits(.isToggle)
+        .accessibilityValue(windowState.showSidebar ? "Shown" : "Hidden")
         .environment(\.theme, windowState.theme)
     }
 }
@@ -754,7 +760,7 @@ private struct ChatToolbarModeToggleView: View {
     var body: some View {
         ModeToggleButton(
             currentMode: windowState.mode,
-            isDisabled: windowState.mode != .work && !session.hasAnyModel,
+            isDisabled: false,
             action: { tappedMode in
                 guard tappedMode != windowState.mode else { return }
                 windowState.switchMode(to: tappedMode)
@@ -834,22 +840,28 @@ private struct ChatToolbarForwardView: View {
 }
 
 /// Inspector toggle button (visible in Projects mode only).
+/// Conditionally renders so the toolbar item collapses to zero width
+/// in non-project modes instead of reserving invisible layout space.
 private struct ChatToolbarInspectorView: View {
     @ObservedObject var windowState: ChatWindowState
 
     var body: some View {
-        HeaderActionButton(
-            icon: "sidebar.right",
-            help: windowState.showProjectInspector ? "Hide inspector" : "Show inspector",
-            action: {
-                withAnimation(windowState.theme.springAnimation()) {
-                    windowState.showProjectInspector.toggle()
-                }
+        Group {
+            if windowState.mode == .project {
+                HeaderActionButton(
+                    icon: "sidebar.right",
+                    help: windowState.showProjectInspector ? "Hide inspector" : "Show inspector",
+                    action: {
+                        withAnimation(windowState.theme.animationQuick()) {
+                            windowState.showProjectInspector.toggle()
+                        }
+                    }
+                )
+                .accessibilityAddTraits(.isToggle)
+                .accessibilityValue(windowState.showProjectInspector ? "Shown" : "Hidden")
+                .environment(\.theme, windowState.theme)
             }
-        )
-        .opacity(windowState.mode == .project ? 1.0 : 0.0)
-        .disabled(windowState.mode != .project)
-        .environment(\.theme, windowState.theme)
+        }
     }
 }
 

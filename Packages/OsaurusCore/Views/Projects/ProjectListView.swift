@@ -62,10 +62,7 @@ struct ProjectListView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .sheet(isPresented: $showEditor) {
             ProjectEditorSheet(onSave: { project in
-                ProjectManager.shared.setActiveProject(project.id)
-                windowState.switchMode(to: .project)
-                windowState.projectSession = ProjectSession(activeProjectId: project.id)
-                windowState.pushNavigation(NavigationEntry(mode: .project, projectId: project.id))
+                windowState.openProject(project.id)
             })
         }
     }
@@ -115,10 +112,7 @@ private struct ProjectCardView: View {
 
     var body: some View {
         Button(action: {
-            ProjectManager.shared.setActiveProject(project.id)
-            windowState.switchMode(to: .project)
-            windowState.projectSession = ProjectSession(activeProjectId: project.id)
-            windowState.pushNavigation(NavigationEntry(mode: .project, projectId: project.id))
+            windowState.openProject(project.id)
         }) {
             VStack(alignment: .leading, spacing: 8) {
                 Image(systemName: project.icon)

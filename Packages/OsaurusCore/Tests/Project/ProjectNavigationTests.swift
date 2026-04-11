@@ -49,12 +49,30 @@ struct ProjectNavigationTests {
         #expect(session.subMode == .chat)
     }
 
-    @Test("NavigationEntry without workTaskId field")
-    func navigationEntryNoWorkTaskId() {
+    @Test("ProjectSession initializes with activeProjectId for restoration")
+    func projectSessionRestoration() {
+        let projectId = UUID()
+        let session = ProjectSession(activeProjectId: projectId)
+        #expect(session.activeProjectId == projectId)
+        #expect(session.subMode == .chat)
+    }
+
+    @Test("NavigationEntry carries subMode for project entries")
+    func navigationEntrySubMode() {
         let projectId = UUID()
         let sessionId = UUID()
-        let entry = NavigationEntry(mode: .project, projectId: projectId, sessionId: sessionId)
-        #expect(entry.projectId == projectId)
-        #expect(entry.sessionId == sessionId)
+        let chatEntry = NavigationEntry(
+            mode: .project, projectId: projectId, sessionId: sessionId, subMode: .chat
+        )
+        #expect(chatEntry.subMode == .chat)
+
+        let workEntry = NavigationEntry(
+            mode: .project, projectId: projectId, sessionId: sessionId, subMode: .work
+        )
+        #expect(workEntry.subMode == .work)
+
+        // Non-project entries default to nil subMode
+        let chatModeEntry = NavigationEntry(mode: .chat)
+        #expect(chatModeEntry.subMode == nil)
     }
 }

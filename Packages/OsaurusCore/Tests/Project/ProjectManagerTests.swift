@@ -45,6 +45,47 @@ struct ProjectManagerTests {
         #expect(!active.contains(where: { $0.id == p2.id }))
     }
 
+    @Test("Last active project persists and validates")
+    @MainActor
+    func lastActiveProjectPersistence() async throws {
+        let manager = ProjectManager.shared
+        let project = manager.createProject(name: "Persist Test \(UUID().uuidString.prefix(8))")
+        defer { manager.deleteProject(id: project.id) }
+
+        manager.setActiveProject(project.id)
+        #expect(manager.lastActiveProjectId == project.id)
+
+        manager.setActiveProject(nil)
+        #expect(manager.lastActiveProjectId == nil)
+    }
+
+    @Test("Last active project cleared on delete")
+    @MainActor
+    func lastActiveProjectClearedOnDelete() async throws {
+        let manager = ProjectManager.shared
+        let project = manager.createProject(name: "Delete Test \(UUID().uuidString.prefix(8))")
+
+        manager.setActiveProject(project.id)
+        #expect(manager.lastActiveProjectId == project.id)
+
+        manager.deleteProject(id: project.id)
+        #expect(manager.lastActiveProjectId == nil)
+    }
+
+    @Test("Last active project cleared on archive")
+    @MainActor
+    func lastActiveProjectClearedOnArchive() async throws {
+        let manager = ProjectManager.shared
+        let project = manager.createProject(name: "Archive Test \(UUID().uuidString.prefix(8))")
+        defer { manager.deleteProject(id: project.id) }
+
+        manager.setActiveProject(project.id)
+        #expect(manager.lastActiveProjectId == project.id)
+
+        manager.archiveProject(id: project.id)
+        #expect(manager.lastActiveProjectId == nil)
+    }
+
     @Test("Project context builds from instructions")
     @MainActor
     func projectContext() async throws {

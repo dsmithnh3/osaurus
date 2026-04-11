@@ -48,11 +48,16 @@ public struct NavigationEntry: Equatable, Sendable {
     public let mode: ChatMode
     public let projectId: UUID?
     public let sessionId: UUID?
+    public let subMode: ProjectSubMode?
 
-    public init(mode: ChatMode, projectId: UUID? = nil, sessionId: UUID? = nil) {
+    public init(
+        mode: ChatMode, projectId: UUID? = nil, sessionId: UUID? = nil,
+        subMode: ProjectSubMode? = nil
+    ) {
         self.mode = mode
         self.projectId = projectId
         self.sessionId = sessionId
+        self.subMode = subMode
     }
 }
 
@@ -129,45 +134,41 @@ final class ChatWindowState: ObservableObject {
     }
 
     private func restoreNavigationEntry(_ entry: NavigationEntry) {
-        if entry.mode != mode {
-            mode = entry.mode
-            sidebarContentMode = .chat
-            switch entry.mode {
-            case .work:
-                WorkToolManager.shared.registerTools()
-                if workSession == nil {
-                    workSession = WorkSession(agentId: agentId, windowState: self)
-                }
-                refreshWorkTasks()
-            case .project:
-                if projectSession?.subMode == .work {
-                    WorkToolManager.shared.registerTools()
-                    if workSession == nil {
-                        workSession = WorkSession(agentId: agentId, windowState: self)
-                    }
-                } else {
-                    WorkToolManager.shared.unregisterTools()
-                }
-            case .chat:
-                WorkToolManager.shared.unregisterTools()
-            }
-        }
+        mode = entry.mode
+        sidebarContentMode = .chat
+        let effectiveSubMode = entry.subMode ?? .chat
 
+        // Restore or clear project session state
         if entry.mode == .project {
-            let session = ProjectSession(activeProjectId: entry.projectId)
-            if let existing = projectSession, existing.activeProjectId == entry.projectId {
-                var updated = session
-                updated.subMode = existing.subMode
-                projectSession = updated
-            } else {
-                projectSession = session
-            }
+            var session = ProjectSession(activeProjectId: entry.projectId)
+            session.subMode = effectiveSubMode
+            projectSession = session
             if let pid = entry.projectId {
                 ProjectManager.shared.setActiveProject(pid)
             }
-        } else if let projectId = entry.projectId {
-            projectSession = ProjectSession(activeProjectId: projectId)
-            ProjectManager.shared.setActiveProject(projectId)
+        } else {
+            projectSession = nil
+        }
+
+        // Reconcile work tools based on restored mode
+        let needsWorkTools: Bool
+        switch entry.mode {
+        case .work:
+            needsWorkTools = true
+        case .project:
+            needsWorkTools = effectiveSubMode == .work
+        case .chat:
+            needsWorkTools = false
+        }
+
+        if needsWorkTools {
+            WorkToolManager.shared.registerTools()
+            if workSession == nil {
+                workSession = WorkSession(agentId: agentId, windowState: self)
+            }
+            refreshWorkTasks()
+        } else {
+            WorkToolManager.shared.unregisterTools()
         }
     }
 
@@ -296,6 +297,43 @@ final class ChatWindowState: ObservableObject {
         refreshSessions()
     }
 
+    // MARK: - Project Navigation
+
+    /// Open a project by ID. Handles all transitions:
+    /// - From chat/work → project (mode switch + session setup)
+    /// - From project → different project (session swap + nav push, no mode change)
+    /// - Same project re-selected (no-op)
+    func openProject(_ projectId: UUID) {
+        // No-op if already viewing this project
+        if mode == .project, projectSession?.activeProjectId == projectId { return }
+
+        ProjectManager.shared.setActiveProject(projectId)
+        projectSession = ProjectSession(activeProjectId: projectId)
+
+        if mode == .project {
+            // Already in project mode — switchMode guard would skip, so reconcile manually
+            let subMode = projectSession?.subMode ?? .chat
+            if subMode == .work {
+                WorkToolManager.shared.registerTools()
+                if workSession == nil {
+                    workSession = WorkSession(agentId: agentId, windowState: self)
+                }
+                refreshWorkTasks()
+            } else {
+                WorkToolManager.shared.unregisterTools()
+            }
+            let entry = NavigationEntry(
+                mode: .project,
+                projectId: projectId,
+                sessionId: session.sessionId,
+                subMode: subMode
+            )
+            pushNavigation(entry)
+        } else {
+            switchMode(to: .project)
+        }
+    }
+
     // MARK: - Mode Switching
 
     func switchMode(to newMode: ChatMode) {
@@ -311,6 +349,7 @@ final class ChatWindowState: ObservableObject {
 
         switch newMode {
         case .work:
+            projectSession = nil
             WorkToolManager.shared.registerTools()
             if workSession == nil {
                 workSession = WorkSession(agentId: agentId, windowState: self)
@@ -318,7 +357,12 @@ final class ChatWindowState: ObservableObject {
             refreshWorkTasks()
         case .project:
             if projectSession == nil {
-                projectSession = ProjectSession()
+                if let lastId = ProjectManager.shared.lastActiveProjectId {
+                    ProjectManager.shared.setActiveProject(lastId)
+                    projectSession = ProjectSession(activeProjectId: lastId)
+                } else {
+                    projectSession = ProjectSession()
+                }
             }
             if projectSession?.subMode == .work {
                 WorkToolManager.shared.registerTools()
@@ -329,6 +373,7 @@ final class ChatWindowState: ObservableObject {
                 WorkToolManager.shared.unregisterTools()
             }
         case .chat:
+            projectSession = nil
             WorkToolManager.shared.unregisterTools()
         }
 
@@ -336,7 +381,8 @@ final class ChatWindowState: ObservableObject {
         let entry = NavigationEntry(
             mode: newMode,
             projectId: projectSession?.activeProjectId,
-            sessionId: session.sessionId
+            sessionId: session.sessionId,
+            subMode: newMode == .project ? projectSession?.subMode : nil
         )
         pushNavigation(entry)
     }
@@ -364,7 +410,8 @@ final class ChatWindowState: ObservableObject {
         let entry = NavigationEntry(
             mode: .project,
             projectId: session.activeProjectId,
-            sessionId: self.session.sessionId
+            sessionId: self.session.sessionId,
+            subMode: newSubMode
         )
         pushNavigation(entry)
     }
@@ -405,7 +452,7 @@ final class ChatWindowState: ObservableObject {
         guard let sid = session.sessionId else { return }
         let agentStr = (session.agentId ?? Agent.defaultId).uuidString
         let convStr = sid.uuidString
-        let projectIdStr = ProjectManager.shared.activeProjectId?.uuidString
+        let projectIdStr = mode == .project ? projectSession?.activeProjectId?.uuidString : nil
         Task {
             await MemoryService.shared.flushSession(agentId: agentStr, conversationId: convStr, projectId: projectIdStr)
         }

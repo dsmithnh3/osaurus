@@ -107,7 +107,7 @@ public final class BackgroundTaskState: ObservableObject, Identifiable {
     /// Original window ID (unique identifier for this background task)
     public let id: UUID
 
-    /// Whether this is a chat or work background task
+    /// Engine kind for this task. Instances use `.work` or `.chat` only; `.project` appears on `ChatMode` but is not used here yet.
     public let mode: ChatMode
 
     /// Work task ID (empty string for chat mode)
