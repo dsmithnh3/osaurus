@@ -1,7 +1,22 @@
 {
   "transcripts": {
+    "/Users/danielsmith/.cursor/projects/Users-danielsmith-Documents-osaurus/agent-transcripts/001314e1-8746-4ed9-8501-83815d41292f/001314e1-8746-4ed9-8501-83815d41292f.jsonl": {
+      "mtimeMs": 1775915381000
+    },
     "/Users/danielsmith/.cursor/projects/Users-danielsmith-Documents-osaurus/agent-transcripts/16ae20fb-924a-442f-9ebb-8c0b03a2348e/16ae20fb-924a-442f-9ebb-8c0b03a2348e.jsonl": {
       "mtimeMs": 1775831932000
+    },
+    "/Users/danielsmith/.cursor/projects/Users-danielsmith-Documents-osaurus/agent-transcripts/2bd39c77-2735-4190-a017-bad56c6397ac/2bd39c77-2735-4190-a017-bad56c6397ac.jsonl": {
+      "mtimeMs": 1775842266000
+    },
+    "/Users/danielsmith/.cursor/projects/Users-danielsmith-Documents-osaurus/agent-transcripts/5559c263-014a-4292-8568-0bf3fa532733/5559c263-014a-4292-8568-0bf3fa532733.jsonl": {
+      "mtimeMs": 1775916228000
+    },
+    "/Users/danielsmith/.cursor/projects/Users-danielsmith-Documents-osaurus/agent-transcripts/5559c263-014a-4292-8568-0bf3fa532733/subagents/e711bbdf-6130-4448-968f-47c551b7d1ff.jsonl": {
+      "mtimeMs": 1775916246000
+    },
+    "/Users/danielsmith/.cursor/projects/Users-danielsmith-Documents-osaurus/agent-transcripts/7c232f4f-955f-426c-bee6-8ab4eddd6fb5/7c232f4f-955f-426c-bee6-8ab4eddd6fb5.jsonl": {
+      "mtimeMs": 1775859165000
     },
     "/Users/danielsmith/.cursor/projects/Users-danielsmith-Documents-osaurus/agent-transcripts/84f7574b-07e9-4e52-acd6-698e0ab5c1bc/84f7574b-07e9-4e52-acd6-698e0ab5c1bc.jsonl": {
       "mtimeMs": 1775840804000
@@ -15,17 +30,26 @@
     "/Users/danielsmith/.cursor/projects/Users-danielsmith-Documents-osaurus/agent-transcripts/84f7574b-07e9-4e52-acd6-698e0ab5c1bc/subagents/d58aadfa-d0f1-4c37-9288-b0bdee91b5f3.jsonl": {
       "mtimeMs": 1775834757000
     },
+    "/Users/danielsmith/.cursor/projects/Users-danielsmith-Documents-osaurus/agent-transcripts/a90b79b6-40c2-4ddb-bd2b-7f20deb261fb/a90b79b6-40c2-4ddb-bd2b-7f20deb261fb.jsonl": {
+      "mtimeMs": 1775859314000
+    },
     "/Users/danielsmith/.cursor/projects/Users-danielsmith-Documents-osaurus/agent-transcripts/b757f75c-1316-4acd-a080-96717c852cc1/b757f75c-1316-4acd-a080-96717c852cc1.jsonl": {
       "mtimeMs": 1775833993000
     },
     "/Users/danielsmith/.cursor/projects/Users-danielsmith-Documents-osaurus/agent-transcripts/b757f75c-1316-4acd-a080-96717c852cc1/subagents/c610d960-221e-46e3-b320-9ef05403220e.jsonl": {
       "mtimeMs": 1775833987000
     },
+    "/Users/danielsmith/.cursor/projects/Users-danielsmith-Documents-osaurus/agent-transcripts/d4784e48-bf2a-4317-b935-8946e738cc20/d4784e48-bf2a-4317-b935-8946e738cc20.jsonl": {
+      "mtimeMs": 1775843310000
+    },
     "/Users/danielsmith/.cursor/projects/Users-danielsmith-Documents-osaurus/agent-transcripts/db91bcdc-84e8-4ba2-a2ad-d0da1f83c2f6/db91bcdc-84e8-4ba2-a2ad-d0da1f83c2f6.jsonl": {
-      "mtimeMs": 1775841217000
+      "mtimeMs": 1775841287000
     },
     "/Users/danielsmith/.cursor/projects/Users-danielsmith-Documents-osaurus/agent-transcripts/db91bcdc-84e8-4ba2-a2ad-d0da1f83c2f6/subagents/f890a877-8d17-44a6-8f6f-3065dbd64b1a.jsonl": {
-      "mtimeMs": 1775841232000
+      "mtimeMs": 1775841275000
+    },
+    "/Users/danielsmith/.cursor/projects/Users-danielsmith-Documents-osaurus/agent-transcripts/effc5cb4-47c8-4406-97bb-3b63a1b02abe/effc5cb4-47c8-4406-97bb-3b63a1b02abe.jsonl": {
+      "mtimeMs": 1775858970000
     }
   }
 }

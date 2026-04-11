@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(xcrun swift-format:*)"
+      "Bash(xcrun swift-format:*)",
+      "Read(//Users/davidsmith/Documents/osaurus/Packages/OsaurusCore/Managers/Chat/**)",
+      "Read(//Users/danielsmith/.claude/plugins/cache/claude-plugins-official/superpowers/5.0.7/skills/requesting-code-review/**)",
+      "Bash(swift-format lint:*)",
+      "Bash(/opt/homebrew/bin/swift-format --version)"
     ]
   }
 }
