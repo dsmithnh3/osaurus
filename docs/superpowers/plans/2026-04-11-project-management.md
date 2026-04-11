@@ -276,24 +276,37 @@ git commit -m "fix: reconcile open project state on archive or delete"
 
 - [ ] **Step 1: Create failing sheet-behavior tests**
 
-Create `ProjectManagementViewTests.swift` with tests covering mode behavior at a small unit/view-model level:
+Create `ProjectManagementViewTests.swift` with tests covering real sheet-mode behavior, not just helper functions:
 
 ```swift
-@Test("Existing project mode exposes settings title")
-func existingProjectModeUsesSettingsTitle() {
-    let project = Project(name: "Existing")
-    let title = ProjectEditorSheet.displayTitle(for: project)
-    #expect(title == "Project Settings")
+@Test("Project editor sheet resolves new-project mode")
+func newProjectModeUsesCreateTitle() {
+    let config = ProjectEditorSheet.ModeConfiguration(project: nil)
+    #expect(config.title == "New Project")
+    #expect(config.showsArchiveAction == false)
+    #expect(config.showsDeleteAction == false)
 }
 
-@Test("New project mode uses create title")
-func newProjectModeUsesCreateTitle() {
-    let title = ProjectEditorSheet.displayTitle(for: nil)
-    #expect(title == "New Project")
+@Test("Project editor sheet resolves existing-project mode")
+func existingProjectModeUsesSettingsTitle() {
+    let project = Project(name: "Existing")
+    let config = ProjectEditorSheet.ModeConfiguration(project: project)
+    #expect(config.title == "Project Settings")
+    #expect(config.showsDeleteAction == true)
+}
+
+@Test("Existing archived project shows unarchive action")
+func archivedProjectShowsUnarchiveAction() {
+    var project = Project(name: "Archived")
+    project.isArchived = true
+    project.isActive = false
+
+    let config = ProjectEditorSheet.ModeConfiguration(project: project)
+    #expect(config.primaryArchiveActionLabel == "Unarchive")
 }
 ```
 
-If static helpers do not exist yet, add them as internal pure helpers specifically to keep the UI logic testable.
+Implement these through an internal pure configuration type or equivalent testable API owned by `ProjectEditorSheet`, rather than relying on private view internals.
 
 - [ ] **Step 2: Run the new targeted tests**
 
@@ -323,9 +336,12 @@ The sheet itself should not own destructive policy. It should present buttons on
 
 Also make the presentation state invalidatable from the parent view:
 
-- `ProjectListView` and sidebar callers should drive sheet presentation from an optional selected project such as `@State private var editingProject: Project?`
-- after archive/delete succeeds, clear that state (`editingProject = nil`) so a stale settings sheet cannot remain attached to an invalid or archived project object
-- if the project remains valid after editing, refresh the selected project from `ProjectManager.shared.projects` before continuing
+- `ProjectListView` and sidebar callers should drive settings presentation from an ID-driven source of truth such as `@State private var editingProjectId: UUID?`
+- present settings with `sheet(item:)` or an equivalent item/ID-driven mechanism, not a simple boolean
+- inside the sheet parent, resolve the project fresh from `ProjectManager.shared.projects` using `editingProjectId`
+- if the project disappears or is no longer valid for editing, dismiss the sheet by clearing `editingProjectId`
+- after archive/delete succeeds from the same sheet or row action, clear `editingProjectId`
+- when changes happen elsewhere, add a refresh rule (`onChange`, manager observation, or equivalent) so the sheet dismisses or reloads when the backing project changes state in another window/code path
 
 Do not move instructions editing here. Leave the inspector unchanged.
 
@@ -353,7 +369,7 @@ git commit -m "feat: reuse project editor sheet for project settings"
 
 - [ ] **Step 1: Extend tests for active/archived list behavior**
 
-Add tests for filtering helpers:
+Add tests for list filtering plus action-routing behavior:
 
 ```swift
 @Test("Project list filter returns archived projects when requested")
@@ -366,9 +382,20 @@ func archivedFilterReturnsArchivedProjects() {
     let result = ProjectListFilter.archived.apply(to: [active, archived], searchText: "")
     #expect(result.map(\.name) == ["Archived"])
 }
+
+@Test("Project list action routing clears invalid settings sheet target on delete")
+func deletingProjectClearsEditingProjectId() {
+    let coordinator = ProjectManagementCoordinatorState()
+    let projectId = UUID()
+    coordinator.editingProjectId = projectId
+
+    coordinator.handleProjectDeleted(projectId)
+
+    #expect(coordinator.editingProjectId == nil)
+}
 ```
 
-Do **not** make `ProjectListFilter` private if tests depend on it. Keep it internal and testable, or move the filter logic to an internal helper type used by the view.
+Do **not** make `ProjectListFilter` private if tests depend on it. Keep it internal and testable, or move the filter logic to an internal helper type used by the view. If sheet/action coordination is factored out, prefer a small internal coordinator state type that is also directly testable.
 
 - [ ] **Step 2: Run the project-management view tests to verify failure**
 
@@ -402,14 +429,22 @@ Route settings into `ProjectEditorSheet`, and route archive/delete through `Proj
 Drive settings presentation from a parent-owned optional project, for example:
 
 ```swift
-@State private var editingProject: Project?
+@State private var editingProjectId: UUID?
 ```
+
+Present the settings sheet with `sheet(item:)` or equivalent ID-driven presentation, resolving the current project from `ProjectManager` at presentation time.
 
 When archive/delete succeeds from either the context menu or the sheet:
 
-- clear `editingProject`
+- clear `editingProjectId`
 - clear any delete confirmation state tied to that project
 - refresh the visible project list from `ProjectManager`
+
+When the backing project changes elsewhere:
+
+- if the project is deleted, dismiss the settings sheet
+- if the project is archived and the sheet remains valid, reload the resolved project state so the primary action flips to `Unarchive`
+- if the resolved project cannot be found, dismiss the sheet rather than leaving stale editable state on screen
 
 Use a native confirmation for `Delete…`, but keep the deeper cleanup path out of scope.
 
