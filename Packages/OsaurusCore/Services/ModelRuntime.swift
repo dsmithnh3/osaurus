@@ -388,7 +388,7 @@ actor ModelRuntime {
         }
 
         let tokenizerTools = Self.makeTokenizerTools(tools: tools, toolChoice: toolChoice)
-        let messages: [MLXLMCommon.Chat.Message] = [
+        nonisolated(unsafe) let messages: [MLXLMCommon.Chat.Message] = [
             .init(role: .system, content: systemContent, images: [], videos: []),
             .init(role: .user, content: "Hi", images: [], videos: []),
         ]
@@ -504,7 +504,7 @@ actor ModelRuntime {
         nonisolated(unsafe) let existingCache = existingCacheInfo.0
         let cachedTokens = existingCacheInfo.1
 
-        let capturedMessages = chatMessages
+        nonisolated(unsafe) let capturedMessages = chatMessages
         let buildChat: @Sendable () -> [MLXLMCommon.Chat.Message] = { capturedMessages }
         let buildTools: @Sendable () -> [[String: any Sendable]]? = {
             ModelRuntime.makeTokenizerTools(tools: tools, toolChoice: toolChoice)

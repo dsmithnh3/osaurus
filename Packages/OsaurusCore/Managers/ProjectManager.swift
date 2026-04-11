@@ -106,9 +106,7 @@ public final class ProjectManager {
         let fileComponents = fileURL.standardizedFileURL.pathComponents
         let relativeComponents = Array(fileComponents.dropFirst(rootComponents.count))
 
-        guard !relativeComponents.isEmpty else { return nil }
-
-        let fileName = relativeComponents.last!.lowercased()
+        guard let fileName = relativeComponents.last?.lowercased() else { return nil }
         let depth = relativeComponents.count - 1  // 0 = root level
 
         let ext = fileURL.pathExtension.lowercased()

@@ -21,15 +21,9 @@ struct ProjectInspectorPanel: View {
     @State private var isEditingInstructions = false
     @State private var instructionsText: String = ""
 
-    @Environment(\.theme) private var theme
+    @State private var projectArtifacts: [SharedArtifact] = []
 
-    private var projectArtifacts: [SharedArtifact] {
-        guard WorkDatabase.shared.isOpen else { return [] }
-        let tasks = (try? IssueStore.listTasks(projectId: project.id)) ?? []
-        return tasks.flatMap { task in
-            (try? IssueStore.listSharedArtifacts(contextId: task.id)) ?? []
-        }
-    }
+    @Environment(\.theme) private var theme
 
     var body: some View {
         SidebarContainer(attachedEdge: .trailing, width: SidebarStyle.inspectorWidth) {
@@ -189,6 +183,21 @@ struct ProjectInspectorPanel: View {
         }
         .onAppear {
             instructionsText = project.instructions ?? ""
+            loadArtifacts()
+        }
+        .onChange(of: project.id) { _, _ in loadArtifacts() }
+    }
+
+    // MARK: - Data Loading
+
+    private func loadArtifacts() {
+        guard WorkDatabase.shared.isOpen else {
+            projectArtifacts = []
+            return
+        }
+        let tasks = (try? IssueStore.listTasks(projectId: project.id)) ?? []
+        projectArtifacts = tasks.flatMap { task in
+            (try? IssueStore.listSharedArtifacts(contextId: task.id)) ?? []
         }
     }
 

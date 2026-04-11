@@ -331,6 +331,42 @@ final class ChatWindowState: ObservableObject {
         case .chat:
             WorkToolManager.shared.unregisterTools()
         }
+
+        // Track navigation for back/forward buttons
+        let entry = NavigationEntry(
+            mode: newMode,
+            projectId: projectSession?.activeProjectId,
+            sessionId: session.sessionId
+        )
+        pushNavigation(entry)
+    }
+
+    func switchProjectSubMode(to newSubMode: ProjectSubMode) {
+        guard mode == .project else { return }
+        guard let session = projectSession else { return }
+        guard session.subMode != newSubMode else { return }
+
+        projectSession?.subMode = newSubMode
+
+        // Register/unregister work tools based on sub-mode
+        switch newSubMode {
+        case .work:
+            WorkToolManager.shared.registerTools()
+            if workSession == nil {
+                workSession = WorkSession(agentId: agentId, windowState: self)
+            }
+            refreshWorkTasks()
+        case .chat:
+            WorkToolManager.shared.unregisterTools()
+        }
+
+        // Track navigation for back/forward buttons
+        let entry = NavigationEntry(
+            mode: .project,
+            projectId: session.activeProjectId,
+            sessionId: self.session.sessionId
+        )
+        pushNavigation(entry)
     }
 
     func refreshWorkTasks() {

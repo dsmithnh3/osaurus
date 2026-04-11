@@ -359,8 +359,6 @@ final class NativePendingToolCallView: NSView {
             argsContainer.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
             argsContainer.topAnchor.constraint(equalTo: topAnchor, constant: rowH + 4),
             argsContainer.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
-            // ~3 lines of 10pt monospace + vertical padding
-            argsContainer.heightAnchor.constraint(equalToConstant: 52),
 
             argsLabel.leadingAnchor.constraint(equalTo: argsContainer.leadingAnchor, constant: 8),
             argsLabel.trailingAnchor.constraint(equalTo: argsContainer.trailingAnchor, constant: -8),

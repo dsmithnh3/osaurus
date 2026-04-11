@@ -183,7 +183,7 @@ public final class ChatWindowManager: NSObject, ObservableObject {
         }
 
         // Activate app and bring this specific window forward
-        _ = NSRunningApplication.current.activate(options: .activateIgnoringOtherApps)
+        NSRunningApplication.current.activate()
 
         // Bring the window forward and make it key
         window.makeKeyAndOrderFront(nil)
@@ -390,6 +390,7 @@ public final class ChatWindowManager: NSObject, ObservableObject {
             .environment(\.theme, windowState.theme)
 
         let hostingController = NSHostingController(rootView: chatView)
+        hostingController.view.layer?.backgroundColor = .clear
 
         let panel = createChatPanel(windowId: windowId, windowState: windowState)
         panel.contentViewController = hostingController
@@ -419,6 +420,7 @@ public final class ChatWindowManager: NSObject, ObservableObject {
             .environment(\.theme, windowState.theme)
 
         let hostingController = NSHostingController(rootView: chatView)
+        hostingController.view.layer?.backgroundColor = .clear
 
         let panel = createChatPanel(windowId: windowId, windowState: windowState)
         panel.contentViewController = hostingController
@@ -762,16 +764,18 @@ private struct ChatToolbarModeToggleView: View {
     }
 }
 
-/// Contextual action button: settings (empty state / work) or new-chat plus.
+/// Contextual action button: settings (empty state / work / projects) or new-chat plus.
 private struct ChatToolbarActionView: View {
     @ObservedObject var windowState: ChatWindowState
     @ObservedObject var session: ChatSession
 
-    private var isWorkMode: Bool { windowState.mode == .work }
+    private var showSettings: Bool {
+        windowState.mode == .work || windowState.mode == .project || session.turns.isEmpty
+    }
 
     var body: some View {
         Group {
-            if isWorkMode || session.turns.isEmpty {
+            if showSettings {
                 SettingsButton(action: {
                     AppDelegate.shared?.showManagementWindow(initialTab: nil)
                 })
@@ -809,6 +813,7 @@ private struct ChatToolbarBackView: View {
         )
         .opacity(windowState.canGoBack ? 1.0 : 0.4)
         .disabled(!windowState.canGoBack)
+        .environment(\.theme, windowState.theme)
     }
 }
 
@@ -824,6 +829,7 @@ private struct ChatToolbarForwardView: View {
         )
         .opacity(windowState.canGoForward ? 1.0 : 0.4)
         .disabled(!windowState.canGoForward)
+        .environment(\.theme, windowState.theme)
     }
 }
 

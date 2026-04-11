@@ -875,10 +875,6 @@ final class NativeMessageCellView: NSTableCellView {
                 context: context,
                 sameKind: sameKind
             )
-
-        default:
-            // last resort: no hosted fallback — render a compact unsupported-block placeholder
-            configureAsUnsupported(sameKind: sameKind)
         }
     }
 
@@ -1766,8 +1762,25 @@ enum NativeCellHeightEstimator {
             return 32
 
         case let .pendingToolCall(_, argPreview, _):
-            // header row + 52pt arg box + cell vertical insets
-            return argPreview != nil ? 112 : 62
+            // header row (32pt) + top gap (4pt) + args container + bottom gap (8pt)
+            let rowH: CGFloat = 32
+            let topGap: CGFloat = 4
+            let bottomGap: CGFloat = 8
+            
+            guard let preview = argPreview, !preview.isEmpty else {
+                // No preview: just header + minimal spacing
+                return rowH + topGap + bottomGap
+            }
+            
+            // Args container: 8pt padding left/right, 4pt top/bottom
+            // argsLabel: max 3 lines, 10pt font, ~14pt line height, word wrapping
+            let containerW = max(width - 32, 100)  // 16pt margin on each side
+            let labelW = containerW - 16  // 8pt padding on each side
+            let charsPerLine = max(Int(labelW / 6), 15)  // ~6pt per char for 10pt monospace
+            let estimatedLines = min(3, max(1, (preview.count + charsPerLine - 1) / charsPerLine))
+            let argsH = CGFloat(estimatedLines) * 14 + 8  // line height + vertical padding
+            
+            return rowH + topGap + argsH + bottomGap
 
         case let .thinking(_, text, _):
             if !isExpanded { return 56 }

@@ -758,7 +758,7 @@ struct ProjectView: View {
         .contentShape(Rectangle())
         .animation(theme.springAnimation(), value: session.subMode == mode)
         .onTapGesture {
-            windowState.projectSession?.subMode = mode
+            windowState.switchProjectSubMode(to: mode)
         }
     }
 

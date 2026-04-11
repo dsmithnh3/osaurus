@@ -287,13 +287,8 @@ struct AppSidebar: View {
                                 onSelect: {
                                     if windowState.mode == .project,
                                        windowState.projectSession?.activeProjectId != nil {
-                                        windowState.projectSession?.subMode = .chat
                                         windowState.loadSession(sessionData)
-                                        windowState.pushNavigation(NavigationEntry(
-                                            mode: .project,
-                                            projectId: windowState.projectSession?.activeProjectId,
-                                            sessionId: sessionData.id
-                                        ))
+                                        windowState.switchProjectSubMode(to: .chat)
                                     } else {
                                         windowState.loadSession(sessionData)
                                         windowState.switchMode(to: .chat)
@@ -334,13 +329,7 @@ struct AppSidebar: View {
                                 task: task,
                                 isSelected: windowState.workSession?.currentTask?.id == task.id,
                                 onSelect: {
-                                    windowState.projectSession?.subMode = .work
-                                    if windowState.workSession == nil {
-                                        windowState.workSession = WorkSession(
-                                            agentId: windowState.agentId,
-                                            windowState: windowState
-                                        )
-                                    }
+                                    windowState.switchProjectSubMode(to: .work)
                                     Task { await windowState.workSession?.loadTask(task) }
                                 },
                                 onDelete: {
