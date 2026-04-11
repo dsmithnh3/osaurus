@@ -18,7 +18,9 @@ public enum ProjectStore {
 
         guard
             let files = try? FileManager.default.contentsOfDirectory(
-                at: directory, includingPropertiesForKeys: nil)
+                at: directory,
+                includingPropertiesForKeys: nil
+            )
         else {
             return []
         }

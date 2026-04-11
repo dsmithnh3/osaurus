@@ -95,7 +95,11 @@ public actor WorkEngine {
         }
 
         // Create task and initial issue (IssueManager is @MainActor)
-        let task = await IssueManager.shared.createTaskSafe(query: query, agentId: agentId, projectId: ProjectManager.shared.activeProjectId)
+        let task = await IssueManager.shared.createTaskSafe(
+            query: query,
+            agentId: agentId,
+            projectId: ProjectManager.shared.activeProjectId
+        )
         guard let task = task else {
             throw WorkEngineError.noIssueCreated
         }

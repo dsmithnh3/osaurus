@@ -49,7 +49,10 @@ struct ProjectManagerTests {
     @MainActor
     func projectContext() async throws {
         let manager = ProjectManager.shared
-        let project = manager.createProject(name: "Context \(UUID().uuidString.prefix(8))", instructions: "Always use metric units")
+        let project = manager.createProject(
+            name: "Context \(UUID().uuidString.prefix(8))",
+            instructions: "Always use metric units"
+        )
         defer { manager.deleteProject(id: project.id) }
 
         let context = await manager.projectContext(for: project.id)

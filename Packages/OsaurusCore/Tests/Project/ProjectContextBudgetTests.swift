@@ -281,7 +281,7 @@ struct ProjectContextBudgetTests {
         try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
 
-        for i in 0..<50 {
+        for i in 0 ..< 50 {
             let content = String(repeating: "content-\(i) ", count: 200)
             try content.write(to: tmp.appendingPathComponent("file\(i).md"), atomically: true, encoding: .utf8)
         }

@@ -308,8 +308,6 @@ struct WorkView: View {
     }
 }
 
-
-
 // MARK: - WorkView Issue Detail Extension
 
 extension WorkView {
@@ -1689,4 +1687,3 @@ private struct AudioPlayerView: View {
         return String(format: "%d:%02d", mins, secs)
     }
 }
-

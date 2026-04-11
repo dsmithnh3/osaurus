@@ -19,9 +19,13 @@ private struct FileItem {
 private func listDirectory(at path: String) -> [FileItem] {
     let fm = FileManager.default
     let url = URL(fileURLWithPath: path)
-    guard let contents = try? fm.contentsOfDirectory(
-        at: url, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]
-    ) else { return [] }
+    guard
+        let contents = try? fm.contentsOfDirectory(
+            at: url,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )
+    else { return [] }
 
     return contents.compactMap { fileURL in
         let isDir = (try? fileURL.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
@@ -137,7 +141,8 @@ extension SharedArtifact {
 
         // Read text content for text-based files (cap at 1 MB)
         var textContent: String?
-        let isTextType = mime.hasPrefix("text/") || mime == "application/json"
+        let isTextType =
+            mime.hasPrefix("text/") || mime == "application/json"
             || mime == "application/xml" || mime == "application/x-yaml"
         if isTextType, fileSize < 1_048_576 {
             textContent = try? String(contentsOf: url, encoding: .utf8)

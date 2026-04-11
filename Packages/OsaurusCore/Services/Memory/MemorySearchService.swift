@@ -179,7 +179,11 @@ public actor MemorySearchService {
                 )
 
                 let idStrings = results.map { $0.id.uuidString }
-                let entries = try MemoryDatabase.shared.loadEntriesByIds(idStrings, agentId: agentId, projectId: projectId)
+                let entries = try MemoryDatabase.shared.loadEntriesByIds(
+                    idStrings,
+                    agentId: agentId,
+                    projectId: projectId
+                )
                 let scored: [(item: MemoryEntry, score: Double, content: String)] = entries.compactMap { entry in
                     guard let match = scoreMap[entry.id] else { return nil }
                     return (item: entry, score: match.score, content: entry.content)
@@ -288,7 +292,12 @@ public actor MemorySearchService {
         }
 
         do {
-            return try MemoryDatabase.shared.searchChunks(query: query, agentId: agentId, days: days, projectId: projectId)
+            return try MemoryDatabase.shared.searchChunks(
+                query: query,
+                agentId: agentId,
+                days: days,
+                projectId: projectId
+            )
         } catch {
             MemoryLogger.search.error("Text fallback chunk search failed: \(error)")
             return []
@@ -349,7 +358,12 @@ public actor MemorySearchService {
         }
 
         do {
-            return try MemoryDatabase.shared.searchSummaries(query: query, agentId: agentId, days: days, projectId: projectId)
+            return try MemoryDatabase.shared.searchSummaries(
+                query: query,
+                agentId: agentId,
+                days: days,
+                projectId: projectId
+            )
         } catch {
             MemoryLogger.search.error("Text fallback summary search failed: \(error)")
             return []

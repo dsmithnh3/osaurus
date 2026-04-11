@@ -55,33 +55,33 @@ struct AppSidebar: View {
                 let maxProjectHeight = geometry.size.height * maxProjectFraction
 
                 VStack(spacing: 0) {
-                // New Chat button
-                newChatButton
+                    // New Chat button
+                    newChatButton
+                        .padding(.horizontal, 12)
+                        .padding(.top, 8)
+                        .padding(.bottom, 4)
+
+                    // Search field
+                    SidebarSearchField(
+                        text: $searchQuery,
+                        placeholder: "Search conversations...",
+                        isFocused: $searchFocused
+                    )
                     .padding(.horizontal, 12)
-                    .padding(.top, 8)
-                    .padding(.bottom, 4)
+                    .padding(.bottom, 8)
 
-                // Search field
-                SidebarSearchField(
-                    text: $searchQuery,
-                    placeholder: "Search conversations...",
-                    isFocused: $searchFocused
-                )
-                .padding(.horizontal, 12)
-                .padding(.bottom, 8)
+                    Divider().opacity(0.3).padding(.horizontal, 12)
 
-                Divider().opacity(0.3).padding(.horizontal, 12)
+                    // Projects section
+                    projectsSection(maxHeight: maxProjectHeight)
 
-                // Projects section
-                projectsSection(maxHeight: maxProjectHeight)
+                    // Draggable divider
+                    draggableDivider(maxHeight: maxProjectHeight)
 
-                // Draggable divider
-                draggableDivider(maxHeight: maxProjectHeight)
+                    // Recents section
+                    recentsSection
 
-                // Recents section
-                recentsSection
-
-                Spacer(minLength: 0)
+                    Spacer(minLength: 0)
                 }
             }
         }
@@ -239,7 +239,8 @@ struct AppSidebar: View {
         let sessions: [ChatSessionData] = {
             var s = windowState.filteredSessions
             if windowState.mode == .project,
-               let projectId = windowState.projectSession?.activeProjectId {
+                let projectId = windowState.projectSession?.activeProjectId
+            {
                 s = s.filter { $0.projectId == projectId }
             }
             return s
@@ -248,8 +249,9 @@ struct AppSidebar: View {
 
         // Work tasks (only in project mode with active project)
         if windowState.mode == .project,
-           let projectId = windowState.projectSession?.activeProjectId,
-           WorkDatabase.shared.isOpen {
+            let projectId = windowState.projectSession?.activeProjectId,
+            WorkDatabase.shared.isOpen
+        {
             let tasks = (try? IssueStore.listTasks(projectId: projectId)) ?? []
             items.append(contentsOf: tasks.map { .task($0) })
         }
@@ -286,7 +288,8 @@ struct AppSidebar: View {
                                 editingTitle: $renamingTitle,
                                 onSelect: {
                                     if windowState.mode == .project,
-                                       windowState.projectSession?.activeProjectId != nil {
+                                        windowState.projectSession?.activeProjectId != nil
+                                    {
                                         windowState.loadSession(sessionData)
                                         windowState.switchProjectSubMode(to: .chat)
                                     } else {
@@ -403,4 +406,3 @@ private struct ProjectSidebarRow: View {
         }
     }
 }
-

@@ -74,7 +74,7 @@ struct ProjectInspectorPanel: View {
                         .padding(.vertical, 8)
 
                     CollapsibleSection("Scheduled", isExpanded: $scheduledExpanded) {
-                        Button(action: { }) {
+                        Button(action: {}) {
                             Image(systemName: "plus")
                                 .font(.system(size: 11))
                                 .foregroundColor(theme.tertiaryText)
@@ -125,9 +125,14 @@ struct ProjectInspectorPanel: View {
                                                 .font(.caption)
                                                 .lineLimit(1)
                                             Spacer()
-                                            Text(ByteCountFormatter.string(fromByteCount: Int64(artifact.fileSize), countStyle: .file))
-                                                .font(.caption2)
-                                                .foregroundStyle(theme.tertiaryText)
+                                            Text(
+                                                ByteCountFormatter.string(
+                                                    fromByteCount: Int64(artifact.fileSize),
+                                                    countStyle: .file
+                                                )
+                                            )
+                                            .font(.caption2)
+                                            .foregroundStyle(theme.tertiaryText)
                                         }
                                     }
                                     .buttonStyle(.plain)
@@ -143,7 +148,7 @@ struct ProjectInspectorPanel: View {
                         .padding(.vertical, 8)
 
                     CollapsibleSection("Context", isExpanded: $contextExpanded) {
-                        Button(action: { }) {
+                        Button(action: {}) {
                             Image(systemName: "plus")
                                 .font(.system(size: 11))
                                 .foregroundColor(theme.tertiaryText)

@@ -557,7 +557,9 @@ public struct IssueStore {
     }
 
     /// Lists all tasks, optionally filtered by agent
-    public static func listTasks(agentId: UUID? = nil, status: WorkTaskStatus? = nil, projectId: UUID? = nil) throws -> [WorkTask] {
+    public static func listTasks(agentId: UUID? = nil, status: WorkTaskStatus? = nil, projectId: UUID? = nil) throws
+        -> [WorkTask]
+    {
         var conditions: [String] = []
         if agentId != nil { conditions.append("persona_id = ?") }
         if status != nil { conditions.append("status = ?") }

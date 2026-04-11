@@ -69,8 +69,8 @@ struct ProjectView: View {
                         .transition(.opacity)
 
                     if windowState.showProjectInspector,
-                       let projectId = session.activeProjectId,
-                       let project = projectFor(projectId)
+                        let projectId = session.activeProjectId,
+                        let project = projectFor(projectId)
                     {
                         ProjectInspectorPanel(
                             project: project,
@@ -96,7 +96,9 @@ struct ProjectView: View {
                 WorkToolManager.shared.registerTools()
                 if windowState.workSession == nil {
                     windowState.workSession = WorkSession(
-                        agentId: windowState.agentId, windowState: windowState)
+                        agentId: windowState.agentId,
+                        windowState: windowState
+                    )
                 }
             }
             if old == .work && new != .work { WorkToolManager.shared.unregisterTools() }
@@ -299,7 +301,7 @@ struct ProjectView: View {
 
     private func beginEditingTurn(turnId: UUID) {
         guard let turn = chatSession.turns.first(where: { $0.id == turnId }),
-              turn.role == .user
+            turn.role == .user
         else { return }
         editText = turn.content
         editingTurnId = turnId
@@ -616,10 +618,13 @@ struct ProjectView: View {
 
             Text(workSession.loopState?.statusMessage ?? "Working on it...")
                 .font(
-                    theme.font(size: CGFloat(theme.captionSize) - 1, weight: .regular))
+                    theme.font(size: CGFloat(theme.captionSize) - 1, weight: .regular)
+                )
                 .foregroundColor(theme.tertiaryText)
                 .animation(
-                    .easeInOut(duration: 0.2), value: workSession.loopState?.statusMessage)
+                    .easeInOut(duration: 0.2),
+                    value: workSession.loopState?.statusMessage
+                )
         }
         .padding(.bottom, 12)
     }
@@ -640,12 +645,14 @@ struct ProjectView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("An error occurred")
                     .font(
-                        theme.font(size: CGFloat(theme.bodySize) + 1, weight: .semibold))
+                        theme.font(size: CGFloat(theme.bodySize) + 1, weight: .semibold)
+                    )
                     .foregroundColor(theme.primaryText)
 
                 Text(error)
                     .font(
-                        theme.font(size: CGFloat(theme.captionSize), weight: .regular))
+                        theme.font(size: CGFloat(theme.captionSize), weight: .regular)
+                    )
                     .foregroundColor(theme.secondaryText)
                     .lineLimit(2)
             }
@@ -659,7 +666,7 @@ struct ProjectView: View {
 
     private func refreshFileOperations() {
         guard let workSession = windowState.workSession,
-              workSession.currentTask != nil
+            workSession.currentTask != nil
         else {
             fileOperations = []
             return
@@ -703,7 +710,7 @@ struct ProjectView: View {
 
     private func workCopyTurnContent(turnId: UUID) {
         guard let workSession = windowState.workSession,
-              let turn = workSession.turn(withId: turnId)
+            let turn = workSession.turn(withId: turnId)
         else { return }
         var textToCopy = ""
         if turn.hasThinking {
@@ -751,7 +758,11 @@ struct ProjectView: View {
                 RoundedRectangle(cornerRadius: 20, style: .continuous)
                     .fill(theme.secondaryBackground.opacity(0.8))
                     .shadow(
-                        color: theme.shadowColor.opacity(0.08), radius: 1.5, x: 0, y: 0.5)
+                        color: theme.shadowColor.opacity(0.08),
+                        radius: 1.5,
+                        x: 0,
+                        y: 0.5
+                    )
                     .matchedGeometryEffect(id: "modePickerIndicator", in: modePickerAnimation)
             }
         }

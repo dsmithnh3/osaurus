@@ -354,14 +354,16 @@ public final class WorkDatabase: @unchecked Sendable {
 
     /// V5: Add project_agents table for project-agent associations
     private func migrateToV5() throws {
-        try executeRaw("""
-            CREATE TABLE IF NOT EXISTS project_agents (
-                project_id TEXT NOT NULL,
-                agent_id TEXT NOT NULL,
-                added_at TEXT NOT NULL DEFAULT (datetime('now')),
-                PRIMARY KEY (project_id, agent_id)
-            )
-        """)
+        try executeRaw(
+            """
+                CREATE TABLE IF NOT EXISTS project_agents (
+                    project_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL,
+                    added_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    PRIMARY KEY (project_id, agent_id)
+                )
+            """
+        )
         try executeRaw("CREATE INDEX IF NOT EXISTS idx_project_agents_agent ON project_agents(agent_id)")
         try setSchemaVersion(5)
         print("[WorkDatabase] Migrated to v5: project_agents table")

@@ -248,11 +248,13 @@ public final class ProjectManager {
         let root = directory.standardizedFileURL
         let rootComponents = root.pathComponents
 
-        guard let enumerator = fm.enumerator(
-            at: root,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles]
-        ) else { return [] }
+        guard
+            let enumerator = fm.enumerator(
+                at: root,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            )
+        else { return [] }
 
         var results: [URL] = []
         for case let fileURL as URL in enumerator {

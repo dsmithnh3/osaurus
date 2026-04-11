@@ -71,11 +71,17 @@ public struct SystemPromptComposer: Sendable {
     public mutating func appendProjectContext(projectId: UUID?) async {
         guard let projectId else { return }
         guard let context = await ProjectManager.shared.projectContext(for: projectId) else { return }
-        append(.dynamic(id: "project", label: "Project Context", content: """
-        <project-context>
-        \(context)
-        </project-context>
-        """))
+        append(
+            .dynamic(
+                id: "project",
+                label: "Project Context",
+                content: """
+                    <project-context>
+                    \(context)
+                    </project-context>
+                    """
+            )
+        )
     }
 
     // MARK: - High-Level API
@@ -272,7 +278,11 @@ public struct SystemPromptComposer: Sendable {
     ) async -> (cacheHint: String, staticPrefix: String) {
         var composer = forChat(agentId: agentId, executionMode: .none)
         let activeProjectId = ProjectManager.shared.activeProjectId?.uuidString
-        await composer.appendMemory(agentId: agentId.uuidString, query: query.isEmpty ? nil : query, projectId: activeProjectId)
+        await composer.appendMemory(
+            agentId: agentId.uuidString,
+            query: query.isEmpty ? nil : query,
+            projectId: activeProjectId
+        )
         let manifest = composer.manifest()
         let rendered = composer.render()
         debugLog("[Context:inject] \(manifest.debugDescription)")

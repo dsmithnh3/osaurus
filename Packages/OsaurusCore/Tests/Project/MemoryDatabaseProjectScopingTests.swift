@@ -140,8 +140,11 @@ struct MemoryDatabaseProjectScopingTests {
 
         // Verify via chunks query that the conversation still has project_id
         try db.insertChunk(
-            conversationId: "conv1", chunkIndex: 0, role: "user",
-            content: "test", tokenCount: 1
+            conversationId: "conv1",
+            chunkIndex: 0,
+            role: "user",
+            content: "test",
+            tokenCount: 1
         )
         let chunks = try db.loadAllChunks(agentId: "agent1", projectId: "P1")
         #expect(chunks.count == 1, "Chunk should be visible via P1 project filter")
@@ -224,7 +227,10 @@ struct MemoryDatabaseProjectScopingTests {
         try db.execute { connection in
             var stmt: OpaquePointer?
             defer { sqlite3_finalize(stmt) }
-            guard sqlite3_prepare_v2(connection, "SELECT project_id FROM entities WHERE id = ?1", -1, &stmt, nil) == SQLITE_OK else {
+            guard
+                sqlite3_prepare_v2(connection, "SELECT project_id FROM entities WHERE id = ?1", -1, &stmt, nil)
+                    == SQLITE_OK
+            else {
                 return
             }
             let idCStr = entity.id.cString(using: .utf8)!

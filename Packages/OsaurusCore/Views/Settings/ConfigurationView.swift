@@ -143,7 +143,8 @@ struct ConfigurationView: View {
                                         VStack(alignment: .leading, spacing: 8) {
                                             coreModelPicker
                                             Text(
-                                                "Lightweight model used for memory extraction, preflight search optimization, and other background inference tasks.", bundle: .module
+                                                "Lightweight model used for memory extraction, preflight search optimization, and other background inference tasks.",
+                                                bundle: .module
                                             )
                                             .font(.system(size: 11))
                                             .foregroundColor(theme.tertiaryText)
@@ -155,9 +156,12 @@ struct ConfigurationView: View {
                                     // Command Line Tool
                                     SettingsSubsection(label: "Command Line Tool") {
                                         VStack(alignment: .leading, spacing: 12) {
-                                            Text("Install the `osaurus` CLI into your PATH for terminal access.", bundle: .module)
-                                                .font(.system(size: 12))
-                                                .foregroundColor(theme.tertiaryText)
+                                            Text(
+                                                "Install the `osaurus` CLI into your PATH for terminal access.",
+                                                bundle: .module
+                                            )
+                                            .font(.system(size: 12))
+                                            .foregroundColor(theme.tertiaryText)
 
                                             HStack(spacing: 12) {
                                                 Button(action: { installCLI() }) {
@@ -184,9 +188,12 @@ struct ConfigurationView: View {
                                                 }
                                             }
 
-                                            Text("If installed to ~/.local/bin, ensure it's in your PATH.", bundle: .module)
-                                                .font(.system(size: 11))
-                                                .foregroundColor(theme.tertiaryText)
+                                            Text(
+                                                "If installed to ~/.local/bin, ensure it's in your PATH.",
+                                                bundle: .module
+                                            )
+                                            .font(.system(size: 11))
+                                            .foregroundColor(theme.tertiaryText)
                                         }
                                     }
 
@@ -203,7 +210,8 @@ struct ConfigurationView: View {
                                     SettingsSubsection(label: "Maintenance") {
                                         VStack(alignment: .leading, spacing: 12) {
                                             Text(
-                                                "Troubleshoot or reset the application. A factory reset permanently deletes all data and settings.", bundle: .module
+                                                "Troubleshoot or reset the application. A factory reset permanently deletes all data and settings.",
+                                                bundle: .module
                                             )
                                             .font(.system(size: 12))
                                             .foregroundColor(theme.tertiaryText)
@@ -325,7 +333,8 @@ struct ConfigurationView: View {
                                                     .font(.system(size: 12))
                                             }
                                             Text(
-                                                "Send messages directly to the model with no tool specs or capability injection. Keeps the prompt stable across turns for maximum KV-cache reuse. Recommended when osaurus is acting as a backend for an external agent.", bundle: .module
+                                                "Send messages directly to the model with no tool specs or capability injection. Keeps the prompt stable across turns for maximum KV-cache reuse. Recommended when osaurus is acting as a backend for an external agent.",
+                                                bundle: .module
                                             )
                                             .font(.system(size: 11))
                                             .foregroundColor(theme.tertiaryText)
@@ -341,7 +350,8 @@ struct ConfigurationView: View {
                                                     .font(.system(size: 12))
                                             }
                                             Text(
-                                                "Automatically detect and offer text from any app as context. Includes 'grab selection' feature when summoning Osaurus.", bundle: .module
+                                                "Automatically detect and offer text from any app as context. Includes 'grab selection' feature when summoning Osaurus.",
+                                                bundle: .module
                                             )
                                             .font(.system(size: 11))
                                             .foregroundColor(theme.tertiaryText)
@@ -431,7 +441,8 @@ struct ConfigurationView: View {
                             SettingsSection(title: "Local Inference", icon: "bolt") {
                                 VStack(alignment: .leading, spacing: 20) {
                                     Text(
-                                        "Tune the local model runtime. These settings only affect models running on this device.", bundle: .module
+                                        "Tune the local model runtime. These settings only affect models running on this device.",
+                                        bundle: .module
                                     )
                                     .font(.system(size: 12))
                                     .foregroundColor(theme.secondaryText)
@@ -714,7 +725,12 @@ struct ConfigurationView: View {
             HeaderSecondaryButton("Restore View Defaults", icon: "arrow.counterclockwise") {
                 resetToDefaults()
             }
-            .help(Text("Restore view-only settings to recommended defaults (does not affect saved configuration)", bundle: .module))
+            .help(
+                Text(
+                    "Restore view-only settings to recommended defaults (does not affect saved configuration)",
+                    bundle: .module
+                )
+            )
             HeaderPrimaryButton("Save Changes", icon: "checkmark") {
                 saveConfiguration()
             }
@@ -1988,9 +2004,12 @@ private struct AgentSettingsSection: View {
                 // Generation Settings
                 SettingsSubsection(label: "Generation") {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Controls how the AI reasons and calls tools. Lower temperature improves reliability.", bundle: .module)
-                            .font(.system(size: 12))
-                            .foregroundColor(themeManager.currentTheme.secondaryText)
+                        Text(
+                            "Controls how the AI reasons and calls tools. Lower temperature improves reliability.",
+                            bundle: .module
+                        )
+                        .font(.system(size: 12))
+                        .foregroundColor(themeManager.currentTheme.secondaryText)
 
                         SettingsSliderField(
                             label: "Temperature",
@@ -2034,9 +2053,12 @@ private struct AgentSettingsSection: View {
                 // Permissions
                 SettingsSubsection(label: "Permissions") {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Control how work folder tools execute when working with folders in Work mode.", bundle: .module)
-                            .font(.system(size: 12))
-                            .foregroundColor(themeManager.currentTheme.secondaryText)
+                        Text(
+                            "Control how work folder tools execute when working with folders in Work mode.",
+                            bundle: .module
+                        )
+                        .font(.system(size: 12))
+                        .foregroundColor(themeManager.currentTheme.secondaryText)
 
                         VStack(spacing: 0) {
                             ForEach(Self.folderTools, id: \.name) { tool in

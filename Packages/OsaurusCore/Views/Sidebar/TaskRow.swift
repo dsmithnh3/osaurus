@@ -62,7 +62,9 @@ struct TaskRow: View {
         .contextMenu {
             Button(role: .destructive) {
                 onDelete()
-            } label: { Text("Delete", bundle: .module) }
+            } label: {
+                Text("Delete", bundle: .module)
+            }
         }
         .animation(theme.springAnimation(responseMultiplier: 0.8), value: isHovered)
         .animation(theme.springAnimation(responseMultiplier: 0.8), value: isSelected)

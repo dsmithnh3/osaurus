@@ -200,7 +200,11 @@ public actor MemoryContextAssembler {
 
         // 4. Conversation Summaries (this agent, last N days)
         do {
-            let summaries = try db.loadSummaries(agentId: agentId, days: config.summaryRetentionDays, projectId: projectId)
+            let summaries = try db.loadSummaries(
+                agentId: agentId,
+                days: config.summaryRetentionDays,
+                projectId: projectId
+            )
             if !summaries.isEmpty {
                 sections.append(
                     buildBudgetSection(

@@ -182,7 +182,7 @@ struct NavigationStackTests {
         stack.push(NavigationEntry(mode: .chat))
         #expect(!stack.canGoBack)  // single entry, index = 0
         stack.push(NavigationEntry(mode: .work))
-        #expect(stack.canGoBack)   // two entries, index = 1
+        #expect(stack.canGoBack)  // two entries, index = 1
     }
 
     @Test("canGoForward is true only when forward history exists")
@@ -192,7 +192,7 @@ struct NavigationStackTests {
         stack.push(NavigationEntry(mode: .work))
         #expect(!stack.canGoForward)  // at the end
         stack.goBack()
-        #expect(stack.canGoForward)   // one entry ahead
+        #expect(stack.canGoForward)  // one entry ahead
     }
 
     @Test("goBack decrements index")
@@ -314,8 +314,8 @@ struct NavigationStackTests {
         ]
         for e in entries { stack.push(e) }
         // At index 2
-        stack.goBack()   // index 1
-        stack.goBack()   // index 0
+        stack.goBack()  // index 1
+        stack.goBack()  // index 0
         #expect(!stack.canGoBack)
         stack.goForward()  // index 1
         stack.goForward()  // index 2

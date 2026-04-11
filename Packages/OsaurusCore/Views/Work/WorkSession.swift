@@ -636,7 +636,11 @@ public final class WorkSession: ObservableObject {
 
     /// Creates and starts a new task
     private func startNewTask(query: String, images: [Data] = []) async throws {
-        let task = try await IssueManager.shared.createTask(query: query, agentId: agentId, projectId: ProjectManager.shared.activeProjectId)
+        let task = try await IssueManager.shared.createTask(
+            query: query,
+            agentId: agentId,
+            projectId: ProjectManager.shared.activeProjectId
+        )
         currentTask = task
 
         sharedArtifacts = []

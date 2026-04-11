@@ -498,9 +498,15 @@ public final class MemoryDatabase: @unchecked Sendable {
         for table in tables {
             try executeRaw("ALTER TABLE \(table) ADD COLUMN project_id TEXT")
         }
-        try executeRaw("CREATE INDEX IF NOT EXISTS idx_memory_entries_agent_project ON memory_entries(agent_id, project_id)")
-        try executeRaw("CREATE INDEX IF NOT EXISTS idx_summaries_agent_project ON conversation_summaries(agent_id, project_id)")
-        try executeRaw("CREATE INDEX IF NOT EXISTS idx_conversations_agent_project ON conversations(agent_id, project_id)")
+        try executeRaw(
+            "CREATE INDEX IF NOT EXISTS idx_memory_entries_agent_project ON memory_entries(agent_id, project_id)"
+        )
+        try executeRaw(
+            "CREATE INDEX IF NOT EXISTS idx_summaries_agent_project ON conversation_summaries(agent_id, project_id)"
+        )
+        try executeRaw(
+            "CREATE INDEX IF NOT EXISTS idx_conversations_agent_project ON conversations(agent_id, project_id)"
+        )
 
         try executeRaw(
             "INSERT OR IGNORE INTO schema_version (version, description) VALUES (4, 'Add project_id columns for project-scoped memory')"
@@ -905,7 +911,9 @@ public final class MemoryDatabase: @unchecked Sendable {
         return entries
     }
 
-    public func loadEntriesByIds(_ ids: [String], agentId: String? = nil, projectId: String? = nil) throws -> [MemoryEntry] {
+    public func loadEntriesByIds(_ ids: [String], agentId: String? = nil, projectId: String? = nil) throws
+        -> [MemoryEntry]
+    {
         guard !ids.isEmpty else { return [] }
         let placeholders = ids.enumerated().map { "?\($0.offset + 1)" }.joined(separator: ",")
         var sql = """
@@ -1167,7 +1175,8 @@ public final class MemoryDatabase: @unchecked Sendable {
         }
     }
 
-    public func loadSummaries(agentId: String, days: Int = 0, projectId: String? = nil) throws -> [ConversationSummary] {
+    public func loadSummaries(agentId: String, days: Int = 0, projectId: String? = nil) throws -> [ConversationSummary]
+    {
         var summaries: [ConversationSummary] = []
         var sql: String
         if days > 0 {
@@ -1362,7 +1371,9 @@ public final class MemoryDatabase: @unchecked Sendable {
         }
     }
 
-    public func loadAllChunks(agentId: String? = nil, days: Int = 30, limit: Int = 5000, projectId: String? = nil) throws -> [ConversationChunk] {
+    public func loadAllChunks(agentId: String? = nil, days: Int = 30, limit: Int = 5000, projectId: String? = nil)
+        throws -> [ConversationChunk]
+    {
         var chunks: [ConversationChunk] = []
         var sql = """
                 SELECT cc.id, cc.conversation_id, cc.chunk_index, cc.role, cc.content, cc.token_count, cc.created_at,
@@ -1407,7 +1418,9 @@ public final class MemoryDatabase: @unchecked Sendable {
         return chunks
     }
 
-    public func loadChunksByKeys(_ keys: [(conversationId: String, chunkIndex: Int)], projectId: String? = nil) throws -> [ConversationChunk] {
+    public func loadChunksByKeys(_ keys: [(conversationId: String, chunkIndex: Int)], projectId: String? = nil) throws
+        -> [ConversationChunk]
+    {
         guard !keys.isEmpty else { return [] }
         let conditions = keys.enumerated().map { (i, _) in
             "(cc.conversation_id = ?\(i * 2 + 1) AND cc.chunk_index = ?\(i * 2 + 2))"
@@ -1441,7 +1454,9 @@ public final class MemoryDatabase: @unchecked Sendable {
         return chunks
     }
 
-    public func searchChunks(query: String, agentId: String? = nil, days: Int = 30, projectId: String? = nil) throws -> [ConversationChunk] {
+    public func searchChunks(query: String, agentId: String? = nil, days: Int = 30, projectId: String? = nil) throws
+        -> [ConversationChunk]
+    {
         var chunks: [ConversationChunk] = []
         var sql = """
                 SELECT cc.id, cc.conversation_id, cc.chunk_index, cc.role, cc.content, cc.token_count, cc.created_at,
@@ -1713,7 +1728,9 @@ public final class MemoryDatabase: @unchecked Sendable {
 
     // MARK: - Text Search (BM25 fallback)
 
-    public func searchMemoryEntries(query: String, agentId: String? = nil, projectId: String? = nil) throws -> [MemoryEntry] {
+    public func searchMemoryEntries(query: String, agentId: String? = nil, projectId: String? = nil) throws
+        -> [MemoryEntry]
+    {
         var entries: [MemoryEntry] = []
         var sql = """
                 SELECT \(Self.memoryEntryColumns)
@@ -1853,7 +1870,9 @@ public final class MemoryDatabase: @unchecked Sendable {
         return entries
     }
 
-    public func searchSummaries(query: String, agentId: String? = nil, days: Int = 30, projectId: String? = nil) throws -> [ConversationSummary] {
+    public func searchSummaries(query: String, agentId: String? = nil, days: Int = 30, projectId: String? = nil) throws
+        -> [ConversationSummary]
+    {
         var summaries: [ConversationSummary] = []
         var sql = """
                 SELECT id, agent_id, conversation_id, summary, token_count, model, conversation_at, status, created_at, project_id

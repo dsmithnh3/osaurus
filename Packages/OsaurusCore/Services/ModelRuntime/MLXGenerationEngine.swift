@@ -133,7 +133,8 @@ struct MLXGenerationEngine {
             }
         }
 
-        let result: ResultBox = try await container.perform { [existingCache, cachedTokens] (context: MLXLMCommon.ModelContext) in
+        let result: ResultBox = try await container.perform {
+            [existingCache, cachedTokens] (context: MLXLMCommon.ModelContext) in
             let chat = preprocessImages(in: buildChat())
             let toolsSpec = buildToolsSpec()
             let parameters = ModelRuntime.makeGenerateParameters(

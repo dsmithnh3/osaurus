@@ -154,7 +154,12 @@ public actor MemoryService {
             let prevDate = conversationSessionDates[prev]
             let prevProjectId = conversationProjectIds[prev]
             Task {
-                await self.generateConversationSummary(agentId: prevAgent, conversationId: prev, sessionDate: prevDate, projectId: prevProjectId ?? nil)
+                await self.generateConversationSummary(
+                    agentId: prevAgent,
+                    conversationId: prev,
+                    sessionDate: prevDate,
+                    projectId: prevProjectId ?? nil
+                )
             }
         }
 
@@ -281,7 +286,11 @@ public actor MemoryService {
             "Startup recovery: processing \(conversations.count) orphaned conversation(s)"
         )
         for conv in conversations {
-            await generateConversationSummary(agentId: conv.agentId, conversationId: conv.conversationId, projectId: conv.projectId)
+            await generateConversationSummary(
+                agentId: conv.agentId,
+                conversationId: conv.conversationId,
+                projectId: conv.projectId
+            )
         }
         MemoryLogger.service.info("Startup recovery completed")
     }
@@ -312,7 +321,11 @@ public actor MemoryService {
         if !conversations.isEmpty {
             MemoryLogger.service.info("Sync: generating summaries for \(conversations.count) conversation(s)")
             for conv in conversations {
-                await generateConversationSummary(agentId: conv.agentId, conversationId: conv.conversationId, projectId: conv.projectId)
+                await generateConversationSummary(
+                    agentId: conv.agentId,
+                    conversationId: conv.conversationId,
+                    projectId: conv.projectId
+                )
             }
         } else {
             MemoryLogger.service.debug("Sync: no pending signals to process")
@@ -339,7 +352,11 @@ public actor MemoryService {
     public func flushSession(agentId: String, conversationId: String, projectId: String? = nil) {
         summaryTasks[conversationId]?.cancel()
         summaryTasks[conversationId] = Task {
-            await self.generateConversationSummary(agentId: agentId, conversationId: conversationId, projectId: projectId)
+            await self.generateConversationSummary(
+                agentId: agentId,
+                conversationId: conversationId,
+                projectId: projectId
+            )
         }
     }
 
@@ -354,8 +371,12 @@ public actor MemoryService {
         Do NOT add preamble like "Here is" or "Certainly". Output the structured summary directly.
         """
 
-    private func generateConversationSummary(agentId: String, conversationId: String, sessionDate: String? = nil, projectId: String? = nil) async
-    {
+    private func generateConversationSummary(
+        agentId: String,
+        conversationId: String,
+        sessionDate: String? = nil,
+        projectId: String? = nil
+    ) async {
         let config = MemoryConfigurationStore.load()
         guard config.enabled, await hasCoreModel() else { return }
 
