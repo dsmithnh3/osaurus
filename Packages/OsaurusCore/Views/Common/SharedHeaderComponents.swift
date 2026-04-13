@@ -67,7 +67,9 @@ struct ModeToggleButton: View {
 
     @ViewBuilder
     private func segment(mode: ChatMode, isSelected: Bool) -> some View {
-        Button { action(mode) } label: {
+        Button {
+            action(mode)
+        } label: {
             HStack(spacing: 5) {
                 Image(systemName: mode.icon).font(.system(size: 10, weight: .semibold))
                 Text(mode.displayName).font(.system(size: 11, weight: .semibold))

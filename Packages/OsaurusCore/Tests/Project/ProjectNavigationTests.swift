@@ -62,12 +62,18 @@ struct ProjectNavigationTests {
         let projectId = UUID()
         let sessionId = UUID()
         let chatEntry = NavigationEntry(
-            mode: .project, projectId: projectId, sessionId: sessionId, subMode: .chat
+            mode: .project,
+            projectId: projectId,
+            sessionId: sessionId,
+            subMode: .chat
         )
         #expect(chatEntry.subMode == .chat)
 
         let workEntry = NavigationEntry(
-            mode: .project, projectId: projectId, sessionId: sessionId, subMode: .work
+            mode: .project,
+            projectId: projectId,
+            sessionId: sessionId,
+            subMode: .work
         )
         #expect(workEntry.subMode == .work)
 

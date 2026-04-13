@@ -70,7 +70,10 @@ struct NavigationEntryTests {
         let projectId = UUID()
         let sessionId = UUID()
         let entry = NavigationEntry(
-            mode: .project, projectId: projectId, sessionId: sessionId, subMode: .work
+            mode: .project,
+            projectId: projectId,
+            sessionId: sessionId,
+            subMode: .work
         )
         #expect(entry.mode == .project)
         #expect(entry.projectId == projectId)

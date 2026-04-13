@@ -84,7 +84,7 @@ struct ProjectListView: View {
                 .pickerStyle(.segmented)
                 .frame(width: 180)
             }
-                .padding(.horizontal, 20)
+            .padding(.horizontal, 20)
 
             if filteredProjects.isEmpty {
                 emptyState
@@ -165,9 +165,9 @@ struct ProjectListView: View {
                         ? "Create a project to organize conversations, tasks, and context"
                         : "Archived projects will appear here after you archive them"
                 )
-                    .font(.subheadline)
-                    .foregroundColor(theme.tertiaryText)
-                    .multilineTextAlignment(.center)
+                .font(.subheadline)
+                .foregroundColor(theme.tertiaryText)
+                .multilineTextAlignment(.center)
                 if selectedFilter == .active {
                     Button("Create Project") { editorPresentation = .create }
                         .buttonStyle(.borderedProminent)

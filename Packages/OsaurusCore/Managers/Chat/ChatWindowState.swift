@@ -51,7 +51,9 @@ public struct NavigationEntry: Equatable, Sendable {
     public let subMode: ProjectSubMode?
 
     public init(
-        mode: ChatMode, projectId: UUID? = nil, sessionId: UUID? = nil,
+        mode: ChatMode,
+        projectId: UUID? = nil,
+        sessionId: UUID? = nil,
         subMode: ProjectSubMode? = nil
     ) {
         self.mode = mode

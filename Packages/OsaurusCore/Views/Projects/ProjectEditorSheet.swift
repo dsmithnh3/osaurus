@@ -128,7 +128,7 @@ struct ProjectEditorSheet: View {
                                 )
                         )
                     }
-                        .buttonStyle(.plain)
+                    .buttonStyle(.plain)
                 }
             }
 
