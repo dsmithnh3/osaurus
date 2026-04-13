@@ -30,6 +30,10 @@ public final class ProjectManager {
         projects.filter { $0.isActive && !$0.isArchived }
     }
 
+    public var archivedProjects: [Project] {
+        projects.filter(\.isArchived)
+    }
+
     /// The last active project ID, validated against existing non-archived projects.
     public var lastActiveProjectId: UUID? {
         guard let savedId = loadLastActiveProjectId() else { return nil }
@@ -80,6 +84,7 @@ public final class ProjectManager {
     }
 
     public func deleteProject(id: UUID) {
+        disableAutomations(for: id)
         stopAccessingBookmark(for: id)
         ProjectStore.delete(id: id)
         if activeProjectId == id { activeProjectId = nil }
@@ -91,12 +96,26 @@ public final class ProjectManager {
         guard var project = projects.first(where: { $0.id == id }) else { return }
         project.isArchived = true
         project.isActive = false
+        disableAutomations(for: id)
         updateProject(project)
+        if activeProjectId == id { setActiveProject(nil) }
         if loadLastActiveProjectId() == id { saveLastActiveProjectId(nil) }
+    }
+
+    public func unarchiveProject(id: UUID) {
+        guard var project = projects.first(where: { $0.id == id }) else { return }
+        project.isArchived = false
+        project.isActive = true
+        updateProject(project)
     }
 
     public func reload() {
         projects = ProjectStore.loadAll()
+    }
+
+    private func disableAutomations(for projectId: UUID) {
+        WatcherManager.shared.disableWatchers(forProjectId: projectId)
+        ScheduleManager.shared.disableSchedules(forProjectId: projectId)
     }
 
     // MARK: - Project Context

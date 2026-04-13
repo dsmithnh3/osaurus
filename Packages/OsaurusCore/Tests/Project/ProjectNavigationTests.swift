@@ -75,4 +75,75 @@ struct ProjectNavigationTests {
         let chatModeEntry = NavigationEntry(mode: .chat)
         #expect(chatModeEntry.subMode == nil)
     }
+
+    @Test("Restoring an unavailable project falls back to project list state")
+    func restoreUnavailableProjectFallsBackToList() {
+        let projectId = UUID()
+        let archivedProject = Project(name: "Archived", isArchived: true)
+
+        let deletedFallback = ChatWindowState.restoredProjectSession(
+            projectId: projectId,
+            requestedSubMode: .work,
+            availableProjects: []
+        )
+        #expect(deletedFallback.activeProjectId == nil)
+        #expect(deletedFallback.subMode == .chat)
+
+        let archivedFallback = ChatWindowState.restoredProjectSession(
+            projectId: archivedProject.id,
+            requestedSubMode: .work,
+            availableProjects: [archivedProject]
+        )
+        #expect(archivedFallback.activeProjectId == nil)
+        #expect(archivedFallback.subMode == .chat)
+    }
+
+    @Test("Restoring an active project preserves requested sub-mode")
+    func restoreActiveProjectPreservesSubMode() {
+        let project = Project(name: "Active")
+
+        let restored = ChatWindowState.restoredProjectSession(
+            projectId: project.id,
+            requestedSubMode: .work,
+            availableProjects: [project]
+        )
+
+        #expect(restored.activeProjectId == project.id)
+        #expect(restored.subMode == .work)
+    }
+
+    @Test("Reconciling an invalid active project clears project mode safely")
+    func reconcileInvalidProjectInProjectMode() {
+        let projectId = UUID()
+        var session = ProjectSession(activeProjectId: projectId)
+        session.subMode = .work
+
+        let result = ChatWindowState.reconcileInvalidProject(
+            mode: .project,
+            projectSession: session,
+            invalidProjectId: projectId
+        )
+
+        #expect(result.didChange)
+        #expect(result.projectSession?.activeProjectId == nil)
+        #expect(result.projectSession?.subMode == .chat)
+        #expect(result.shouldUnregisterWorkTools)
+    }
+
+    @Test("Reconciling a different project leaves navigation state unchanged")
+    func reconcileDifferentProjectDoesNothing() {
+        let activeProjectId = UUID()
+        let otherProjectId = UUID()
+        let session = ProjectSession(activeProjectId: activeProjectId)
+
+        let result = ChatWindowState.reconcileInvalidProject(
+            mode: .project,
+            projectSession: session,
+            invalidProjectId: otherProjectId
+        )
+
+        #expect(!result.didChange)
+        #expect(result.projectSession == session)
+        #expect(!result.shouldUnregisterWorkTools)
+    }
 }

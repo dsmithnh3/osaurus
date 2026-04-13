@@ -177,6 +177,14 @@ public final class WatcherManager {
         watchers.first { $0.id == id }
     }
 
+    /// Disable all watchers owned by a project without deleting them.
+    public func disableWatchers(forProjectId projectId: UUID) {
+        let projectWatchers = watchers.filter { $0.projectId == projectId && $0.isEnabled }
+        for watcher in projectWatchers {
+            setEnabled(watcher.id, enabled: false)
+        }
+    }
+
     /// Check if a watcher is currently running (has an active execution task)
     public func isRunning(_ watcherId: UUID) -> Bool {
         let p = phases[watcherId] ?? .idle

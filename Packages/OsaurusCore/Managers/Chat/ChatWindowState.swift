@@ -137,14 +137,22 @@ final class ChatWindowState: ObservableObject {
         mode = entry.mode
         sidebarContentMode = .chat
         let effectiveSubMode = entry.subMode ?? .chat
+        var restoredProjectSubMode = effectiveSubMode
 
         // Restore or clear project session state
         if entry.mode == .project {
-            var session = ProjectSession(activeProjectId: entry.projectId)
-            session.subMode = effectiveSubMode
+            let session = Self.restoredProjectSession(
+                projectId: entry.projectId,
+                requestedSubMode: effectiveSubMode,
+                availableProjects: ProjectManager.shared.projects
+            )
             projectSession = session
-            if let pid = entry.projectId {
-                ProjectManager.shared.setActiveProject(pid)
+            restoredProjectSubMode = session.subMode
+            ProjectManager.shared.setActiveProject(session.activeProjectId)
+            if entry.projectId != nil, session.activeProjectId == nil {
+                replaceCurrentNavigationEntry(
+                    NavigationEntry(mode: .project, projectId: nil, sessionId: entry.sessionId, subMode: nil)
+                )
             }
         } else {
             projectSession = nil
@@ -156,7 +164,7 @@ final class ChatWindowState: ObservableObject {
         case .work:
             needsWorkTools = true
         case .project:
-            needsWorkTools = effectiveSubMode == .work
+            needsWorkTools = restoredProjectSubMode == .work
         case .chat:
             needsWorkTools = false
         }
@@ -331,6 +339,30 @@ final class ChatWindowState: ObservableObject {
             pushNavigation(entry)
         } else {
             switchMode(to: .project)
+        }
+    }
+
+    func handleDeletedOrArchivedProject(_ projectId: UUID) {
+        let reconciliation = Self.reconcileInvalidProject(
+            mode: mode,
+            projectSession: projectSession,
+            invalidProjectId: projectId
+        )
+
+        guard reconciliation.didChange else { return }
+
+        projectSession = reconciliation.projectSession
+        if ProjectManager.shared.activeProjectId == projectId {
+            ProjectManager.shared.setActiveProject(nil)
+        }
+        if reconciliation.shouldUnregisterWorkTools {
+            WorkToolManager.shared.unregisterTools()
+        }
+
+        if mode == .project {
+            replaceCurrentNavigationEntry(
+                NavigationEntry(mode: .project, projectId: nil, sessionId: session.sessionId, subMode: nil)
+            )
         }
     }
 
@@ -597,5 +629,41 @@ final class ChatWindowState: ObservableObject {
                 }
             }
         )
+    }
+
+    private func replaceCurrentNavigationEntry(_ entry: NavigationEntry) {
+        guard navigationIndex >= 0, navigationIndex < navigationStack.count else { return }
+        navigationStack[navigationIndex] = entry
+    }
+
+    nonisolated static func restoredProjectSession(
+        projectId: UUID?,
+        requestedSubMode: ProjectSubMode,
+        availableProjects: [Project]
+    ) -> ProjectSession {
+        guard let projectId else { return ProjectSession() }
+        guard availableProjects.contains(where: { $0.id == projectId && !$0.isArchived }) else {
+            return ProjectSession()
+        }
+
+        var session = ProjectSession(activeProjectId: projectId)
+        session.subMode = requestedSubMode
+        return session
+    }
+
+    nonisolated static func reconcileInvalidProject(
+        mode: ChatMode,
+        projectSession: ProjectSession?,
+        invalidProjectId: UUID
+    ) -> (projectSession: ProjectSession?, shouldUnregisterWorkTools: Bool, didChange: Bool) {
+        guard projectSession?.activeProjectId == invalidProjectId else {
+            return (projectSession, false, false)
+        }
+
+        if mode == .project {
+            return (ProjectSession(), true, true)
+        }
+
+        return (nil, false, true)
     }
 }
