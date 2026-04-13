@@ -159,6 +159,15 @@ public final class ScheduleManager {
         schedule.isEnabled = enabled
         schedule.updatedAt = Date()
         ScheduleStore.save(schedule)
+
+        if !enabled {
+            if let task = executionTasks[id] {
+                task.cancel()
+                executionTasks.removeValue(forKey: id)
+            }
+            runningTasks.removeValue(forKey: id)
+        }
+
         refresh()
         scheduleNextTimer()
 
@@ -168,6 +177,14 @@ public final class ScheduleManager {
     /// Get a schedule by ID
     public func schedule(for id: UUID) -> Schedule? {
         schedules.first { $0.id == id }
+    }
+
+    /// Disable all schedules owned by a project without deleting them.
+    public func disableSchedules(forProjectId projectId: UUID) {
+        let projectSchedules = schedules.filter { $0.projectId == projectId && $0.isEnabled }
+        for schedule in projectSchedules {
+            setEnabled(schedule.id, enabled: false)
+        }
     }
 
     /// Check if a schedule is currently running

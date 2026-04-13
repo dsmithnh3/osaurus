@@ -8,10 +8,53 @@
 import AppKit
 import SwiftUI
 
+enum ProjectEditorPresentation: Identifiable, Equatable {
+    case create
+    case edit(UUID)
+
+    var id: String {
+        switch self {
+        case .create:
+            return "create"
+        case .edit(let projectId):
+            return "edit-\(projectId.uuidString)"
+        }
+    }
+
+    func project(from projects: [Project]) -> Project? {
+        guard case .edit(let projectId) = self else { return nil }
+        return projects.first(where: { $0.id == projectId })
+    }
+}
+
+enum ProjectManagementAction: String, CaseIterable, Equatable {
+    case open
+    case editSettings
+    case archive
+    case unarchive
+    case delete
+
+    static func available(for project: Project) -> [ProjectManagementAction] {
+        if project.isArchived {
+            return [.editSettings, .unarchive, .delete]
+        }
+        return [.open, .editSettings, .archive, .delete]
+    }
+}
+
+enum ProjectManagementSelection {
+    static func normalizedProjectId(_ projectId: UUID?, in projects: [Project]) -> UUID? {
+        guard let projectId else { return nil }
+        return projects.contains(where: { $0.id == projectId }) ? projectId : nil
+    }
+}
+
 /// Sheet for creating or editing a project.
 struct ProjectEditorSheet: View {
     var existingProject: Project? = nil
     let onSave: (Project) -> Void
+    var onArchiveToggle: ((Project) -> Void)? = nil
+    var onDelete: ((Project) -> Void)? = nil
 
     @State private var name = ""
     @State private var description = ""
@@ -19,13 +62,22 @@ struct ProjectEditorSheet: View {
     @State private var color = ""
     @State private var folderPath: String? = nil
     @State private var folderBookmark: Data? = nil
+    @State private var isDeleteConfirmationPresented = false
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.theme) private var theme
 
+    private var isEditingExistingProject: Bool {
+        existingProject != nil
+    }
+
+    private var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     var body: some View {
-        VStack(spacing: 20) {
-            Text(existingProject != nil ? "Edit Project" : "New Project")
+        VStack(alignment: .leading, spacing: 20) {
+            Text(isEditingExistingProject ? "Project Settings" : "New Project")
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundColor(theme.primaryText)
 
@@ -76,22 +128,26 @@ struct ProjectEditorSheet: View {
                                 )
                         )
                     }
-                    .buttonStyle(.plain)
+                        .buttonStyle(.plain)
                 }
+            }
+
+            if let existingProject {
+                managementSection(for: existingProject)
             }
 
             HStack {
                 Button("Cancel") { dismiss() }
                     .buttonStyle(.bordered)
                 Spacer()
-                Button(existingProject != nil ? "Save" : "Create") { save() }
+                Button(isEditingExistingProject ? "Save" : "Create") { save() }
                     .buttonStyle(.borderedProminent)
                     .tint(theme.accentColor)
-                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(trimmedName.isEmpty)
             }
         }
         .padding(24)
-        .frame(minWidth: 400, minHeight: 300)
+        .frame(minWidth: 420, minHeight: 340)
         .onAppear {
             if let existing = existingProject {
                 name = existing.name
@@ -101,6 +157,21 @@ struct ProjectEditorSheet: View {
                 folderPath = existing.folderPath
                 folderBookmark = existing.folderBookmark
             }
+        }
+        .alert(
+            "Delete Project?",
+            isPresented: $isDeleteConfirmationPresented,
+            presenting: existingProject
+        ) { project in
+            Button("Delete", role: .destructive) {
+                onDelete?(project)
+                dismiss()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { project in
+            Text(
+                "Delete \"\(project.name)\" from Osaurus. Its linked folder and project memory will be left untouched."
+            )
         }
     }
 
@@ -123,7 +194,7 @@ struct ProjectEditorSheet: View {
 
     private func save() {
         if var existing = existingProject {
-            existing.name = name
+            existing.name = trimmedName
             existing.description = description.isEmpty ? nil : description
             existing.icon = icon
             existing.color = color.isEmpty ? nil : color
@@ -133,7 +204,7 @@ struct ProjectEditorSheet: View {
             onSave(existing)
         } else {
             let project = ProjectManager.shared.createProject(
-                name: name,
+                name: trimmedName,
                 description: description.isEmpty ? nil : description,
                 icon: icon,
                 color: color.isEmpty ? nil : color,
@@ -143,5 +214,45 @@ struct ProjectEditorSheet: View {
             onSave(project)
         }
         dismiss()
+    }
+
+    @ViewBuilder
+    private func managementSection(for project: Project) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Management")
+                .font(.caption)
+                .foregroundColor(theme.secondaryText)
+
+            HStack(spacing: 10) {
+                Button(project.isArchived ? "Unarchive Project" : "Archive Project") {
+                    onArchiveToggle?(project)
+                    dismiss()
+                }
+                .buttonStyle(.bordered)
+
+                Button("Delete Project…", role: .destructive) {
+                    isDeleteConfirmationPresented = true
+                }
+                .buttonStyle(.bordered)
+            }
+
+            Text(
+                project.isArchived
+                    ? "Unarchiving returns the project to active lists. Watchers and schedules remain disabled until re-enabled manually."
+                    : "Archiving removes the project from active lists and disables its watchers and schedules without touching its folder or memory."
+            )
+            .font(.system(size: 11))
+            .foregroundColor(theme.tertiaryText)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(theme.cardBackground.opacity(0.3))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(theme.cardBorder.opacity(0.2), lineWidth: 1)
+                )
+        )
     }
 }

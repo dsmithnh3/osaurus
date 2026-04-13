@@ -24,6 +24,8 @@ struct AppSidebar: View {
     @State private var isDraggingDivider = false
     @State private var renamingSessionId: UUID?
     @State private var renamingTitle: String = ""
+    @State private var projectEditorPresentation: ProjectEditorPresentation?
+    @State private var pendingDeleteProjectId: UUID?
 
     private let minProjectHeight: CGFloat = 56
     private let maxProjectFraction: CGFloat = 0.5
@@ -85,6 +87,37 @@ struct AppSidebar: View {
                 }
             }
         }
+        .sheet(item: $projectEditorPresentation) { presentation in
+            ProjectEditorSheet(
+                existingProject: presentation.project(from: ProjectManager.shared.projects),
+                onSave: { _ in },
+                onArchiveToggle: { project in
+                    toggleArchive(for: project)
+                },
+                onDelete: { project in
+                    deleteProject(project)
+                }
+            )
+        }
+        .alert("Delete Project?", isPresented: deleteAlertBinding, presenting: pendingDeleteProject) { project in
+            Button("Delete", role: .destructive) {
+                deleteProject(project)
+            }
+            Button("Cancel", role: .cancel) {
+                pendingDeleteProjectId = nil
+            }
+        } message: { project in
+            Text(
+                "Delete \"\(project.name)\" from Osaurus. Its linked folder and project memory will be left untouched."
+            )
+        }
+        .onChange(of: ProjectManager.shared.projects.map(\.id)) { _, ids in
+            projectEditorPresentation = normalizedEditorPresentation(projectEditorPresentation, projectIds: ids)
+            pendingDeleteProjectId = ProjectManagementSelection.normalizedProjectId(
+                pendingDeleteProjectId,
+                in: ProjectManager.shared.projects
+            )
+        }
     }
 
     // MARK: - New Chat Button
@@ -136,7 +169,10 @@ struct AppSidebar: View {
                             ProjectSidebarRow(
                                 project: project,
                                 isActive: project.id == ProjectManager.shared.activeProjectId,
-                                windowState: windowState
+                                windowState: windowState,
+                                onEdit: { projectEditorPresentation = .edit(project.id) },
+                                onArchive: { toggleArchive(for: project) },
+                                onDelete: { pendingDeleteProjectId = project.id }
                             )
                         }
                     }
@@ -198,6 +234,42 @@ struct AppSidebar: View {
             .clipShape(RoundedRectangle(cornerRadius: SidebarStyle.rowCornerRadius, style: .continuous))
         }
         .buttonStyle(.plain)
+    }
+
+    private var pendingDeleteProject: Project? {
+        guard let pendingDeleteProjectId else { return nil }
+        return ProjectManager.shared.projects.first(where: { $0.id == pendingDeleteProjectId })
+    }
+
+    private var deleteAlertBinding: Binding<Bool> {
+        Binding(
+            get: { pendingDeleteProject != nil },
+            set: { if !$0 { pendingDeleteProjectId = nil } }
+        )
+    }
+
+    private func toggleArchive(for project: Project) {
+        ProjectManager.shared.archiveProject(id: project.id)
+        windowState.handleDeletedOrArchivedProject(project.id)
+    }
+
+    private func deleteProject(_ project: Project) {
+        ProjectManager.shared.deleteProject(id: project.id)
+        windowState.handleDeletedOrArchivedProject(project.id)
+        pendingDeleteProjectId = nil
+    }
+
+    private func normalizedEditorPresentation(
+        _ presentation: ProjectEditorPresentation?,
+        projectIds: [UUID]
+    ) -> ProjectEditorPresentation? {
+        guard let presentation else { return nil }
+        switch presentation {
+        case .create:
+            return .create
+        case .edit(let projectId):
+            return projectIds.contains(projectId) ? presentation : nil
+        }
     }
 
     // MARK: - Draggable Divider
@@ -357,6 +429,9 @@ private struct ProjectSidebarRow: View {
     let project: Project
     let isActive: Bool
     @ObservedObject var windowState: ChatWindowState
+    let onEdit: () -> Void
+    let onArchive: () -> Void
+    let onDelete: () -> Void
 
     @Environment(\.theme) private var theme
     @State private var isHovered = false
@@ -394,11 +469,22 @@ private struct ProjectSidebarRow: View {
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
         .contextMenu {
-            if isActive {
-                Button("Deselect Project") {
-                    ProjectManager.shared.setActiveProject(nil)
-                    windowState.projectSession = nil
-                }
+            Button("Open") {
+                windowState.openProject(project.id)
+            }
+
+            Button("Edit Settings…") {
+                onEdit()
+            }
+
+            Divider()
+
+            Button("Archive") {
+                onArchive()
+            }
+
+            Button("Delete…", role: .destructive) {
+                onDelete()
             }
         }
     }
