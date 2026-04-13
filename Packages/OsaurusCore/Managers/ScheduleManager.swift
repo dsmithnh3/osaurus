@@ -93,7 +93,8 @@ public final class ScheduleManager {
         folderPath: String? = nil,
         folderBookmark: Data? = nil,
         frequency: ScheduleFrequency,
-        isEnabled: Bool = true
+        isEnabled: Bool = true,
+        projectId: UUID? = nil
     ) -> Schedule {
         let schedule = Schedule(
             id: UUID(),
@@ -107,7 +108,8 @@ public final class ScheduleManager {
             frequency: frequency,
             isEnabled: isEnabled,
             createdAt: Date(),
-            updatedAt: Date()
+            updatedAt: Date(),
+            projectId: projectId
         )
 
         ScheduleStore.save(schedule)

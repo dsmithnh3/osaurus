@@ -94,6 +94,12 @@ public final class ProjectManager {
 
     public func archiveProject(id: UUID) {
         guard var project = projects.first(where: { $0.id == id }) else { return }
+        if activeProjectId == id {
+            stopAccessingBookmark(for: id)
+            activeProjectId = nil
+        }
+        if loadLastActiveProjectId() == id { saveLastActiveProjectId(nil) }
+
         project.isArchived = true
         project.isActive = false
         disableAutomations(for: id)
@@ -185,6 +191,70 @@ public final class ProjectManager {
             let section = "## Project Instructions\n\n\(instructions)"
             sections.append(section)
             budgetRemaining -= section.count
+        }
+
+        // 1.5. Pinned context entries — Tier 0, always included first
+        if let contextEntries = project.contextEntries, !contextEntries.isEmpty {
+            for entry in contextEntries {
+                guard budgetRemaining > Self.truncatedPreviewChars else { break }
+
+                // Resolve security-scoped bookmark for the entry
+                var entryURL = URL(fileURLWithPath: entry.path)
+                var startedEntryAccess = false
+                if let bookmark = entry.bookmark {
+                    var isStale = false
+                    if let url = try? URL(
+                        resolvingBookmarkData: bookmark,
+                        options: .withSecurityScope,
+                        relativeTo: nil,
+                        bookmarkDataIsStale: &isStale
+                    ), !isStale {
+                        startedEntryAccess = url.startAccessingSecurityScopedResource()
+                        entryURL = url
+                    }
+                }
+                defer {
+                    if startedEntryAccess {
+                        entryURL.stopAccessingSecurityScopedResource()
+                    }
+                }
+
+                if entry.isDirectory {
+                    let discovered = Self.discoverProjectFiles(in: entryURL)
+                    for fileURL in discovered {
+                        guard budgetRemaining > Self.truncatedPreviewChars else { break }
+                        guard let content = try? String(contentsOf: fileURL, encoding: .utf8)
+                        else { continue }
+                        let name = fileURL.lastPathComponent
+                        if content.count <= budgetRemaining {
+                            let section = "## [Pinned] \(name)\n\n\(content)"
+                            sections.append(section)
+                            budgetRemaining -= section.count
+                        } else {
+                            let preview = String(content.prefix(Self.truncatedPreviewChars))
+                            let footer = "\n[truncated -- full file at \(name)]"
+                            let section = "## [Pinned] \(name)\n\n\(preview)\(footer)"
+                            sections.append(section)
+                            budgetRemaining -= section.count
+                        }
+                    }
+                } else {
+                    guard let content = try? String(contentsOf: entryURL, encoding: .utf8)
+                    else { continue }
+                    let name = entryURL.lastPathComponent
+                    if content.count <= budgetRemaining {
+                        let section = "## [Pinned] \(name)\n\n\(content)"
+                        sections.append(section)
+                        budgetRemaining -= section.count
+                    } else {
+                        let preview = String(content.prefix(Self.truncatedPreviewChars))
+                        let footer = "\n[truncated -- full file at \(name)]"
+                        let section = "## [Pinned] \(name)\n\n\(preview)\(footer)"
+                        sections.append(section)
+                        budgetRemaining -= section.count
+                    }
+                }
+            }
         }
 
         // 2. Determine folder URL — prefer security-scoped bookmark
@@ -342,6 +412,22 @@ public final class ProjectManager {
         if url.startAccessingSecurityScopedResource() {
             accessingBookmarks.insert(projectId)
         }
+
+        // Also start access for pinned context entry bookmarks
+        if let contextEntries = project.contextEntries {
+            for entry in contextEntries {
+                guard let bookmark = entry.bookmark else { continue }
+                var isStale = false
+                if let url = try? URL(
+                    resolvingBookmarkData: bookmark,
+                    options: .withSecurityScope,
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &isStale
+                ), !isStale {
+                    _ = url.startAccessingSecurityScopedResource()
+                }
+            }
+        }
     }
 
     /// Stop accessing the project's folder bookmark. Call when leaving a project.
@@ -363,6 +449,23 @@ public final class ProjectManager {
         ) {
             url.stopAccessingSecurityScopedResource()
         }
+
+        // Also stop access for pinned context entry bookmarks
+        if let contextEntries = project.contextEntries {
+            for entry in contextEntries {
+                guard let bookmark = entry.bookmark else { continue }
+                var isStale = false
+                if let url = try? URL(
+                    resolvingBookmarkData: bookmark,
+                    options: .withSecurityScope,
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &isStale
+                ) {
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+        }
+
         accessingBookmarks.remove(projectId)
     }
 

@@ -18,6 +18,9 @@ struct ProjectView: View {
 
     @Environment(\.theme) private var theme
     @State private var previewArtifact: SharedArtifact?
+    @AppStorage("inspectorWidth") private var inspectorWidth: Double = Double(
+        SidebarStyle.inspectorWidth
+    )
 
     // MARK: - Chat State
 
@@ -143,7 +146,7 @@ struct ProjectView: View {
                     projectWorkContent
                 }
             }
-            .padding(.trailing, windowState.showProjectInspector ? SidebarStyle.inspectorWidth : 0)
+            .padding(.trailing, windowState.showProjectInspector ? CGFloat(inspectorWidth) : 0)
         } else {
             ProjectListView(windowState: windowState)
         }

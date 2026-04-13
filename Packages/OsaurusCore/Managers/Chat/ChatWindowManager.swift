@@ -857,6 +857,7 @@ private struct ChatToolbarInspectorView: View {
                         }
                     }
                 )
+                .keyboardShortcut("i", modifiers: [.command, .option])
                 .accessibilityAddTraits(.isToggle)
                 .accessibilityValue(windowState.showProjectInspector ? "Shown" : "Hidden")
                 .environment(\.theme, windowState.theme)

@@ -8,6 +8,34 @@
 
 import Foundation
 
+/// A file or folder explicitly pinned to a project's context.
+public struct ProjectContextEntry: Codable, Sendable, Equatable, Identifiable {
+    /// Unique identifier for the entry
+    public let id: UUID
+    /// Absolute path to the file or folder
+    public var path: String
+    /// Security-scoped bookmark data for sandbox access
+    public var bookmark: Data?
+    /// Whether this entry is a directory
+    public var isDirectory: Bool
+    /// When the entry was pinned
+    public let addedAt: Date
+
+    public init(
+        id: UUID = UUID(),
+        path: String,
+        bookmark: Data? = nil,
+        isDirectory: Bool = false,
+        addedAt: Date = Date()
+    ) {
+        self.id = id
+        self.path = path
+        self.bookmark = bookmark
+        self.isDirectory = isDirectory
+        self.addedAt = addedAt
+    }
+}
+
 /// A project that groups related work under shared context.
 public struct Project: Identifiable, Codable, Sendable, Equatable {
     /// Unique identifier for the project
@@ -26,6 +54,8 @@ public struct Project: Identifiable, Codable, Sendable, Equatable {
     public var folderBookmark: Data?
     /// Optional instructions injected into system prompt when this project is active
     public var instructions: String?
+    /// Explicitly pinned context files and folders
+    public var contextEntries: [ProjectContextEntry]?
     /// Whether this project is actively being worked on
     public var isActive: Bool
     /// Whether this project has been archived
@@ -44,6 +74,7 @@ public struct Project: Identifiable, Codable, Sendable, Equatable {
         folderPath: String? = nil,
         folderBookmark: Data? = nil,
         instructions: String? = nil,
+        contextEntries: [ProjectContextEntry]? = nil,
         isActive: Bool = true,
         isArchived: Bool = false,
         createdAt: Date = Date(),
@@ -57,6 +88,7 @@ public struct Project: Identifiable, Codable, Sendable, Equatable {
         self.folderPath = folderPath
         self.folderBookmark = folderBookmark
         self.instructions = instructions
+        self.contextEntries = contextEntries
         self.isActive = isActive
         self.isArchived = isArchived
         self.createdAt = createdAt

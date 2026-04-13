@@ -9,6 +9,10 @@
 import Foundation
 import os
 
+extension Notification.Name {
+    public static let memoryEntriesDidChange = Notification.Name("memoryEntriesDidChange")
+}
+
 public actor MemoryService {
     public static let shared = MemoryService()
 
@@ -120,6 +124,11 @@ public actor MemoryService {
             MemoryLogger.service.debug(
                 "Turn extraction completed in \(durationMs)ms — \(entries.count) entries (kept: \(verifyResult.kept), skipped: \(verifyResult.skipped), superseded: \(verifyResult.superseded)), \(parsed.profileFacts.count) profile facts"
             )
+            if verifyResult.kept > 0 || !parsed.profileFacts.isEmpty {
+                await MainActor.run {
+                    NotificationCenter.default.post(name: .memoryEntriesDidChange, object: nil)
+                }
+            }
 
             do {
                 try checkProfileRegeneration(config: config)

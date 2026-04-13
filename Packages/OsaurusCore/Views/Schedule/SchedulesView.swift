@@ -1505,6 +1505,7 @@ struct ScheduleEditorSheet: View {
     let onSave: (Schedule) -> Void
     let onCancel: () -> Void
     var initialAgentId: UUID? = nil
+    var initialProjectId: UUID? = nil
 
     @State private var name = ""
     @State private var instructions = ""
@@ -1524,6 +1525,7 @@ struct ScheduleEditorSheet: View {
     @State private var selectedDate = Date()
     @State private var cronExpression = "0 9 * * *"
     @State private var hasAppeared = false
+    @State private var selectedProjectId: UUID?
     @Namespace private var modeNamespace
 
     private var isEditing: Bool {
@@ -1588,8 +1590,12 @@ struct ScheduleEditorSheet: View {
         .onAppear {
             if case .edit(let schedule) = mode {
                 loadSchedule(schedule)
-            } else if let initialAgentId = initialAgentId {
-                selectedAgentId = initialAgentId
+                selectedProjectId = schedule.projectId
+            } else {
+                if let initialAgentId = initialAgentId {
+                    selectedAgentId = initialAgentId
+                }
+                selectedProjectId = initialProjectId
             }
             withAnimation {
                 hasAppeared = true
@@ -2509,7 +2515,8 @@ struct ScheduleEditorSheet: View {
             lastRunAt: existingLastRunAt,
             lastChatSessionId: existingLastChatSessionId,
             createdAt: existingCreatedAt ?? Date(),
-            updatedAt: Date()
+            updatedAt: Date(),
+            projectId: selectedProjectId
         )
 
         onSave(schedule)

@@ -9,14 +9,20 @@ import SwiftUI
 
 // MARK: - Supporting Types
 
-private struct FileItem {
+let excludedDirectoryNames: Set<String> = [
+    "node_modules", ".git", ".build", "DerivedData", "Pods",
+    ".svn", "vendor", "__pycache__", ".tox", ".venv", "venv",
+    ".next", "dist", "build",
+]
+
+struct FileItem {
     let name: String
     let path: String
     let isDirectory: Bool
     var isMd: Bool { !isDirectory && name.hasSuffix(".md") }
 }
 
-private func listDirectory(at path: String) -> [FileItem] {
+func listDirectory(at path: String) -> [FileItem] {
     let fm = FileManager.default
     let url = URL(fileURLWithPath: path)
     guard
@@ -29,6 +35,7 @@ private func listDirectory(at path: String) -> [FileItem] {
 
     return contents.compactMap { fileURL in
         let isDir = (try? fileURL.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
+        if isDir && excludedDirectoryNames.contains(fileURL.lastPathComponent) { return nil }
         return FileItem(name: fileURL.lastPathComponent, path: fileURL.path, isDirectory: isDir)
     }.sorted { a, b in
         if a.isDirectory != b.isDirectory { return a.isDirectory }
@@ -38,9 +45,10 @@ private func listDirectory(at path: String) -> [FileItem] {
 
 // MARK: - FileRowView (breaks recursive opaque-type inference)
 
-private struct FileRowView: View {
+struct FileRowView: View {
     let item: FileItem
     let depth: Int
+    var maxDepth: Int = 6
     @Binding var expandedDirs: Set<String>
     var onFileSelected: ((String) -> Void)?
 
@@ -50,7 +58,7 @@ private struct FileRowView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 4) {
-                if item.isDirectory {
+                if item.isDirectory && depth < maxDepth {
                     Image(systemName: expandedDirs.contains(item.path) ? "chevron.down" : "chevron.right")
                         .font(.system(size: 8))
                         .foregroundColor(theme.tertiaryText)
@@ -98,23 +106,24 @@ private struct FileRowView: View {
                 }
             }
             .onTapGesture {
-                if item.isDirectory {
+                if item.isDirectory && depth < maxDepth {
                     if expandedDirs.contains(item.path) {
                         expandedDirs.remove(item.path)
                     } else {
                         expandedDirs.insert(item.path)
                     }
-                } else {
+                } else if !item.isDirectory {
                     onFileSelected?(item.path)
                 }
             }
 
-            if item.isDirectory && expandedDirs.contains(item.path) {
+            if item.isDirectory && expandedDirs.contains(item.path) && depth < maxDepth {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(listDirectory(at: item.path), id: \.path) { child in
                         FileRowView(
                             item: child,
                             depth: depth + 1,
+                            maxDepth: maxDepth,
                             expandedDirs: $expandedDirs,
                             onFileSelected: onFileSelected
                         )
@@ -165,6 +174,7 @@ extension SharedArtifact {
 /// Recursive directory tree browser for the project context section.
 struct FolderTreeView: View {
     let rootPath: String
+    var maxDepth: Int = 6
     var onFileSelected: ((String) -> Void)?
 
     @State private var expandedDirs: Set<String> = []
@@ -182,6 +192,7 @@ struct FolderTreeView: View {
                 FileRowView(
                     item: item,
                     depth: 0,
+                    maxDepth: maxDepth,
                     expandedDirs: $expandedDirs,
                     onFileSelected: onFileSelected
                 )

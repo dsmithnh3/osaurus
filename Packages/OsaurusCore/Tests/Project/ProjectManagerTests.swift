@@ -25,6 +25,13 @@ struct ProjectManagerTests {
         )
     }
 
+    private func makeTempFolder() throws -> URL {
+        let folderURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("osaurus-project-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folderURL, withIntermediateDirectories: true)
+        return folderURL
+    }
+
     @Test("Create and retrieve a project")
     @MainActor
     func createProject() async throws {
