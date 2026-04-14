@@ -27,7 +27,8 @@ struct ConfigurationView: View {
     @State private var tempChatTopP: String = ""
     @State private var tempChatMaxToolAttempts: String = ""
     @State private var tempPreflightSearchMode: PreflightSearchMode = .balanced
-    @State private var tempDisableTools: Bool = false
+    @State private var tempDisableTools: Bool = true
+    @State private var tempMemoryEnabled: Bool = false
     @State private var tempCoreModelProvider: String = ""
     @State private var tempCoreModelName: String = ""
     @State private var coreModelPickerItems: [ModelPickerItem] = []
@@ -44,12 +45,7 @@ struct ConfigurationView: View {
 
     // Local Inference settings state
     @State private var tempTopP: String = ""
-    @State private var tempKVBits: String = ""
-    @State private var tempKVGroup: String = ""
-    @State private var tempQuantStart: String = ""
     @State private var tempMaxKV: String = ""
-    @State private var tempPrefillStep: String = ""
-    @State private var tempTurboQuant: Bool? = nil
     @State private var tempEvictionPolicy: ModelEvictionPolicy = .strictSingleModel
 
     // Toast settings state
@@ -241,7 +237,9 @@ struct ConfigurationView: View {
                             "Max Tool Attempts",
                             "Generation",
                             "Preflight",
-                            "Capability Search"
+                            "Capability Search",
+                            "Memory",
+                            "Tools"
                         ) {
                             SettingsSection(title: "Chat", icon: "message") {
                                 VStack(alignment: .leading, spacing: 20) {
@@ -333,7 +331,24 @@ struct ConfigurationView: View {
                                                     .font(.system(size: 12))
                                             }
                                             Text(
-                                                "Send messages directly to the model with no tool specs or capability injection. Keeps the prompt stable across turns for maximum KV-cache reuse. Recommended when osaurus is acting as a backend for an external agent.",
+                                                "Send messages directly to the model with no tool specs or capability injection. Keeps the prompt stable across turns for maximum KV-cache reuse. Recommended when osaurus is acting as a backend for an external agent. Tools are off by default — enable them here or via the chat bar to let agents use built-in and plugin tools.",
+                                                bundle: .module
+                                            )
+                                            .font(.system(size: 11))
+                                            .foregroundColor(theme.tertiaryText)
+                                        }
+                                    }
+
+                                    SettingsDivider()
+
+                                    SettingsSubsection(label: "Memory") {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            Toggle(isOn: $tempMemoryEnabled) {
+                                                Text("Enable memory", bundle: .module)
+                                                    .font(.system(size: 12))
+                                            }
+                                            Text(
+                                                "Inject persistent memory (profile, working memory, summaries, relationships) into the system prompt. Off by default — memory can add thousands of tokens per request. Enable for agents that need long-term context across conversations.",
                                                 bundle: .module
                                             )
                                             .font(.system(size: 11))
@@ -431,9 +446,6 @@ struct ConfigurationView: View {
                             "Sampling",
                             "Top P",
                             "KV Cache",
-                            "TurboQuant",
-                            "Quantization",
-                            "Prefill",
                             "Max KV",
                             "CPU",
                             "Memory"
@@ -473,52 +485,6 @@ struct ConfigurationView: View {
                                                 step: 1024,
                                                 defaultValue: 8192
                                             )
-                                            SettingsToggle(
-                                                title: "TurboQuant",
-                                                description:
-                                                    "KV cache compression for ~5x memory savings. Auto-detected based on available RAM.",
-                                                badge: tempTurboQuant == nil
-                                                    ? (turboQuantAutoEnabled ? "(Auto-Enabled)" : "(Auto-Disabled)")
-                                                    : nil,
-                                                isOn: turboQuantBinding
-                                            )
-                                            DisclosureGroup("Advanced") {
-                                                VStack(alignment: .leading, spacing: 12) {
-                                                    SettingsStepperField(
-                                                        label: "Cache Bits",
-                                                        help: "Quantization bits. Empty disables",
-                                                        text: $tempKVBits,
-                                                        range: 2 ... 8,
-                                                        step: 1,
-                                                        defaultValue: 8
-                                                    )
-                                                    SettingsStepperField(
-                                                        label: "Group Size",
-                                                        help: "KV quantization group size",
-                                                        text: $tempKVGroup,
-                                                        range: 1 ... 256,
-                                                        step: 16,
-                                                        defaultValue: 64
-                                                    )
-                                                    SettingsStepperField(
-                                                        label: "Quantized Start",
-                                                        help: "Token offset to begin quantization",
-                                                        text: $tempQuantStart,
-                                                        range: 0 ... 1024,
-                                                        step: 64,
-                                                        defaultValue: 0
-                                                    )
-                                                    SettingsStepperField(
-                                                        label: "Prefill Step",
-                                                        help: "Tokens per prefill chunk",
-                                                        text: $tempPrefillStep,
-                                                        range: 64 ... 2048,
-                                                        step: 64,
-                                                        defaultValue: 512
-                                                    )
-                                                }
-                                                .padding(.top, 8)
-                                            }
                                         }
                                     }
 
@@ -737,24 +703,6 @@ struct ConfigurationView: View {
         }
     }
 
-    // MARK: - TurboQuant Helpers
-
-    /// Rough estimate of whether auto-detection would enable TurboQuant.
-    /// Uses the same headroom < 16 GB heuristic as RuntimeConfig but without
-    /// model weights (assumes ~8 GB model as a conservative estimate).
-    private var turboQuantAutoEnabled: Bool {
-        let systemRAM = Int64(ProcessInfo.processInfo.physicalMemory)
-        let estimatedHeadroom = systemRAM - 8 * 1024 * 1024 * 1024
-        return estimatedHeadroom < 16 * 1024 * 1024 * 1024
-    }
-
-    private var turboQuantBinding: Binding<Bool> {
-        Binding(
-            get: { tempTurboQuant ?? turboQuantAutoEnabled },
-            set: { tempTurboQuant = $0 }
-        )
-    }
-
     // MARK: - Configuration Loading
 
     private func loadConfiguration() {
@@ -774,6 +722,7 @@ struct ConfigurationView: View {
         tempChatMaxToolAttempts = chat.maxToolAttempts.map(String.init) ?? ""
         tempPreflightSearchMode = chat.preflightSearchMode ?? .balanced
         tempDisableTools = chat.disableTools
+        tempMemoryEnabled = MemoryConfigurationStore.load().enabled
         tempCoreModelProvider = chat.coreModelProvider ?? ""
         tempCoreModelName = chat.coreModelName ?? ""
         tempEnableClipboardMonitoring = chat.enableClipboardMonitoring
@@ -786,16 +735,7 @@ struct ConfigurationView: View {
 
         let defaults = ServerConfiguration.default
         tempTopP = configuration.genTopP == defaults.genTopP ? "" : String(configuration.genTopP)
-        tempKVBits = configuration.genKVBits.map(String.init) ?? ""
-        tempKVGroup =
-            configuration.genKVGroupSize == defaults.genKVGroupSize
-            ? "" : String(configuration.genKVGroupSize)
-        tempQuantStart =
-            configuration.genQuantizedKVStart == defaults.genQuantizedKVStart
-            ? "" : String(configuration.genQuantizedKVStart)
         tempMaxKV = configuration.genMaxKVSize.map(String.init) ?? ""
-        tempPrefillStep = configuration.genPrefillStepSize.map(String.init) ?? ""
-        tempTurboQuant = configuration.genTurboQuant
         tempAllowedOrigins = configuration.allowedOrigins.joined(separator: ", ")
         tempEvictionPolicy = configuration.modelEvictionPolicy
 
@@ -835,7 +775,8 @@ struct ConfigurationView: View {
         tempChatTopP = ""
         tempChatMaxToolAttempts = ""
         tempPreflightSearchMode = .balanced
-        tempDisableTools = false
+        tempDisableTools = true
+        tempMemoryEnabled = false
         tempCoreModelProvider = ""
         tempCoreModelName = ""
         tempEnableClipboardMonitoring = chatDefaults.enableClipboardMonitoring
@@ -845,12 +786,7 @@ struct ConfigurationView: View {
         tempAgentMaxIterations = ""
 
         tempTopP = ""
-        tempKVBits = ""
-        tempKVGroup = ""
-        tempQuantStart = ""
         tempMaxKV = ""
-        tempPrefillStep = ""
-        tempTurboQuant = nil
         tempEvictionPolicy = serverDefaults.modelEvictionPolicy
 
         showSuccess("Settings restored to defaults")
@@ -902,29 +838,8 @@ struct ConfigurationView: View {
             configuration.genTopP = Float(trimmedTopP) ?? defaults.genTopP
         }
 
-        configuration.genKVBits = Int(tempKVBits)
-
-        let trimmedKVGroup = tempKVGroup.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmedKVGroup.isEmpty {
-            configuration.genKVGroupSize = defaults.genKVGroupSize
-        } else {
-            configuration.genKVGroupSize = Int(trimmedKVGroup) ?? defaults.genKVGroupSize
-        }
-
-        let trimmedQuantStart = tempQuantStart.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmedQuantStart.isEmpty {
-            configuration.genQuantizedKVStart = defaults.genQuantizedKVStart
-        } else {
-            configuration.genQuantizedKVStart =
-                Int(trimmedQuantStart) ?? defaults.genQuantizedKVStart
-        }
-
         let trimmedMaxKV = tempMaxKV.trimmingCharacters(in: .whitespacesAndNewlines)
         configuration.genMaxKVSize = trimmedMaxKV.isEmpty ? nil : Int(trimmedMaxKV)
-
-        let trimmedPrefillStep = tempPrefillStep.trimmingCharacters(in: .whitespacesAndNewlines)
-        configuration.genPrefillStepSize = trimmedPrefillStep.isEmpty ? nil : Int(trimmedPrefillStep)
-        configuration.genTurboQuant = tempTurboQuant
 
         configuration.modelEvictionPolicy = tempEvictionPolicy
 
@@ -937,17 +852,22 @@ struct ConfigurationView: View {
 
         let serverConfigChanged = previousServerCfg != configuration
         let startAtLoginChanged = previousServerCfg.startAtLogin != configuration.startAtLogin
+
+        // `serverRestartNeeded` gates restarting the NIO HTTP server. Only the
+        // fields that affect how the socket is opened / CORS / eviction belong
+        // here. Generation-time settings (top-p, maxKV) flow into
+        // `RuntimeConfig.snapshot()` and are re-read on the next request via
+        // `ModelRuntime.invalidateConfig()` below — they do NOT require a NIO
+        // restart nor a model reload.
         let serverRestartNeeded =
             previousServerCfg.port != configuration.port
             || previousServerCfg.exposeToNetwork != configuration.exposeToNetwork
             || previousServerCfg.allowedOrigins != configuration.allowedOrigins
-            || previousServerCfg.genTopP != configuration.genTopP
-            || previousServerCfg.genKVBits != configuration.genKVBits
-            || previousServerCfg.genKVGroupSize != configuration.genKVGroupSize
-            || previousServerCfg.genQuantizedKVStart != configuration.genQuantizedKVStart
-            || previousServerCfg.genMaxKVSize != configuration.genMaxKVSize
-            || previousServerCfg.genPrefillStepSize != configuration.genPrefillStepSize
             || previousServerCfg.modelEvictionPolicy != configuration.modelEvictionPolicy
+
+        let runtimeConfigChanged =
+            previousServerCfg.genTopP != configuration.genTopP
+            || previousServerCfg.genMaxKVSize != configuration.genMaxKVSize
 
         ServerConfigurationStore.save(configuration)
 
@@ -1027,6 +947,15 @@ struct ConfigurationView: View {
         )
         ChatConfigurationStore.save(chatCfg)
 
+        // Persist memory enable toggle. Budgets are not user-adjustable in
+        // this UI — users can edit MemoryConfiguration.json directly for
+        // advanced tuning.
+        var memoryCfg = MemoryConfigurationStore.load()
+        if memoryCfg.enabled != tempMemoryEnabled {
+            memoryCfg.enabled = tempMemoryEnabled
+            MemoryConfigurationStore.save(memoryCfg)
+        }
+
         let hotkeyChanged = previousChatCfg.hotkey != chatCfg.hotkey
 
         if hotkeyChanged {
@@ -1042,6 +971,11 @@ struct ConfigurationView: View {
             }
             if serverRestartNeeded {
                 await AppDelegate.shared?.serverController.restartServer()
+            }
+            if runtimeConfigChanged {
+                // Drop the cached RuntimeConfig snapshot so the next
+                // generation re-reads fresh values from ServerConfiguration.
+                await ModelRuntime.shared.invalidateConfig()
             }
         }
 

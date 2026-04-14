@@ -107,10 +107,10 @@ enum CapabilitySearch {
         )
     }
 
-    static func canCreatePlugins() async -> Bool {
+    static func canCreatePlugins(agentId: UUID) async -> Bool {
         await MainActor.run {
-            let agentId = AgentManager.shared.activeAgent.id
-            return AgentManager.shared.effectiveAutonomousExec(for: agentId)?.pluginCreate == true
+            guard let config = AgentManager.shared.effectiveAutonomousExec(for: agentId) else { return false }
+            return config.enabled && config.pluginCreate
         }
     }
 }
@@ -123,7 +123,7 @@ enum PreflightCapabilitySearch {
 
     // MARK: Search
 
-    static func search(query: String, mode: PreflightSearchMode = .balanced) async -> PreflightResult {
+    static func search(query: String, mode: PreflightSearchMode = .balanced, agentId: UUID) async -> PreflightResult {
         guard mode != .off,
             !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return .empty }
@@ -139,7 +139,10 @@ enum PreflightCapabilitySearch {
             return (sorted, groupMap)
         }
 
-        guard !catalog.isEmpty else { return .empty }
+        guard !catalog.isEmpty else { return await sandboxPluginCreatorFallback(agentId: agentId) }
+
+        InferenceProgressManager.shared.preflightWillStartAsync()
+        defer { InferenceProgressManager.shared.preflightDidFinishAsync() }
 
         let selectedNames = await selectTools(
             query: query,
@@ -149,7 +152,7 @@ enum PreflightCapabilitySearch {
         )
 
         if selectedNames.isEmpty {
-            return await sandboxPluginCreatorFallback()
+            return await sandboxPluginCreatorFallback(agentId: agentId)
         }
 
         let (toolSpecs, items) = await MainActor.run {
@@ -273,8 +276,8 @@ enum PreflightCapabilitySearch {
 
     // MARK: Fallback
 
-    private static func sandboxPluginCreatorFallback() async -> PreflightResult {
-        guard await CapabilitySearch.canCreatePlugins() else { return .empty }
+    private static func sandboxPluginCreatorFallback(agentId: UUID) async -> PreflightResult {
+        guard await CapabilitySearch.canCreatePlugins(agentId: agentId) else { return .empty }
         let skill = await MainActor.run {
             SkillManager.shared.skill(named: "Sandbox Plugin Creator")
         }
