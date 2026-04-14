@@ -283,15 +283,29 @@ This checkout is a **personal fork**. Customizations live here and on `origin`; 
 - `origin` — your GitHub fork (push target for your work).
 - `upstream` — `https://github.com/osaurus-ai/osaurus.git` (fetch only; never push).
 
-**Syncing chosen upstream changes** (local, after `git fetch upstream`):
+**Syncing chosen upstream changes (2026 Worktree Strategy)**:
+
+Do not merge upstream updates directly into your customized base branch within Xcode's primary directory. Instead, treat `main` as a pristine upstream mirror and maintain a `personal-main` integration branch:
 
 ```bash
+# 1. Update your read-only mirror
 git checkout main
-git merge upstream/main    # resolve conflicts on your branch; test before push
-git push origin main
+git fetch upstream
+git merge --ff-only upstream/main
+
+# 2. Use a Git Worktree to merge safely without breaking your primary workspace
+git worktree add ../osaurus-merge-zone personal-main
+cd ../osaurus-merge-zone
+git merge main  # Resolve conflicts here safely!
+# ... test and commit ...
+
+# 3. Clean up
+cd ../osaurus
+git worktree remove ../osaurus-merge-zone
+git checkout personal-main
 ```
 
-For **selective** imports, cherry-pick specific commits from `upstream/main` instead of merging the whole branch.
+For **selective** imports, cherry-pick specific commits from `upstream/main` into `personal-main`.
 
 Optional read-only tracker branch: `git branch -f upstream-tracker upstream/main` to diff anytime without merging.
 

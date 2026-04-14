@@ -59,47 +59,54 @@ Never rely on pushing to `upstream` for day-to-day work; you will not have permi
 
 ### Useful local branches
 
-- **`main` (or your default integration branch)** — Your product branch: upstream merges + your commits land here.
-- **Optional read-only tracker** — Points at upstream’s `main` without merging:
-
-  ```bash
-  git fetch upstream
-  git branch -f upstream-tracker upstream/main
-  ```
-
-  Use for diffs: `git log main..upstream-tracker` / `git diff main upstream-tracker`.
+- **`main` (Upstream Mirror)** — A strictly read-only mirror of `upstream/main`. You should **never** commit directly here.
+- **`personal-main` (Integration Base)** — Your actual fork base. This is where your custom product lives. It contains everything from upstream `main` plus your long-lived feature branches.
+- **`feat/...`** — Feature branches that branch off `personal-main`.
 
 ### Example fork state (illustrative)
 
-At one point in time, a fork’s **`main`** was **aligned with `upstream/main` on the remote**, while **additional local-only commits** (e.g. docs) could exist **only on the laptop until pushed**. Feature work might live on **`feat/...`** branches with PRs **to your fork**, not to `osaurus-ai`. Exact counts change — use [Verification commands](#15-verification-commands).
+At one point in time, your mirror **`main`** is **aligned with `upstream/main` on the remote**, while your customized features live on **`personal-main`**. Feature work might live on **`feat/...`** branches with PRs **to your fork**, not to `osaurus-ai`. Exact counts change — use [Verification commands](#15-verification-commands).
 
 ---
 
 ## 3. Syncing upstream safely
 
-### Full merge (most common)
+### The 2026 Git Worktree Merge (Recommended)
 
-After `git fetch upstream`:
+When pulling major upstream updates into your heavily customized fork, it is dangerous to merge `main` directly into `personal-main` in your primary workspace folder (which could break Xcode and leave you stranded on a massive conflict screen). Instead, use an isolated Git Worktree:
 
 ```bash
+# 1. Update the pure mirror branch (in your primary workspace)
 git checkout main
-git merge upstream/main
-# Resolve conflicts on *your* branch; build and test
-git push origin main
+git fetch upstream
+git merge --ff-only upstream/main
+
+# 2. Check out your integration branch in an isolated 'merge zone' directory
+git worktree add ../osaurus-merge-zone personal-main
+cd ../osaurus-merge-zone
+
+# 3. Perform the merge safely separated from Xcode's DerivedData
+git merge main -m "chore: sync upstream main into personal-main"
+# Resolve any conflicts. Build the app in this separate directory. Commit.
+
+# 4. Clean up and resume primary work
+cd ../osaurus
+git worktree remove ../osaurus-merge-zone
+git checkout personal-main
 ```
 
 ### Selective import
 
-Cherry-pick specific commits from `upstream/main` when you do not want the entire branch:
+Cherry-pick specific commits from `main` into `personal-main` when you do not want the entire branch:
 
 ```bash
-git fetch upstream
+git checkout personal-main
 git cherry-pick <commit-sha>
 ```
 
 ### Rebase (optional)
 
-You may rebase your commits on top of `upstream/main` for a linear history. This **rewrites** your branch history — acceptable for a **personal** fork; coordinate if you share branches with others.
+You may rebase your `personal-main` commits on top of `main` for a linear history. This **rewrites** your branch history — acceptable for a **personal** fork; coordinate if you share branches with others. Make sure to do this in a worktree to avoid breaking your current workspace state.
 
 ### Pull requests
 
